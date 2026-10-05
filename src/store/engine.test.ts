@@ -90,4 +90,41 @@ describe('motor', () => {
     expect(v2.others[0]).not.toHaveProperty('attributes');
     expect(v2.log.some((e) => e.kind === 'roll')).toBe(false);
   });
+
+  it('NPC: só o mestre cria, nasce aprovado e fica oculto até liberar', () => {
+    const { s: s0 } = setup();
+    expect(dispatch(s0, p1, { type: 'npc/create', draft }, ctx)).toMatchObject({ ok: false });
+    let s = dispatch(s0, gm, { type: 'npc/create', draft: { ...draft, name: 'Padre Otávio' } }, ctx).state;
+    const npc = Object.values(s.characters).find((c) => c.kind === 'npc')!;
+    expect(npc.status).toBe('approved');
+    expect(buildPlayerView(s, 'p2', new Set()).others.some((c) => c.id === npc.id)).toBe(false);
+    s = dispatch(s, gm, { type: 'npc/visibility', characterId: npc.id, visible: true }, ctx).state;
+    expect(buildPlayerView(s, 'p2', new Set()).others.find((c) => c.id === npc.id)?.ownerName).toBe('NPC');
+    expect(dispatch(s, p1, { type: 'resource/set', characterId: npc.id, pv: 1, pe: 0 }, ctx)).toMatchObject({ ok: false, error: /não é sua/ });
+    expect(dispatch(s, gm, { type: 'level/up', characterId: npc.id, classId: 'acolito', abilityId: 'devocao' }, ctx).ok).toBe(true);
+  });
+
+  it('Ameaça: valores livres, duplicar, rolar e PV', () => {
+    const { s: s0 } = setup();
+    const data = {
+      name: 'Possuído', concept: 'Corpo tomado', notes: '',
+      attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
+      pvMax: 60, peMax: 10, def: 14, von: 9, rd: 2,
+      attacks: [{ id: 'a1', name: 'Garras', bonus: 6, damage: '2d6+8', notes: '' }],
+      abilities: [{ id: 'h1', name: 'Grito', cost: '3 PE', text: 'Atordoa.' }],
+    };
+    expect(dispatch(s0, p1, { type: 'threat/upsert', data }, ctx)).toMatchObject({ ok: false });
+    let s = dispatch(s0, gm, { type: 'threat/upsert', data }, ctx).state;
+    const t = Object.values(s.threats)[0];
+    expect(t.current).toEqual({ pv: 60, pe: 10 });
+    s = dispatch(s, gm, { type: 'threat/duplicate', threatId: t.id }, ctx).state;
+    expect(Object.values(s.threats).map((x) => x.name)).toContain('Possuído 2');
+    s = dispatch(s, gm, { type: 'roll', expr: 'd20', threatId: t.id, attr: 'FOR' }, ctx).state;
+    expect(s.log[s.log.length - 1]?.roll?.total).toBe(3 + 8);
+    s = dispatch(s, gm, { type: 'threat/resource', threatId: t.id, pv: -5, pe: 4 }, ctx).state;
+    expect(s.threats[t.id].current).toEqual({ pv: -5, pe: 4 });
+    expect(dispatch(s, gm, { type: 'threat/upsert', data: { ...data, attributes: { ...data.attributes, FOR: 99 } } }, ctx).ok).toBe(false);
+    expect(buildPlayerView(s, 'p1', new Set()).threats).toHaveLength(0);
+    expect(dispatch(s, p1, { type: 'roll', expr: 'd20', threatId: t.id }, ctx).ok).toBe(false);
+  });
 });

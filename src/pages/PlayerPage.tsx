@@ -183,6 +183,16 @@ function TableInfo({ view }: { view: PlayerView }) {
           ))}
         </div>
       </div>
+      {view.threats.length > 0 && (
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <div className="card-title">Ameaças à vista</div>
+          <div className="col">
+            {view.threats.map((t) => (
+              <div key={t.id}><strong>{t.name}</strong>{t.concept && <span className="small muted"> — {t.concept}</span>}</div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="card" style={{ gridColumn: '1 / -1' }}>
         <div className="card-title">O que o mestre liberou</div>
         <div className="row-wrap">

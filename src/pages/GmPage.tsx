@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Download, Inbox, LogOut, Package, ScrollText, Shield, UserPlus } from 'lucide-react';
+import { BookOpen, ClipboardList, Download, Eye, Inbox, LogOut, Package, Plus, ScrollText, Shield, Skull, UserPlus, VenetianMask } from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
+import { useAct } from '../components/act';
+import CharacterWizard from '../components/sheet/CharacterWizard';
+import ThreatsPanel from '../components/gm/ThreatsPanel';
 import { ActProvider, type ActApi } from '../components/act';
 import type { Character, TableState } from '../model/types';
 import { downloadTable } from '../store/persistence';
@@ -15,7 +18,7 @@ import PermissionsPanel from '../components/gm/PermissionsPanel';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 
-type Tab = 'fichas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
+type Tab = 'fichas' | 'ameacas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
 const api: ActApi = {
   role: 'gm',
@@ -61,6 +64,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           onChange={setTab}
           tabs={[
             { id: 'fichas', label: 'Fichas', icon: <ClipboardList size={14} />, count: pendingSheets },
+            { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
@@ -70,10 +74,11 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         />
         <main className="page">
           {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} />}
+          {tab === 'ameacas' && <ThreatsPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
           {tab === 'permissoes' && <PermissionsPanel table={table} />}
-          {tab === 'registro' && <LogPanel log={table.log} characters={Object.values(table.characters)} />}
+          {tab === 'registro' && <LogPanel log={table.log} characters={Object.values(table.characters)} threats={Object.values(table.threats)} />}
           {tab === 'regras' && <Reference />}
         </main>
         <Modal open={invite} onClose={() => setInvite(false)} title="Convidar jogadores" width={600}>
@@ -85,31 +90,31 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
 }
 
 function Characters({ table, online, onInvite }: { table: TableState; online: string[]; onInvite: () => void }) {
+  const { act } = useAct();
   const [selected, setSelected] = useState<string | null>(null);
+  const [creatingNpc, setCreatingNpc] = useState(false);
   const players = useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
   const all = Object.values(table.characters);
   const byOwner = (id: string) => all.filter((c) => c.ownerId === id).sort((a, b) => a.createdAt - b.createdAt);
+  const npcs = all.filter((c) => c.kind === 'npc').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const current = selected ? table.characters[selected] : undefined;
 
   useEffect(() => {
-    if (!current) {
-      const first = all.find((c) => c.status === 'pending') ?? all[0];
+    if (!current && !creatingNpc) {
+      const first = all.find((c) => c.status === 'pending') ?? all.find((c) => c.kind === 'pc') ?? all[0];
       if (first && first.id !== selected) setSelected(first.id);
     }
-  }, [current, all, selected]);
-
-  if (players.length === 0) {
-    return (
-      <div className="empty col" style={{ alignItems: 'center' }}>
-        <p>Nenhum jogador entrou ainda.</p>
-        <button className="btn btn-primary" onClick={onInvite}><UserPlus size={14} /> Convidar jogadores</button>
-      </div>
-    );
-  }
+  }, [current, all, selected, creatingNpc]);
 
   return (
     <div className="split">
       <div className="col">
+        {players.length === 0 && (
+          <div className="empty col" style={{ alignItems: 'center' }}>
+            <p>Nenhum jogador entrou ainda.</p>
+            <button className="btn btn-primary btn-sm" onClick={onInvite}><UserPlus size={14} /> Convidar jogadores</button>
+          </div>
+        )}
         {players.map((p) => {
           const chars = byOwner(p.id);
           return (
@@ -121,14 +126,45 @@ function Characters({ table, online, onInvite }: { table: TableState; online: st
                 {!chars.length && <span className="tiny muted">sem ficha</span>}
               </div>
               <div className="col" style={{ gap: 6 }}>
-                {chars.map((c) => <CharRow key={c.id} c={c} active={c.id === selected} onClick={() => setSelected(c.id)} />)}
+                {chars.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => { setCreatingNpc(false); setSelected(c.id); }} />)}
               </div>
             </div>
           );
         })}
+        <div className="card" style={{ padding: 12 }}>
+          <div className="row" style={{ marginBottom: npcs.length ? 8 : 0 }}>
+            <VenetianMask size={15} className="gold" />
+            <strong>NPCs</strong>
+            <span className="spacer" />
+            <button className="btn btn-sm" onClick={() => setCreatingNpc(true)}><Plus size={13} /> NPC</button>
+          </div>
+          <div className="col" style={{ gap: 6 }}>
+            {npcs.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => { setCreatingNpc(false); setSelected(c.id); }} />)}
+          </div>
+        </div>
       </div>
       <div>
-        {current ? <CharacterSheet ch={current} ownerName={table.players[current.ownerId]?.name} /> : <div className="empty">Selecione uma ficha.</div>}
+        {creatingNpc ? (
+          <>
+            <h2 className="mb">Novo NPC</h2>
+            <CharacterWizard
+              submitLabel="Criar NPC"
+              onCancel={() => setCreatingNpc(false)}
+              onSubmit={async (draft) => {
+                const before = new Set(Object.keys(table.characters));
+                const r = await act({ type: 'npc/create', draft }, 'NPC criado.');
+                if (r.ok) {
+                  const fresh = Object.values(hostStore.get().table?.characters ?? {}).find((c) => !before.has(c.id));
+                  setCreatingNpc(false);
+                  if (fresh) setSelected(fresh.id);
+                }
+                return r.ok;
+              }}
+            />
+          </>
+        ) : current ? (
+          <CharacterSheet ch={current} ownerName={current.kind === 'npc' ? undefined : table.players[current.ownerId]?.name} />
+        ) : <div className="empty">Selecione uma ficha.</div>}
       </div>
     </div>
   );
@@ -140,6 +176,7 @@ function CharRow({ c, active, onClick }: { c: Character; active: boolean; onClic
     <button className={`card card-hover${active ? ' card-selected' : ''}`} style={{ padding: '8px 10px', textAlign: 'left' }} onClick={onClick}>
       <div className="row">
         <strong className="grow">{c.name}</strong>
+        {c.kind === 'npc' && c.visible && <Eye size={13} className="muted" />}
         <StatusBadge status={c.status} />
       </div>
       <div className="row tiny muted">

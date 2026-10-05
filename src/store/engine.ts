@@ -2,10 +2,10 @@
 // Jogador nunca altera estado direto — manda uma GameAction, o motor confere
 // dono da ficha, regra e permissão (livre / solicitar / bloqueada) e aplica.
 import type {
-  Actor, Character, CharacterDraft, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
-  PendingRequest, TableState,
+  Actor, Character, CharacterDraft, CharacterKind, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
+  PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
-import { ITEM_TYPES } from '../model/types';
+import { GM_OWNER, ITEM_TYPES } from '../model/types';
 import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
 } from '../model/permissions';
@@ -42,6 +42,8 @@ const MAX_PENDING_PER_PLAYER = 20;
 const MAX_CHARACTERS_PER_PLAYER = 10;
 const MAX_ITEMS = 200;
 const MAX_LIBRARY = 500;
+const MAX_NPCS = 200;
+const MAX_THREATS = 300;
 
 // ── Criação ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     updatedAt: now,
     players: {},
     characters: {},
+    threats: {},
     itemLibrary: {},
     permissions: { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} },
     requests: [],
@@ -116,6 +119,79 @@ function getChar(s: TableState, id: unknown): Character {
   return c ?? fail('Ficha não encontrada.');
 }
 
+function getThreat(s: TableState, id: unknown): Threat {
+  const t = typeof id === 'string' ? s.threats[id] : undefined;
+  return t ?? fail('Ameaça não encontrada.');
+}
+
+function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterKind, ctx: EngineCtx): Character {
+  const now = ctx.now();
+  const c: Character = {
+    id: ctx.newId(),
+    kind,
+    visible: false,
+    ownerId,
+    name: draft.name,
+    concept: draft.concept,
+    attributes: draft.attributes,
+    levels: [{ classId: draft.classId, abilityId: draft.abilityId }],
+    current: { pv: 0, pe: 0 },
+    permanentLoss: { pv: 0, pe: 0 },
+    inventory: [],
+    notes: draft.notes,
+    status: kind === 'npc' ? 'approved' : 'pending',
+    createdAt: now,
+    updatedAt: now,
+  };
+  const d = deriveStats(c);
+  c.current = { pv: d.pvMax, pe: d.peMax };
+  return c;
+}
+
+const THREAT_ATTR_MIN = -10;
+const THREAT_ATTR_MAX = 30;
+const MAX_THREAT_ENTRIES = 30;
+
+function cleanThreat(raw: unknown, ctx: EngineCtx): ThreatData {
+  if (!raw || typeof raw !== 'object') return fail('Ameaça inválida.');
+  const r = raw as Record<string, unknown>;
+  const attrsRaw = (r.attributes ?? {}) as Record<string, unknown>;
+  const attributes = Object.fromEntries(
+    ATTR_KEYS.map((k) => [k, int(attrsRaw[k] ?? 0, THREAT_ATTR_MIN, THREAT_ATTR_MAX, `${ATTRIBUTES[k].short}`)]),
+  ) as ThreatData['attributes'];
+  const list = (v: unknown, field: string): Record<string, unknown>[] => {
+    if (v === undefined) return [];
+    if (!Array.isArray(v)) return fail(`${field} inválido.`);
+    if (v.length > MAX_THREAT_ENTRIES) fail(`Máximo de ${MAX_THREAT_ENTRIES} ${field.toLowerCase()}.`);
+    return v.map((x) => (x && typeof x === 'object' ? x as Record<string, unknown> : fail(`${field} inválido.`)));
+  };
+  const id = (v: unknown) => (typeof v === 'string' && /^[\w-]{1,40}$/.test(v) ? v : ctx.newId());
+  return {
+    name: str(r.name, LIMITS.name, 'Nome', true),
+    concept: str(r.concept ?? '', LIMITS.concept, 'Descrição'),
+    attributes,
+    pvMax: int(r.pvMax, 1, 9999, 'PV máximo'),
+    peMax: int(r.peMax ?? 0, 0, 9999, 'PE máximo'),
+    def: int(r.def, 0, 99, 'Defesa'),
+    von: int(r.von, 0, 99, 'Vontade'),
+    rd: int(r.rd ?? 0, 0, 99, 'RD'),
+    attacks: list(r.attacks, 'Ataques').map((a) => ({
+      id: id(a.id),
+      name: str(a.name, LIMITS.itemName, 'Nome do ataque', true),
+      bonus: int(a.bonus ?? 0, -20, 50, 'Bônus de ataque'),
+      damage: str(a.damage ?? '', LIMITS.itemDamage, 'Dano'),
+      notes: str(a.notes ?? '', 300, 'Observação do ataque'),
+    })),
+    abilities: list(r.abilities, 'Habilidades').map((a) => ({
+      id: id(a.id),
+      name: str(a.name, LIMITS.itemName, 'Nome da habilidade', true),
+      cost: str(a.cost ?? '', 40, 'Custo'),
+      text: str(a.text ?? '', LIMITS.itemText, 'Texto da habilidade'),
+    })),
+    notes: str(r.notes ?? '', LIMITS.notes, 'Anotações'),
+  };
+}
+
 function log(s: TableState, ctx: EngineCtx, e: Omit<LogEntry, 'id' | 'at'>) {
   s.log.push({ id: ctx.newId(), at: ctx.now(), ...e });
   if (s.log.length > MAX_LOG) s.log.splice(0, s.log.length - MAX_LOG);
@@ -135,6 +211,8 @@ function itemLabel(it: ItemData, qty?: number) {
 
 const GM_ONLY = new Set<GameAction['type']>([
   'character/approve', 'character/reject', 'character/permanentLoss',
+  'npc/create', 'npc/visibility',
+  'threat/upsert', 'threat/duplicate', 'threat/delete', 'threat/resource', 'threat/visibility',
   'library/upsert', 'library/delete', 'library/give',
   'permissions/global', 'permissions/player', 'request/resolve', 'table/rename', 'log/clear',
 ]);
@@ -142,6 +220,7 @@ const GM_ONLY = new Set<GameAction['type']>([
 function authorize(s: TableState, actor: Actor, a: GameAction) {
   if (actor.role === 'gm') return;
   if (GM_ONLY.has(a.type)) fail('Apenas o mestre pode fazer isso.');
+  if (a.type === 'roll' && a.threatId) fail('Apenas o mestre rola pelas ameaças.');
   if ('characterId' in a && a.characterId !== undefined) {
     const c = getChar(s, a.characterId);
     if (c.ownerId !== actor.playerId) fail('Essa ficha não é sua.');
@@ -162,26 +241,89 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const draft = cleanDraft(a.draft);
       const mine = Object.values(s.characters).filter((c) => c.ownerId === actor.playerId);
       if (mine.length >= MAX_CHARACTERS_PER_PLAYER) fail('Limite de fichas atingido.');
-      const c: Character = {
-        id: ctx.newId(),
-        ownerId: actor.playerId,
-        name: draft.name,
-        concept: draft.concept,
-        attributes: draft.attributes,
-        levels: [{ classId: draft.classId, abilityId: draft.abilityId }],
-        current: { pv: 0, pe: 0 },
-        permanentLoss: { pv: 0, pe: 0 },
-        inventory: [],
-        notes: draft.notes,
-        status: 'pending',
-        createdAt: now,
-        updatedAt: now,
-      };
-      const d = deriveStats(c);
-      c.current = { pv: d.pvMax, pe: d.peMax };
+      const c = buildCharacter(draft, actor.playerId, 'pc', ctx);
       s.characters[c.id] = c;
       log(s, ctx, { kind: 'system', actorName: who, characterName: c.name, text: `enviou a ficha de ${c.name} para aprovação.` });
       return c.id;
+    }
+
+    case 'npc/create': {
+      const draft = cleanDraft(a.draft);
+      const npcs = Object.values(s.characters).filter((c) => c.kind === 'npc');
+      if (npcs.length >= MAX_NPCS) fail('Limite de NPCs atingido.');
+      const c = buildCharacter(draft, GM_OWNER, 'npc', ctx);
+      s.characters[c.id] = c;
+      return c.id;
+    }
+
+    case 'npc/visibility': {
+      const c = getChar(s, a.characterId);
+      if (c.kind !== 'npc') fail('Só NPCs têm visibilidade.');
+      c.visible = !!a.visible;
+      c.updatedAt = now;
+      return;
+    }
+
+    case 'threat/upsert': {
+      const data = cleanThreat(a.data, ctx);
+      if (a.threatId) {
+        const t = getThreat(s, a.threatId);
+        Object.assign(t, data, { updatedAt: now });
+        t.current.pv = Math.min(t.current.pv, t.pvMax);
+        t.current.pe = Math.min(t.current.pe, t.peMax);
+        return t.id;
+      }
+      if (Object.keys(s.threats).length >= MAX_THREATS) fail('Limite de ameaças atingido.');
+      const t: Threat = { ...data, id: ctx.newId(), current: { pv: data.pvMax, pe: data.peMax }, visible: false, createdAt: now, updatedAt: now };
+      s.threats[t.id] = t;
+      return t.id;
+    }
+
+    case 'threat/duplicate': {
+      const src = getThreat(s, a.threatId);
+      if (Object.keys(s.threats).length >= MAX_THREATS) fail('Limite de ameaças atingido.');
+      const same = Object.values(s.threats).filter((t) => t.name.replace(/ \d+$/, '') === src.name.replace(/ \d+$/, '')).length;
+      const base = src.name.replace(/ \d+$/, '');
+      const copy: Threat = {
+        ...structuredClone(src),
+        id: ctx.newId(),
+        name: `${base} ${same + 1}`.slice(0, LIMITS.name),
+        current: { pv: src.pvMax, pe: src.peMax },
+        visible: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      s.threats[copy.id] = copy;
+      return copy.id;
+    }
+
+    case 'threat/delete': {
+      const t = getThreat(s, a.threatId);
+      delete s.threats[t.id];
+      return;
+    }
+
+    case 'threat/resource': {
+      const t = getThreat(s, a.threatId);
+      const pv = int(a.pv, -9999, t.pvMax, 'PV');
+      const pe = int(a.pe, 0, t.peMax, 'PE');
+      const before = { ...t.current };
+      t.current = { pv, pe };
+      t.updatedAt = now;
+      const parts: string[] = [];
+      if (before.pv !== pv) parts.push(`PV ${before.pv} → ${pv}`);
+      if (before.pe !== pe) parts.push(`PE ${before.pe} → ${pe}`);
+      if (!parts.length) return;
+      const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
+      log(s, ctx, { kind: 'resource', actorName: who, characterName: t.name, text: `${t.name}: ${parts.join(', ')}${reason ? ` (${reason})` : ''}.`, hidden: !t.visible });
+      return;
+    }
+
+    case 'threat/visibility': {
+      const t = getThreat(s, a.threatId);
+      t.visible = !!a.visible;
+      t.updatedAt = now;
+      return;
     }
 
     case 'character/resubmit': {
@@ -438,7 +580,11 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       let levelBonus: number | undefined;
       let attr = a.attr;
       if (attr !== undefined && !ATTR_KEYS.includes(attr)) fail('Atributo inválido.');
-      if (a.characterId) {
+      if (a.threatId) {
+        const t = getThreat(s, a.threatId);
+        charName = t.name;
+        if (attr) extra = t.attributes[attr];
+      } else if (a.characterId) {
         const c = getChar(s, a.characterId);
         charName = c.name;
         if (attr) {

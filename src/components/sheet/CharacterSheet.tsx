@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Dices, NotebookPen, Skull, Undo2, X } from 'lucide-react';
+import { Check, Dices, Eye, EyeOff, NotebookPen, Skull, Undo2, X } from 'lucide-react';
 import type { Character } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { CLASSES } from '../../rules/classes';
@@ -51,6 +51,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
             <div className="row-wrap mt">
               <ClassChips ch={ch} />
               <StatusBadge status={ch.status} />
+              {ch.kind === 'npc' && <span className="badge badge-gold">NPC</span>}
               {ownerName && <span className="tiny muted">Jogador: {ownerName}</span>}
             </div>
           </div>
@@ -160,6 +161,12 @@ function GmControls({ ch }: { ch: Character }) {
   return (
     <div className="col" style={{ alignItems: 'flex-end' }}>
       <div className="row-wrap">
+        {ch.kind === 'npc' && (
+          <button className={`btn btn-sm${ch.visible ? ' btn-primary' : ''}`} title="Mostrar nome e conceito aos jogadores"
+            onClick={() => act({ type: 'npc/visibility', characterId: ch.id, visible: !ch.visible })}>
+            {ch.visible ? <Eye size={14} /> : <EyeOff size={14} />} {ch.visible ? 'Visível' : 'Oculto'}
+          </button>
+        )}
         <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE (Pacto etc.)"><Skull size={14} /> Perda permanente</button>
         <ConfirmButton onConfirm={() => act({ type: 'character/delete', characterId: ch.id }, 'Ficha excluída.')}><X size={14} /> Excluir</ConfirmButton>
       </div>

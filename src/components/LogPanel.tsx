@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Dices, EyeOff, Trash2 } from 'lucide-react';
 import type { AttrKey } from '../rules/attributes';
 import { ATTR_KEYS, ATTRIBUTES } from '../rules/attributes';
-import type { Character, LogEntry } from '../model/types';
+import type { Character, LogEntry, Threat } from '../model/types';
 import { useAct } from './act';
 import ConfirmButton from './common/ConfirmButton';
 
@@ -42,10 +42,13 @@ function Entry({ e }: { e: LogEntry }) {
   );
 }
 
-export default function LogPanel({ log, characters }: { log: LogEntry[]; characters: Character[] }) {
+export default function LogPanel({ log, characters, threats = [] }: { log: LogEntry[]; characters: Character[]; threats?: Threat[] }) {
   const { act, role } = useAct();
   const approved = characters.filter((c) => c.status === 'approved');
-  const [charId, setCharId] = useState<string>(approved[0]?.id ?? '');
+  // Valor do seletor: "c:<id>" (ficha) ou "t:<id>" (ameaça).
+  const [who, setWho] = useState<string>(approved[0] ? `c:${approved[0].id}` : '');
+  const charId = who.startsWith('c:') ? who.slice(2) : '';
+  const threatId = who.startsWith('t:') ? who.slice(2) : '';
   const [attr, setAttr] = useState<AttrKey | ''>('');
   const [expr, setExpr] = useState('d20');
   const [label, setLabel] = useState('');
@@ -55,14 +58,16 @@ export default function LogPanel({ log, characters }: { log: LogEntry[]; charact
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (charId && !approved.some((c) => c.id === charId)) setCharId(approved[0]?.id ?? '');
-  }, [approved, charId]);
+    if (charId && !approved.some((c) => c.id === charId)) setWho(approved[0] ? `c:${approved[0].id}` : '');
+    if (threatId && !threats.some((t) => t.id === threatId)) setWho('');
+  }, [approved, threats, charId, threatId]);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [log.length]);
 
   const roll = () => act({
     type: 'roll',
     expr: expr.trim() || 'd20',
     characterId: charId || undefined,
+    threatId: threatId || undefined,
     attr: attr || undefined,
     label: label.trim() || undefined,
     target: target ? parseInt(target, 10) : undefined,
@@ -78,15 +83,20 @@ export default function LogPanel({ log, characters }: { log: LogEntry[]; charact
         <div className="col gap-lg">
           <div className="field">
             <label className="label">Personagem</label>
-            <select className="select" value={charId} onChange={(e) => setCharId(e.target.value)}>
+            <select className="select" value={who} onChange={(e) => setWho(e.target.value)}>
               <option value="">{role === 'gm' ? 'Mestre (sem ficha)' : 'Sem ficha'}</option>
-              {approved.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {approved.map((c) => <option key={c.id} value={`c:${c.id}`}>{c.name}{c.kind === 'npc' ? ' (NPC)' : ''}</option>)}
+              {threats.length > 0 && (
+                <optgroup label="Ameaças">
+                  {threats.map((t) => <option key={t.id} value={`t:${t.id}`}>{t.name}</option>)}
+                </optgroup>
+              )}
             </select>
           </div>
           <div className="grid-2">
             <div className="field">
               <label className="label">Teste de atributo</label>
-              <select className="select" value={attr} disabled={!charId} onChange={(e) => setAttr(e.target.value as AttrKey | '')}>
+              <select className="select" value={attr} disabled={!who} onChange={(e) => setAttr(e.target.value as AttrKey | '')}>
                 <option value="">Nenhum</option>
                 {ATTR_KEYS.map((k) => <option key={k} value={k}>{ATTRIBUTES[k].name}</option>)}
               </select>

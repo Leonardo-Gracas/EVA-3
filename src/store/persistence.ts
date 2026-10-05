@@ -129,6 +129,7 @@ export async function readBackup(file: File): Promise<TableState> {
 export function migrate(t: TableState): TableState {
   t.players ??= {};
   t.characters ??= {};
+  t.threats ??= {};
   t.itemLibrary ??= {};
   t.requests ??= [];
   t.log ??= [];
@@ -139,6 +140,8 @@ export function migrate(t: TableState): TableState {
     c.permanentLoss ??= { pv: 0, pe: 0 };
     c.inventory ??= [];
     c.notes ??= '';
+    c.kind ??= 'pc';
+    c.visible ??= false;
   }
   return t;
 }

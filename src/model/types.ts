@@ -12,8 +12,17 @@ export interface LevelPick {
 
 export type CharacterStatus = 'pending' | 'approved' | 'rejected';
 
+/** pc = ficha de jogador; npc = ficha do mestre, mesmas regras, sem jogador. */
+export type CharacterKind = 'pc' | 'npc';
+
+/** Dono das fichas de NPC. */
+export const GM_OWNER = 'gm';
+
 export interface Character {
   id: string;
+  kind: CharacterKind;
+  /** NPC: aparece (só nome e conceito) para os jogadores. */
+  visible: boolean;
   ownerId: string;
   name: string;
   concept: string;
@@ -75,6 +84,48 @@ export interface InventoryItem extends ItemData {
   qty: number;
   equipped: boolean;
   libraryId?: string;
+}
+
+// ── Ameaças ──────────────────────────────────────────────────────────────────
+// Fichas de combate do mestre: valores livres, sem compra de pontos nem classe.
+
+export interface ThreatAttack {
+  id: string;
+  name: string;
+  /** Bônus somado ao d20 do ataque. */
+  bonus: number;
+  damage: string;
+  notes: string;
+}
+
+export interface ThreatAbility {
+  id: string;
+  name: string;
+  cost: string;
+  text: string;
+}
+
+export interface ThreatData {
+  name: string;
+  concept: string;
+  attributes: Attributes;
+  pvMax: number;
+  peMax: number;
+  def: number;
+  von: number;
+  rd: number;
+  attacks: ThreatAttack[];
+  abilities: ThreatAbility[];
+  notes: string;
+}
+
+export interface Threat extends ThreatData {
+  id: string;
+  current: { pv: number; pe: number };
+  /** Aparece (só nome e descrição) para os jogadores. */
+  visible: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ── Mesa ─────────────────────────────────────────────────────────────────────
@@ -157,6 +208,7 @@ export interface TableState {
   updatedAt: number;
   players: Record<string, PlayerRecord>;
   characters: Record<string, Character>;
+  threats: Record<string, Threat>;
   itemLibrary: Record<string, LibraryItem>;
   permissions: PermissionState;
   requests: PendingRequest[];
@@ -172,6 +224,13 @@ export type GameAction =
   | { type: 'character/reject'; characterId: string; reason: string }
   | { type: 'character/delete'; characterId: string }
   | { type: 'character/permanentLoss'; characterId: string; pv: number; pe: number }
+  | { type: 'npc/create'; draft: CharacterDraft }
+  | { type: 'npc/visibility'; characterId: string; visible: boolean }
+  | { type: 'threat/upsert'; threatId?: string; data: ThreatData }
+  | { type: 'threat/duplicate'; threatId: string }
+  | { type: 'threat/delete'; threatId: string }
+  | { type: 'threat/resource'; threatId: string; pv: number; pe: number; reason?: string }
+  | { type: 'threat/visibility'; threatId: string; visible: boolean }
   | { type: 'resource/set'; characterId: string; pv: number; pe: number; reason?: string }
   | { type: 'ability/use'; characterId: string; abilityId: string; pe: number; pv: number; note?: string }
   | { type: 'level/up'; characterId: string; classId: ClassId; abilityId: string | null }
@@ -186,7 +245,7 @@ export type GameAction =
   | { type: 'permissions/global'; key: PermissionKey; value: ActionPermission }
   | { type: 'permissions/player'; playerId: string; key: PermissionKey; value: ActionPermission | null }
   | { type: 'request/resolve'; requestId: string; approve: boolean }
-  | { type: 'roll'; expr: string; characterId?: string; attr?: AttrKey; label?: string; target?: number; hidden?: boolean }
+  | { type: 'roll'; expr: string; characterId?: string; threatId?: string; attr?: AttrKey; label?: string; target?: number; hidden?: boolean }
   | { type: 'table/rename'; name: string }
   | { type: 'log/clear' };
 
@@ -196,6 +255,7 @@ export type Actor = { role: 'gm'; name: string } | { role: 'player'; playerId: s
 
 export interface PublicCharacter {
   id: string;
+  kind: CharacterKind;
   ownerId: string;
   ownerName: string;
   name: string;
@@ -211,6 +271,7 @@ export interface PlayerView {
   players: Array<{ id: string; name: string; online: boolean }>;
   myCharacters: Character[];
   others: PublicCharacter[];
+  threats: Array<{ id: string; name: string; concept: string }>;
   myRequests: PendingRequest[];
   permissions: Permissions;
   log: LogEntry[];

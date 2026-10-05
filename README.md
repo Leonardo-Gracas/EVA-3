@@ -21,6 +21,8 @@ Ficha, classes e habilidades são estáticas, em `src/rules/`:
 - `derive.ts`: PV/PE máximos, DEF (10 + DES), VON (10 + FÉ), bônus de teste em nível par, limiar de morte (o mais negativo entre −10 e −PV/2).
 - `validate.ts`: até 2 classes, 1 habilidade por nível, pré-requisitos.
 
+O mestre também cria **NPCs** e **ameaças**. NPC é uma ficha comum, com as mesmas regras, mas sem jogador: nasce aprovada e fica oculta até o mestre torná-la visível (os jogadores veem só nome e conceito). Ameaça é uma ficha de combate com valores livres (atributos de −10 a 30, PV, PE, DEF, VON, RD, ataques e habilidades escritas pelo mestre), com botões de dano (aplica RD), ataque, rolagem de atributo e duplicar.
+
 Itens são dados: o mestre mantém uma biblioteca e entrega aos personagens; jogadores podem adicionar/editar itens no próprio inventário conforme as permissões.
 
 ## Desenvolvimento

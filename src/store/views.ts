@@ -14,17 +14,22 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
     players: Object.values(s.players).map((p) => ({ id: p.id, name: p.name, online: online.has(p.id) })),
     myCharacters: chars.filter((c) => c.ownerId === playerId),
     others: chars
-      .filter((c) => c.ownerId !== playerId && c.status === 'approved')
+      .filter((c) => c.ownerId !== playerId && c.status === 'approved' && (c.kind !== 'npc' || c.visible))
       .map((c) => ({
         id: c.id,
+        kind: c.kind,
         ownerId: c.ownerId,
-        ownerName: s.players[c.ownerId]?.name ?? '—',
+        ownerName: c.kind === 'npc' ? 'NPC' : s.players[c.ownerId]?.name ?? '—',
         name: c.name,
         concept: c.concept,
         level: c.levels.length,
         title: titleOf(c.levels),
         status: c.status,
       })),
+    threats: Object.values(s.threats ?? {})
+      .filter((t) => t.visible)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((t) => ({ id: t.id, name: t.name, concept: t.concept })),
     myRequests: s.requests.filter((r) => r.playerId === playerId).slice(-40),
     permissions: effectivePermissions(s.permissions, playerId),
     log: s.log.filter((e) => !e.hidden || e.playerId === playerId).slice(-LOG_FOR_PLAYERS),
