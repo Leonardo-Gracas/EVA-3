@@ -32,6 +32,8 @@ export interface Character {
   current: { pv: number; pe: number };
   /** Perdas permanentes de PV/PE máximos (ex.: Pacto). Só o mestre altera. */
   permanentLoss: { pv: number; pe: number };
+  /** RD extra concedida pelo mestre (bênçãos, maldições, condições). */
+  rdBonus: { physical: number; magic: number };
   inventory: InventoryItem[];
   notes: string;
   status: CharacterStatus;
@@ -52,15 +54,36 @@ export interface CharacterDraft {
 
 // ── Itens ────────────────────────────────────────────────────────────────────
 
-export type ItemType = 'arma' | 'protecao' | 'catalisador' | 'consumivel' | 'equipamento' | 'outro';
+export type ItemType = 'arma' | 'protecao' | 'escudo' | 'catalisador' | 'consumivel' | 'municao' | 'equipamento' | 'outro';
 
 export const ITEM_TYPES: Record<ItemType, string> = {
   arma: 'Arma',
   protecao: 'Proteção',
+  escudo: 'Escudo',
   catalisador: 'Catalisador',
   consumivel: 'Consumível',
+  municao: 'Munição',
   equipamento: 'Equipamento',
   outro: 'Outro',
+};
+
+/** Durabilidade do objeto: PV, RD e Defesa do próprio item quando é alvo. */
+export interface Durability {
+  pv: number;
+  rd: number;
+  def: number;
+}
+
+/** Durabilidade padrão sugerida ao criar um item de cada tipo. */
+export const DEFAULT_DURABILITY: Record<ItemType, Durability> = {
+  arma: { pv: 10, rd: 5, def: 12 },
+  protecao: { pv: 20, rd: 5, def: 10 },
+  escudo: { pv: 15, rd: 8, def: 10 },
+  catalisador: { pv: 5, rd: 2, def: 13 },
+  consumivel: { pv: 1, rd: 0, def: 12 },
+  municao: { pv: 1, rd: 1, def: 15 },
+  equipamento: { pv: 5, rd: 2, def: 11 },
+  outro: { pv: 5, rd: 0, def: 10 },
 };
 
 export interface ItemData {
@@ -69,8 +92,12 @@ export interface ItemData {
   description: string;
   /** Texto livre: "1d8", "2d6 + FOR"... */
   damage: string;
-  /** Bônus de DEF quando equipado. */
+  /** Bônus de DEF de quem usa, quando equipado e inteiro. */
   defBonus: number;
+  /** Valor em moedas. */
+  value: number;
+  /** Durabilidade máxima do objeto. */
+  durability: Durability;
 }
 
 export interface LibraryItem extends ItemData {
@@ -81,6 +108,8 @@ export interface LibraryItem extends ItemData {
 
 export interface InventoryItem extends ItemData {
   id: string;
+  /** PV atual do objeto. 0 = quebrado. */
+  pv: number;
   qty: number;
   equipped: boolean;
   libraryId?: string;
@@ -113,7 +142,8 @@ export interface ThreatData {
   peMax: number;
   def: number;
   von: number;
-  rd: number;
+  rdPhysical: number;
+  rdMagic: number;
   attacks: ThreatAttack[];
   abilities: ThreatAbility[];
   notes: string;
@@ -149,6 +179,7 @@ export type PermissionKey =
   | 'item_update'
   | 'item_remove'
   | 'item_equip'
+  | 'item_durability'
   | 'notes_update';
 
 export type Permissions = Record<PermissionKey, ActionPermission>;
@@ -238,6 +269,8 @@ export type GameAction =
   | { type: 'item/update'; characterId: string; itemId: string; item: ItemData; qty: number }
   | { type: 'item/remove'; characterId: string; itemId: string }
   | { type: 'item/equip'; characterId: string; itemId: string; equipped: boolean }
+  | { type: 'item/durability'; characterId: string; itemId: string; pv: number; reason?: string }
+  | { type: 'character/rdBonus'; characterId: string; physical: number; magic: number }
   | { type: 'notes/update'; characterId: string; notes: string }
   | { type: 'library/upsert'; item: ItemData; itemId?: string }
   | { type: 'library/delete'; itemId: string }

@@ -21,7 +21,7 @@ export default function CharacterWizard({
 }) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<CharacterDraft>(
-    initial ?? { name: '', concept: '', notes: '', attributes: emptyAttributes(), classId: 'combatente', abilityId: null },
+    initial ?? { name: '', concept: '', notes: '', attributes: emptyAttributes(), classId: CLASS_IDS[0], abilityId: null },
   );
   const [busy, setBusy] = useState(false);
   const up = (p: Partial<CharacterDraft>) => setDraft((d) => ({ ...d, ...p }));

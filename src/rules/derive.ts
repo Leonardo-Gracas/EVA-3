@@ -14,6 +14,7 @@ export interface Derived {
   peMax: number;
   def: number;
   von: number;
+  rdPhysical: number;
   rdMagic: number;
   /** +1 nos testes de todos os atributos a cada nível par. */
   testBonus: number;
@@ -67,7 +68,7 @@ export function deathThreshold(pvMax: number): number {
 }
 
 export function deriveStats(
-  ch: Pick<Character, 'attributes' | 'levels' | 'permanentLoss'> & { inventory?: Character['inventory'] },
+  ch: Pick<Character, 'attributes' | 'levels' | 'permanentLoss'> & { inventory?: Character['inventory']; rdBonus?: Character['rdBonus'] },
 ): Derived {
   const attrs = ch.attributes;
   const levels = ch.levels;
@@ -104,6 +105,7 @@ export function deriveStats(
 
   let def = 10 + attrs.DES;
   let rdMagic = 0;
+  let rdPhysical = 0;
   let unconsciousAtZero = true;
   const damageAttrs: AttrKey[] = [];
 
@@ -114,15 +116,22 @@ export function deriveStats(
     if (e.peMax) { const v = scaled(e.peMax, attrs); pe += v; bdPe.push(`${a.name}: ${scaledLabel(e.peMax)} = ${v}`); }
     if (e.def) { const v = scaled(e.def, attrs); def += v; bdDef.push(`${v >= 0 ? '+' : ''}${v} ${a.name}`); }
     if (e.rdMagic) rdMagic += e.rdMagic;
+    if (e.rdPhysical) rdPhysical += e.rdPhysical;
     if (e.noUnconscious) unconsciousAtZero = false;
     if (e.damageAttr) damageAttrs.push(e.damageAttr);
   }
 
   for (const it of ch.inventory ?? []) {
-    if (it.equipped && it.defBonus) {
+    // Item quebrado (PV 0) não protege.
+    if (it.equipped && it.defBonus && (it.pv ?? 1) > 0) {
       def += it.defBonus;
       bdDef.push(`${it.defBonus >= 0 ? '+' : ''}${it.defBonus} ${it.name}`);
     }
+  }
+
+  if (ch.rdBonus) {
+    rdPhysical += ch.rdBonus.physical;
+    rdMagic += ch.rdBonus.magic;
   }
 
   const loss = ch.permanentLoss ?? { pv: 0, pe: 0 };
@@ -141,7 +150,8 @@ export function deriveStats(
     peMax: pe,
     def,
     von: 10 + attrs.FE,
-    rdMagic,
+    rdPhysical: Math.max(0, rdPhysical),
+    rdMagic: Math.max(0, rdMagic),
     testBonus: Math.floor(levels.length / 2),
     deathAt: deathThreshold(pv),
     unconsciousAtZero,

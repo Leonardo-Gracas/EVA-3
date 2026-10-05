@@ -5,7 +5,7 @@ import type {
   Actor, Character, CharacterDraft, CharacterKind, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
   PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
-import { GM_OWNER, ITEM_TYPES } from '../model/types';
+import { DEFAULT_DURABILITY, GM_OWNER, ITEM_TYPES } from '../model/types';
 import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
 } from '../model/permissions';
@@ -90,12 +90,19 @@ function cleanItem(raw: unknown): ItemData {
   if (!raw || typeof raw !== 'object') return fail('Item inválido.');
   const r = raw as Record<string, unknown>;
   const type = (typeof r.type === 'string' && r.type in ITEM_TYPES ? r.type : 'outro') as ItemType;
+  const dur = (r.durability && typeof r.durability === 'object' ? r.durability : DEFAULT_DURABILITY[type]) as Record<string, unknown>;
   return {
     name: str(r.name, LIMITS.itemName, 'Nome do item', true),
     type,
     description: str(r.description ?? '', LIMITS.itemText, 'Descrição'),
     damage: str(r.damage ?? '', LIMITS.itemDamage, 'Dano'),
     defBonus: int(r.defBonus ?? 0, -20, 20, 'Bônus de DEF'),
+    value: int(r.value ?? 0, 0, 9_999_999, 'Valor'),
+    durability: {
+      pv: int(dur.pv, 1, 9999, 'PV do item'),
+      rd: int(dur.rd ?? 0, 0, 99, 'RD do item'),
+      def: int(dur.def ?? 10, 0, 99, 'Defesa do item'),
+    },
   };
 }
 
@@ -137,6 +144,7 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
     levels: [{ classId: draft.classId, abilityId: draft.abilityId }],
     current: { pv: 0, pe: 0 },
     permanentLoss: { pv: 0, pe: 0 },
+    rdBonus: { physical: 0, magic: 0 },
     inventory: [],
     notes: draft.notes,
     status: kind === 'npc' ? 'approved' : 'pending',
@@ -174,7 +182,8 @@ function cleanThreat(raw: unknown, ctx: EngineCtx): ThreatData {
     peMax: int(r.peMax ?? 0, 0, 9999, 'PE máximo'),
     def: int(r.def, 0, 99, 'Defesa'),
     von: int(r.von, 0, 99, 'Vontade'),
-    rd: int(r.rd ?? 0, 0, 99, 'RD'),
+    rdPhysical: int(r.rdPhysical ?? r.rd ?? 0, 0, 99, 'RD física'),
+    rdMagic: int(r.rdMagic ?? 0, 0, 99, 'RD mágica'),
     attacks: list(r.attacks, 'Ataques').map((a) => ({
       id: id(a.id),
       name: str(a.name, LIMITS.itemName, 'Nome do ataque', true),
@@ -210,7 +219,7 @@ function itemLabel(it: ItemData, qty?: number) {
 // ── Autorização (dono / papel) ───────────────────────────────────────────────
 
 const GM_ONLY = new Set<GameAction['type']>([
-  'character/approve', 'character/reject', 'character/permanentLoss',
+  'character/approve', 'character/reject', 'character/permanentLoss', 'character/rdBonus',
   'npc/create', 'npc/visibility',
   'threat/upsert', 'threat/duplicate', 'threat/delete', 'threat/resource', 'threat/visibility',
   'library/upsert', 'library/delete', 'library/give',
@@ -456,7 +465,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       if (c.inventory.length >= MAX_ITEMS) fail('Inventário cheio.');
       const item = cleanItem(a.item);
       const qty = int(a.qty ?? 1, 1, 999, 'Quantidade');
-      c.inventory.push({ ...item, id: ctx.newId(), qty, equipped: false });
+      c.inventory.push({ ...item, id: ctx.newId(), qty, equipped: false, pv: item.durability.pv });
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${itemLabel(item, qty)}.` });
       return;
@@ -467,7 +476,9 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const it = c.inventory.find((i) => i.id === a.itemId) ?? fail('Item não encontrado.');
       const item = cleanItem(a.item);
       const qty = int(a.qty ?? it.qty, 1, 999, 'Quantidade');
-      Object.assign(it, item, { qty });
+      // Item inteiro continua inteiro se o máximo mudar; avariado mantém o dano.
+      const pv = it.pv >= it.durability.pv ? item.durability.pv : Math.min(it.pv, item.durability.pv);
+      Object.assign(it, item, { qty, pv });
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} editou ${itemLabel(item, qty)}.` });
       return;
@@ -489,6 +500,29 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       it.equipped = !!a.equipped;
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} ${it.equipped ? 'equipou' : 'desequipou'} ${it.name}.` });
+      return;
+    }
+
+    case 'item/durability': {
+      const c = getChar(s, a.characterId);
+      const it = c.inventory.find((i) => i.id === a.itemId) ?? fail('Item não encontrado.');
+      const pv = Math.max(0, Math.min(it.durability.pv, int(a.pv, -9999, 9999, 'PV do item')));
+      if (pv === it.pv) return;
+      const before = it.pv;
+      it.pv = pv;
+      c.updatedAt = now;
+      const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
+      log(s, ctx, {
+        kind: 'item', actorName: who, characterName: c.name,
+        text: `${it.name} de ${c.name}: PV ${before} → ${pv}${pv === 0 ? ' (quebrado)' : ''}${reason ? ` (${reason})` : ''}.`,
+      });
+      return;
+    }
+
+    case 'character/rdBonus': {
+      const c = getChar(s, a.characterId);
+      c.rdBonus = { physical: int(a.physical, -99, 99, 'RD física'), magic: int(a.magic, -99, 99, 'RD mágica') };
+      c.updatedAt = now;
       return;
     }
 
@@ -525,7 +559,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       if (c.inventory.length >= MAX_ITEMS) fail('Inventário cheio.');
       const qty = int(a.qty ?? 1, 1, 999, 'Quantidade');
       const { id: _id, createdAt: _c, updatedAt: _u, ...data } = lib;
-      const inv: InventoryItem = { ...data, id: ctx.newId(), qty, equipped: false, libraryId: lib.id };
+      const inv: InventoryItem = { ...structuredClone(data), id: ctx.newId(), qty, equipped: false, libraryId: lib.id, pv: data.durability.pv };
       c.inventory.push(inv);
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${itemLabel(lib, qty)} do mestre.` });
@@ -657,6 +691,10 @@ export function describeAction(s: TableState, a: GameAction): string {
     case 'item/equip': {
       const it = c?.inventory.find((i) => i.id === a.itemId);
       return `${n}: ${a.equipped ? 'equipar' : 'desequipar'} ${it?.name ?? 'item'}`;
+    }
+    case 'item/durability': {
+      const it = c?.inventory.find((i) => i.id === a.itemId);
+      return `${n}: ${it?.name ?? 'item'} PV ${it?.pv ?? '?'} → ${a.pv}${a.reason ? ` (${a.reason})` : ''}`;
     }
     case 'notes/update': return `${n}: editar anotações`;
     default: return a.type;

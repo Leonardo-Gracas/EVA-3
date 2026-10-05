@@ -109,6 +109,8 @@ function AdjustModal({ ch, d, onClose, onSave }: {
           <input className="input" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} placeholder="Ex.: 5" />
           <div className="row-wrap">
             <button className="btn btn-sm" disabled={!n} onClick={() => quick(-n, 0, 'Dano')}>Dano −{n || ''} PV</button>
+            <button className="btn btn-sm" disabled={!n} title={`Desconta RD física ${d.rdPhysical}`} onClick={() => quick(-Math.max(0, n - d.rdPhysical), 0, `Dano físico ${n} − RD ${d.rdPhysical}`)}>Dano físico</button>
+            <button className="btn btn-sm" disabled={!n} title={`Desconta RD mágica ${d.rdMagic}`} onClick={() => quick(-Math.max(0, n - d.rdMagic), 0, `Dano mágico ${n} − RD ${d.rdMagic}`)}>Dano mágico</button>
             <button className="btn btn-sm" disabled={!n} onClick={() => quick(n, 0, 'Cura')}>Cura +{n || ''} PV</button>
             <button className="btn btn-sm" disabled={!n} onClick={() => quick(0, -n, 'Gasto')}>Gastar {n || ''} PE</button>
             <button className="btn btn-sm" disabled={!n} onClick={() => quick(0, n, 'Recuperação')}>Recuperar {n || ''} PE</button>

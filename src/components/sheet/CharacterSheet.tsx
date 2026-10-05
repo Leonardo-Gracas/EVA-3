@@ -66,6 +66,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
         <div className="stat" title={d.breakdown.def.join('\n')}><span className="stat-val">{d.def}</span><span className="stat-lbl">Defesa</span></div>
         <div className="stat" title="10 + FÉ"><span className="stat-val">{d.von}</span><span className="stat-lbl">Vontade</span></div>
         <div className="stat" title="+1 em todos os testes a cada nível par"><span className="stat-val">{fmtMod(d.testBonus)}</span><span className="stat-lbl">Bônus de teste</span></div>
+        <div className="stat" title="Redução de dano contra dano físico"><span className="stat-val">{d.rdPhysical}</span><span className="stat-lbl">RD física</span></div>
         <div className="stat" title="Redução de dano contra dano mágico"><span className="stat-val">{d.rdMagic}</span><span className="stat-lbl">RD mágica</span></div>
       </div>
 
@@ -135,6 +136,9 @@ function GmControls({ ch }: { ch: Character }) {
   const [lossOpen, setLossOpen] = useState(false);
   const [lossPv, setLossPv] = useState(String(ch.permanentLoss.pv));
   const [lossPe, setLossPe] = useState(String(ch.permanentLoss.pe));
+  const [rdP, setRdP] = useState(String(ch.rdBonus?.physical ?? 0));
+  const [rdM, setRdM] = useState(String(ch.rdBonus?.magic ?? 0));
+  const num = (v: string) => v.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
 
   if (ch.status !== 'approved') {
     return (
@@ -167,16 +171,19 @@ function GmControls({ ch }: { ch: Character }) {
             {ch.visible ? <Eye size={14} /> : <EyeOff size={14} />} {ch.visible ? 'Visível' : 'Oculto'}
           </button>
         )}
-        <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE (Pacto etc.)"><Skull size={14} /> Perda permanente</button>
+        <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE e RD extra"><Skull size={14} /> Ajustes</button>
         <ConfirmButton onConfirm={() => act({ type: 'character/delete', characterId: ch.id }, 'Ficha excluída.')}><X size={14} /> Excluir</ConfirmButton>
       </div>
       {lossOpen && (
         <div className="row-wrap">
           <label className="small secondary">PV <input className="input" style={{ width: 70 }} value={lossPv} onChange={(e) => setLossPv(e.target.value.replace(/[^\d]/g, ''))} /></label>
           <label className="small secondary">PE <input className="input" style={{ width: 70 }} value={lossPe} onChange={(e) => setLossPe(e.target.value.replace(/[^\d]/g, ''))} /></label>
+          <label className="small secondary" title="RD física extra">RD fís. <input className="input" style={{ width: 64 }} value={rdP} onChange={(e) => setRdP(num(e.target.value))} /></label>
+          <label className="small secondary" title="RD mágica extra">RD mág. <input className="input" style={{ width: 64 }} value={rdM} onChange={(e) => setRdM(num(e.target.value))} /></label>
           <button className="btn btn-sm btn-primary" onClick={async () => {
-            const r = await act({ type: 'character/permanentLoss', characterId: ch.id, pv: parseInt(lossPv, 10) || 0, pe: parseInt(lossPe, 10) || 0 }, 'Perda permanente salva.');
-            if (r.ok) setLossOpen(false);
+            const a = await act({ type: 'character/permanentLoss', characterId: ch.id, pv: parseInt(lossPv, 10) || 0, pe: parseInt(lossPe, 10) || 0 });
+            const b = await act({ type: 'character/rdBonus', characterId: ch.id, physical: parseInt(rdP, 10) || 0, magic: parseInt(rdM, 10) || 0 }, 'Ajustes salvos.');
+            if (a.ok && b.ok) setLossOpen(false);
           }}>Salvar</button>
         </div>
       )}

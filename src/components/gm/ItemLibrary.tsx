@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Gift, Pencil, Plus, Search, Trash2 } from 'lucide-react';
-import { ITEM_TYPES, type LibraryItem, type TableState } from '../../model/types';
+import type { LibraryItem, TableState } from '../../model/types';
+import { ItemBadges } from '../sheet/Inventory';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
@@ -35,9 +36,7 @@ export default function ItemLibrary({ table }: { table: TableState }) {
             <div className="grow">
               <div className="row-wrap">
                 <strong>{it.name}</strong>
-                <span className="badge">{ITEM_TYPES[it.type]}</span>
-                {it.damage && <span className="badge badge-err">{it.damage}</span>}
-                {it.defBonus !== 0 && <span className="badge badge-ok">DEF {it.defBonus > 0 ? '+' : ''}{it.defBonus}</span>}
+                <ItemBadges it={it} />
               </div>
               {it.description && <div className="small muted" style={{ marginTop: 2 }}>{it.description}</div>}
             </div>

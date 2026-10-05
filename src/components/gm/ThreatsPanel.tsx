@@ -107,8 +107,8 @@ function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void 
       <div className="stats">
         <div className="stat"><span className="stat-val">{t.def}</span><span className="stat-lbl">Defesa</span></div>
         <div className="stat"><span className="stat-val">{t.von}</span><span className="stat-lbl">Vontade</span></div>
-        <div className="stat"><span className="stat-val">{t.rd}</span><span className="stat-lbl">RD</span></div>
-        <div className="stat"><span className="stat-val">{t.attacks.length}</span><span className="stat-lbl">Ataques</span></div>
+        <div className="stat"><span className="stat-val">{t.rdPhysical}</span><span className="stat-lbl">RD física</span></div>
+        <div className="stat"><span className="stat-val">{t.rdMagic}</span><span className="stat-lbl">RD mágica</span></div>
       </div>
 
       <div className="card">
@@ -134,7 +134,8 @@ function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void 
         </div>
         <div className="row-wrap mt">
           <input className="input" style={{ width: 90 }} inputMode="numeric" placeholder="Qtd." value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - Math.max(0, n - t.rd), t.current.pe, `Dano ${n}${t.rd ? ` − RD ${t.rd}` : ''}`)} title="Aplica a RD">Dano</button>
+          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - Math.max(0, n - t.rdPhysical), t.current.pe, `Dano físico ${n}${t.rdPhysical ? ` − RD ${t.rdPhysical}` : ''}`)} title="Aplica a RD física">Dano físico</button>
+          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - Math.max(0, n - t.rdMagic), t.current.pe, `Dano mágico ${n}${t.rdMagic ? ` − RD ${t.rdMagic}` : ''}`)} title="Aplica a RD mágica">Dano mágico</button>
           <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - n, t.current.pe, `Dano direto ${n}`)} title="Ignora a RD">Dano direto</button>
           <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv + n, t.current.pe, 'Cura')}>Cura</button>
           <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv, t.current.pe - n, 'Gasto')}>−PE</button>

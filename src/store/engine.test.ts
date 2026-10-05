@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch, newTable, type EngineCtx } from './engine';
 import { buildPlayerView } from './views';
+import { migrate } from './persistence';
+import { deriveStats } from '../rules/derive';
 import type { Actor, CharacterDraft, TableState } from '../model/types';
 import { emptyAttributes } from '../rules/attributes';
 
@@ -64,7 +66,7 @@ describe('motor', () => {
     s = r.state;
     // bloqueada
     s = dispatch(s, gm, { type: 'permissions/global', key: 'item_add', value: 'blocked' }, ctx).state;
-    r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador', description: '', damage: '', defBonus: 0 } }, ctx);
+    r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador', description: '', damage: '', defBonus: 0, value: 5, durability: { pv: 5, rd: 2, def: 13 } } }, ctx);
     expect(r).toMatchObject({ ok: false, error: /bloqueou/ });
   });
 
@@ -109,7 +111,7 @@ describe('motor', () => {
     const data = {
       name: 'Possuído', concept: 'Corpo tomado', notes: '',
       attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
-      pvMax: 60, peMax: 10, def: 14, von: 9, rd: 2,
+      pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0,
       attacks: [{ id: 'a1', name: 'Garras', bonus: 6, damage: '2d6+8', notes: '' }],
       abilities: [{ id: 'h1', name: 'Grito', cost: '3 PE', text: 'Atordoa.' }],
     };
@@ -126,5 +128,35 @@ describe('motor', () => {
     expect(dispatch(s, gm, { type: 'threat/upsert', data: { ...data, attributes: { ...data.attributes, FOR: 99 } } }, ctx).ok).toBe(false);
     expect(buildPlayerView(s, 'p1', new Set()).threats).toHaveLength(0);
     expect(dispatch(s, p1, { type: 'roll', expr: 'd20', threatId: t.id }, ctx).ok).toBe(false);
+  });
+
+  it('itens: durabilidade, quebrado não protege, RD extra', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    const shield = { name: 'Escudo', type: 'escudo' as const, description: '', damage: '', defBonus: 2, value: 30, durability: { pv: 15, rd: 8, def: 10 } };
+    s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: shield, qty: 1 }, ctx).state;
+    const it = s.characters[cid].inventory[0];
+    expect(it.pv).toBe(15);
+    s = dispatch(s, gm, { type: 'item/equip', characterId: cid, itemId: it.id, equipped: true }, ctx).state;
+    expect(deriveStats(s.characters[cid]).def).toBe(12);
+    s = dispatch(s, p1, { type: 'item/durability', characterId: cid, itemId: it.id, pv: -4 }, ctx).state;
+    expect(s.characters[cid].inventory[0].pv).toBe(0);
+    expect(deriveStats(s.characters[cid]).def).toBe(10);
+    s = dispatch(s, gm, { type: 'character/rdBonus', characterId: cid, physical: 3, magic: 1 }, ctx).state;
+    const d = deriveStats(s.characters[cid]);
+    expect([d.rdPhysical, d.rdMagic]).toEqual([3, 1]);
+    expect(dispatch(s, p1, { type: 'character/rdBonus', characterId: cid, physical: 9, magic: 9 }, ctx).ok).toBe(false);
+  });
+
+  it('migra itens e ameaças antigos', () => {
+    const { s: s0, cid } = setup();
+    const old = structuredClone(s0) as any;
+    old.characters[cid].inventory = [{ id: 'x', name: 'Faca', type: 'arma', description: '', damage: '1d4', defBonus: 0, qty: 1, equipped: false }];
+    delete old.characters[cid].rdBonus;
+    old.threats = { t1: { id: 't1', name: 'Velho', rd: 4, attributes: {}, attacks: [], abilities: [], current: { pv: 1, pe: 0 } } };
+    const m = migrate(old);
+    expect(m.characters[cid].inventory[0]).toMatchObject({ value: 0, pv: 10, durability: { pv: 10, rd: 5, def: 12 } });
+    expect(m.threats.t1).toMatchObject({ rdPhysical: 4, rdMagic: 0 });
+    expect(m.characters[cid].rdBonus).toEqual({ physical: 0, magic: 0 });
   });
 });

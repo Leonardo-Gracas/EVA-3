@@ -18,6 +18,8 @@ export interface AbilityEffect {
   def?: Scaled;
   /** Redução de dano contra dano mágico. */
   rdMagic?: number;
+  /** Redução de dano contra dano físico. */
+  rdPhysical?: number;
   /** PV 0 não deixa inconsciente. */
   noUnconscious?: boolean;
   /** Soma o atributo no dano final (apenas informativo na ficha). */

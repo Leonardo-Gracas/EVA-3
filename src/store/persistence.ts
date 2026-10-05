@@ -1,5 +1,6 @@
 // Mesas do mestre salvas no IndexedDB deste navegador + backup em arquivo .json.
-import type { TableState } from '../model/types';
+import type { ItemData, TableState } from '../model/types';
+import { DEFAULT_DURABILITY, ITEM_TYPES } from '../model/types';
 import { DEFAULT_PERMISSIONS } from '../model/permissions';
 
 const DB_NAME = 'eva3';
@@ -141,7 +142,24 @@ export function migrate(t: TableState): TableState {
     c.inventory ??= [];
     c.notes ??= '';
     c.kind ??= 'pc';
+    c.rdBonus ??= { physical: 0, magic: 0 };
+    for (const it of c.inventory) migrateItem(it, true);
     c.visible ??= false;
   }
+  for (const it of Object.values(t.itemLibrary)) migrateItem(it, false);
+  for (const th of Object.values(t.threats)) {
+    const legacy = th as typeof th & { rd?: number };
+    th.rdPhysical ??= legacy.rd ?? 0;
+    th.rdMagic ??= 0;
+    delete legacy.rd;
+  }
   return t;
+}
+
+/** Itens de versões antigas ganham valor e durabilidade padrão do tipo. */
+function migrateItem(it: ItemData & { pv?: number }, inventory: boolean) {
+  if (!(it.type in ITEM_TYPES)) it.type = 'outro';
+  it.value ??= 0;
+  it.durability ??= { ...DEFAULT_DURABILITY[it.type] };
+  if (inventory && typeof it.pv !== 'number') it.pv = it.durability.pv;
 }

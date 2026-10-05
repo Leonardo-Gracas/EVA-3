@@ -13,7 +13,8 @@ export const EMPTY_THREAT: ThreatData = {
   peMax: 0,
   def: 10,
   von: 10,
-  rd: 0,
+  rdPhysical: 0,
+  rdMagic: 0,
   attacks: [],
   abilities: [],
   notes: '',
@@ -32,9 +33,9 @@ function Num({ value, onChange, width = 70 }: { value: string; onChange: (v: str
 
 const n = (v: string) => parseInt(v, 10) || 0;
 
-type Draft = Omit<ThreatData, 'attributes' | 'pvMax' | 'peMax' | 'def' | 'von' | 'rd' | 'attacks'> & {
+type Draft = Omit<ThreatData, 'attributes' | 'pvMax' | 'peMax' | 'def' | 'von' | 'rdPhysical' | 'rdMagic' | 'attacks'> & {
   attributes: Record<string, string>;
-  pvMax: string; peMax: string; def: string; von: string; rd: string;
+  pvMax: string; peMax: string; def: string; von: string; rdPhysical: string; rdMagic: string;
   attacks: Array<Omit<ThreatAttack, 'bonus'> & { bonus: string }>;
 };
 
@@ -42,7 +43,7 @@ function toDraft(d: ThreatData): Draft {
   return {
     ...d,
     attributes: Object.fromEntries(ATTR_KEYS.map((k) => [k, String(d.attributes[k])])),
-    pvMax: String(d.pvMax), peMax: String(d.peMax), def: String(d.def), von: String(d.von), rd: String(d.rd),
+    pvMax: String(d.pvMax), peMax: String(d.peMax), def: String(d.def), von: String(d.von), rdPhysical: String(d.rdPhysical), rdMagic: String(d.rdMagic),
     attacks: d.attacks.map((a) => ({ ...a, bonus: String(a.bonus) })),
   };
 }
@@ -52,7 +53,7 @@ function fromDraft(d: Draft): ThreatData {
     ...d,
     name: d.name.trim(),
     attributes: Object.fromEntries(ATTR_KEYS.map((k) => [k, n(d.attributes[k])])) as ThreatData['attributes'],
-    pvMax: n(d.pvMax), peMax: n(d.peMax), def: n(d.def), von: n(d.von), rd: n(d.rd),
+    pvMax: n(d.pvMax), peMax: n(d.peMax), def: n(d.def), von: n(d.von), rdPhysical: n(d.rdPhysical), rdMagic: n(d.rdMagic),
     attacks: d.attacks.map((a) => ({ ...a, bonus: n(a.bonus) })),
   };
 }
@@ -112,7 +113,8 @@ export default function ThreatEditor({ title, initial, onSave, onClose }: {
             <label className="field small secondary">PE máx.<Num value={d.peMax} onChange={(v) => up({ peMax: v })} /></label>
             <label className="field small secondary">Defesa<Num value={d.def} onChange={(v) => up({ def: v })} /></label>
             <label className="field small secondary">Vontade<Num value={d.von} onChange={(v) => up({ von: v })} /></label>
-            <label className="field small secondary">RD<Num value={d.rd} onChange={(v) => up({ rd: v })} /></label>
+            <label className="field small secondary">RD física<Num value={d.rdPhysical} onChange={(v) => up({ rdPhysical: v })} /></label>
+            <label className="field small secondary">RD mágica<Num value={d.rdMagic} onChange={(v) => up({ rdMagic: v })} /></label>
           </div>
         </div>
 

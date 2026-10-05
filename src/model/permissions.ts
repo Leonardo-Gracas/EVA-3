@@ -8,6 +8,7 @@ export const PERMISSION_KEYS: PermissionKey[] = [
   'item_update',
   'item_remove',
   'item_equip',
+  'item_durability',
   'notes_update',
 ];
 
@@ -19,6 +20,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, { label: string; hint: str
   item_update: { label: 'Editar item', hint: 'Mudar nome, dano, quantidade etc. de um item do inventário.' },
   item_remove: { label: 'Remover item', hint: 'Descartar item do inventário.' },
   item_equip: { label: 'Equipar / desequipar', hint: 'Itens equipados somam bônus de DEF.' },
+  item_durability: { label: 'Durabilidade de itens', hint: 'Dano e reparo no PV dos objetos do inventário.' },
   notes_update: { label: 'Editar anotações', hint: 'Texto livre da ficha.' },
 };
 
@@ -36,6 +38,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   item_update: 'request',
   item_remove: 'request',
   item_equip: 'free',
+  item_durability: 'free',
   notes_update: 'free',
 };
 
@@ -61,6 +64,7 @@ export function permissionFor(action: GameAction): PermissionKey | null {
     case 'item/update': return 'item_update';
     case 'item/remove': return 'item_remove';
     case 'item/equip': return 'item_equip';
+    case 'item/durability': return 'item_durability';
     case 'notes/update': return 'notes_update';
     default: return null;
   }

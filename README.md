@@ -23,7 +23,7 @@ Ficha, classes e habilidades são estáticas, em `src/rules/`:
 
 O mestre também cria **NPCs** e **ameaças**. NPC é uma ficha comum, com as mesmas regras, mas sem jogador: nasce aprovada e fica oculta até o mestre torná-la visível (os jogadores veem só nome e conceito). Ameaça é uma ficha de combate com valores livres (atributos de −10 a 30, PV, PE, DEF, VON, RD, ataques e habilidades escritas pelo mestre), com botões de dano (aplica RD), ataque, rolagem de atributo e duplicar.
 
-Itens são dados: o mestre mantém uma biblioteca e entrega aos personagens; jogadores podem adicionar/editar itens no próprio inventário conforme as permissões.
+Itens são dados: o mestre mantém uma biblioteca e entrega aos personagens; jogadores podem adicionar/editar itens no próprio inventário conforme as permissões. Todo item tem valor e durabilidade (PV, RD e Defesa do objeto), que nasce com o padrão do tipo; com PV 0 o item fica quebrado e deixa de dar bônus de DEF. A ficha mostra RD física e RD mágica, e o mestre pode somar RD extra em Ajustes.
 
 ## Desenvolvimento
 

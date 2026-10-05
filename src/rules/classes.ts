@@ -3,7 +3,8 @@ import type { AttrKey } from './attributes';
 
 export type ClassId = 'combatente' | 'acolito' | 'ocultista' | 'vidente';
 
-export const CLASS_IDS: ClassId[] = ['combatente', 'acolito', 'ocultista', 'vidente'];
+// Ordem de exibição: o Combatente fica por último.
+export const CLASS_IDS: ClassId[] = ['acolito', 'ocultista', 'vidente', 'combatente'];
 
 export const MAX_LEVEL = 12;
 export const MAX_CLASSES = 2;
@@ -43,7 +44,8 @@ export const CLASSES: Record<ClassId, ClassInfo> = {
     id: 'acolito',
     name: 'Acólito',
     tagline: 'Para um acólito, a magia é sagrada.',
-    description: 'Conhecedor da barreira entre o sagrado e o mundano.',
+    description:
+      'Conhecedor da barreira entre o sagrado e o mundano, e vigia dela. Sua fé é ferramenta e escudo: abençoa lâminas, cura aliados e repreende o que não deveria estar aqui. Onde a corrupção se manifesta, é o primeiro a erguer o catalisador e o último a recuar. Também é o único capaz de expurgar uma entidade de vez, se tiver forças para pagar o preço.',
     pvInitial: 10,
     pvPerLevel: 3,
     peInitial: 2,
@@ -55,7 +57,8 @@ export const CLASSES: Record<ClassId, ClassInfo> = {
     id: 'ocultista',
     name: 'Ocultista',
     tagline: 'Para um ocultista, a magia é ciência.',
-    description: 'Conhecedor das artes místicas e ocultas. Manipula a realidade como ela pede pra ser manipulada.',
+    description:
+      'Conhecedor das artes místicas e ocultas. Não reza nem pede: entende. Estuda as regras por trás da realidade e a manipula como ela pede pra ser manipulada, dobrando fogo, metal, raízes e temperatura à sua vontade. Seu conhecimento vai além do permitido, e alguns de seus caminhos cobram em sangue e alma o que outros jamais ousariam pagar.',
     pvInitial: 8,
     pvPerLevel: 2,
     peInitial: 2,

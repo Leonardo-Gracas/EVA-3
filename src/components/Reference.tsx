@@ -6,7 +6,7 @@ import AbilityCard from './sheet/AbilityCard';
 
 // Consulta rápida das regras estáticas (o que está no código).
 export default function Reference() {
-  const [cls, setCls] = useState<ClassId>('combatente');
+  const [cls, setCls] = useState<ClassId>(CLASS_IDS[0]);
   const info = CLASSES[cls];
   return (
     <div className="col gap-lg">
