@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { DEFAULT_DURABILITY, ITEM_TYPES, type ItemData, type ItemType } from '../../model/types';
+import { DEFAULT_DURABILITY, ITEM_TYPES, NO_EFFECTS, type ItemData, type ItemType } from '../../model/types';
 import { LIMITS } from '../../rules/validate';
 import Modal from '../common/Modal';
 
 export const EMPTY_ITEM: ItemData = {
-  name: '', type: 'equipamento', description: '', damage: '', defBonus: 0, value: 0,
+  name: '', type: 'equipamento', description: '', damage: '', effects: { ...NO_EFFECTS }, value: 0,
   durability: { ...DEFAULT_DURABILITY.equipamento },
 };
 
@@ -36,7 +36,9 @@ export default function ItemFormModal({
   const [type, setType] = useState<ItemType>(base.type);
   const [description, setDescription] = useState(base.description);
   const [damage, setDamage] = useState(base.damage);
-  const [def, setDef] = useState(String(base.defBonus));
+  const [def, setDef] = useState(String(base.effects.def));
+  const [effRdP, setEffRdP] = useState(String(base.effects.rdPhysical));
+  const [effRdM, setEffRdM] = useState(String(base.effects.rdMagic));
   const [value, setValue] = useState(String(base.value));
   const [qty, setQty] = useState(String(initialQty ?? 1));
   const [pv, setPv] = useState(String(base.durability.pv));
@@ -55,12 +57,11 @@ export default function ItemFormModal({
   const touch = (set: (v: string) => void) => (v: string) => { setDurTouched(true); set(v); };
 
   const isWeapon = type === 'arma' || type === 'municao';
-  const isArmor = type === 'protecao' || type === 'escudo';
 
   const submit = async () => {
     const item: ItemData = {
       name, type, description, damage,
-      defBonus: parseInt(def, 10) || 0,
+      effects: { def: parseInt(def, 10) || 0, rdPhysical: parseInt(effRdP, 10) || 0, rdMagic: parseInt(effRdM, 10) || 0 },
       value: n(value),
       durability: { pv: n(pv, 1), rd: n(rd), def: n(dDef) },
     };
@@ -94,18 +95,30 @@ export default function ItemFormModal({
           )}
         </div>
 
+        <div className="field">
+          <label className="label">Dano{!isWeapon && <span className="muted"> (se usado como arma)</span>}</label>
+          <input className="input" placeholder="Ex.: 1d8" value={damage} maxLength={LIMITS.itemDamage} onChange={(e) => setDamage(e.target.value)} />
+        </div>
+
         <div>
-          <div className="card-title" style={{ marginBottom: 6 }}>Combate</div>
-          <div className="grid-2">
+          <div className="row" style={{ marginBottom: 6 }}>
+            <div className="card-title" style={{ margin: 0 }}>Efeitos quando equipado</div>
+          </div>
+          <div className="grid-3">
             <div className="field">
-              <label className="label">Dano{!isWeapon && <span className="muted"> (se usado como arma)</span>}</label>
-              <input className="input" placeholder="Ex.: 1d8" value={damage} maxLength={LIMITS.itemDamage} onChange={(e) => setDamage(e.target.value)} />
-            </div>
-            <div className="field">
-              <label className="label">Bônus de DEF de quem usa{!isArmor && <span className="muted"> (equipado)</span>}</label>
+              <label className="label">DEF</label>
               <Num value={def} onChange={setDef} allowNeg />
             </div>
+            <div className="field">
+              <label className="label">RD física</label>
+              <Num value={effRdP} onChange={setEffRdP} allowNeg />
+            </div>
+            <div className="field">
+              <label className="label">RD mágica</label>
+              <Num value={effRdM} onChange={setEffRdM} allowNeg />
+            </div>
           </div>
+          <p className="tiny muted" style={{ marginTop: 6 }}>Somados à ficha de quem usa enquanto o item estiver equipado e inteiro. Valores negativos funcionam como penalidade.</p>
         </div>
 
         <div>

@@ -1,6 +1,6 @@
 // Mesas do mestre salvas no IndexedDB deste navegador + backup em arquivo .json.
 import type { ItemData, TableState } from '../model/types';
-import { DEFAULT_DURABILITY, ITEM_TYPES } from '../model/types';
+import { DEFAULT_DURABILITY, ITEM_TYPES, NO_EFFECTS } from '../model/types';
 import { DEFAULT_PERMISSIONS } from '../model/permissions';
 
 const DB_NAME = 'eva3';
@@ -157,8 +157,11 @@ export function migrate(t: TableState): TableState {
 }
 
 /** Itens de versões antigas ganham valor e durabilidade padrão do tipo. */
-function migrateItem(it: ItemData & { pv?: number }, inventory: boolean) {
+function migrateItem(it: ItemData & { pv?: number; defBonus?: number }, inventory: boolean) {
+  if ((it.type as string) === 'catalisador') it.type = 'catalisador_sagrado';
   if (!(it.type in ITEM_TYPES)) it.type = 'outro';
+  it.effects ??= { ...NO_EFFECTS, def: it.defBonus ?? 0 };
+  delete it.defBonus;
   it.value ??= 0;
   it.durability ??= { ...DEFAULT_DURABILITY[it.type] };
   if (inventory && typeof it.pv !== 'number') it.pv = it.durability.pv;

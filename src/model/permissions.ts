@@ -19,7 +19,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, { label: string; hint: str
   item_add: { label: 'Adicionar item', hint: 'Criar item no próprio inventário.' },
   item_update: { label: 'Editar item', hint: 'Mudar nome, dano, quantidade etc. de um item do inventário.' },
   item_remove: { label: 'Remover item', hint: 'Descartar item do inventário.' },
-  item_equip: { label: 'Equipar / desequipar', hint: 'Itens equipados somam bônus de DEF.' },
+  item_equip: { label: 'Equipar / desequipar', hint: 'Itens equipados aplicam seus bônus de DEF e RD.' },
   item_durability: { label: 'Durabilidade de itens', hint: 'Dano e reparo no PV dos objetos do inventário.' },
   notes_update: { label: 'Editar anotações', hint: 'Texto livre da ficha.' },
 };

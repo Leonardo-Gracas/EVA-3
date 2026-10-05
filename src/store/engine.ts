@@ -96,7 +96,14 @@ function cleanItem(raw: unknown): ItemData {
     type,
     description: str(r.description ?? '', LIMITS.itemText, 'Descrição'),
     damage: str(r.damage ?? '', LIMITS.itemDamage, 'Dano'),
-    defBonus: int(r.defBonus ?? 0, -20, 20, 'Bônus de DEF'),
+    effects: (() => {
+      const e = (r.effects && typeof r.effects === 'object' ? r.effects : {}) as Record<string, unknown>;
+      return {
+        def: int(e.def ?? r.defBonus ?? 0, -20, 20, 'Bônus de DEF'),
+        rdPhysical: int(e.rdPhysical ?? 0, -20, 20, 'Bônus de RD física'),
+        rdMagic: int(e.rdMagic ?? 0, -20, 20, 'Bônus de RD mágica'),
+      };
+    })(),
     value: int(r.value ?? 0, 0, 9_999_999, 'Valor'),
     durability: {
       pv: int(dur.pv, 1, 9999, 'PV do item'),

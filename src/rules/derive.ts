@@ -28,6 +28,8 @@ export interface Derived {
     pv: string[];
     pe: string[];
     def: string[];
+    rdPhysical: string[];
+    rdMagic: string[];
   };
 }
 
@@ -77,6 +79,8 @@ export function deriveStats(
 
   const bdPv: string[] = [];
   const bdPe: string[] = [];
+  const bdRdP: string[] = [];
+  const bdRdM: string[] = [];
   const bdDef: string[] = [`10 base`, `${attrs.DES >= 0 ? '+' : ''}${attrs.DES} DES`];
 
   let pv = 0;
@@ -115,23 +119,26 @@ export function deriveStats(
     if (e.pvMax) { const v = scaled(e.pvMax, attrs); pv += v; bdPv.push(`${a.name}: ${scaledLabel(e.pvMax)} = ${v}`); }
     if (e.peMax) { const v = scaled(e.peMax, attrs); pe += v; bdPe.push(`${a.name}: ${scaledLabel(e.peMax)} = ${v}`); }
     if (e.def) { const v = scaled(e.def, attrs); def += v; bdDef.push(`${v >= 0 ? '+' : ''}${v} ${a.name}`); }
-    if (e.rdMagic) rdMagic += e.rdMagic;
-    if (e.rdPhysical) rdPhysical += e.rdPhysical;
+    if (e.rdMagic) { rdMagic += e.rdMagic; bdRdM.push(`+${e.rdMagic} ${a.name}`); }
+    if (e.rdPhysical) { rdPhysical += e.rdPhysical; bdRdP.push(`+${e.rdPhysical} ${a.name}`); }
     if (e.noUnconscious) unconsciousAtZero = false;
     if (e.damageAttr) damageAttrs.push(e.damageAttr);
   }
 
   for (const it of ch.inventory ?? []) {
-    // Item quebrado (PV 0) não protege.
-    if (it.equipped && it.defBonus && (it.pv ?? 1) > 0) {
-      def += it.defBonus;
-      bdDef.push(`${it.defBonus >= 0 ? '+' : ''}${it.defBonus} ${it.name}`);
-    }
+    // Só item equipado e inteiro (PV > 0) aplica efeitos.
+    if (!it.equipped || (it.pv ?? 1) <= 0 || !it.effects) continue;
+    const e = it.effects;
+    if (e.def) { def += e.def; bdDef.push(`${e.def >= 0 ? '+' : ''}${e.def} ${it.name}`); }
+    if (e.rdPhysical) { rdPhysical += e.rdPhysical; bdRdP.push(`${e.rdPhysical >= 0 ? '+' : ''}${e.rdPhysical} ${it.name}`); }
+    if (e.rdMagic) { rdMagic += e.rdMagic; bdRdM.push(`${e.rdMagic >= 0 ? '+' : ''}${e.rdMagic} ${it.name}`); }
   }
 
   if (ch.rdBonus) {
     rdPhysical += ch.rdBonus.physical;
     rdMagic += ch.rdBonus.magic;
+    if (ch.rdBonus.physical) bdRdP.push(`${ch.rdBonus.physical >= 0 ? '+' : ''}${ch.rdBonus.physical} ajuste do mestre`);
+    if (ch.rdBonus.magic) bdRdM.push(`${ch.rdBonus.magic >= 0 ? '+' : ''}${ch.rdBonus.magic} ajuste do mestre`);
   }
 
   const loss = ch.permanentLoss ?? { pv: 0, pe: 0 };
@@ -157,7 +164,7 @@ export function deriveStats(
     unconsciousAtZero,
     abilities,
     damageAttrs,
-    breakdown: { pv: bdPv, pe: bdPe, def: bdDef },
+    breakdown: { pv: bdPv, pe: bdPe, def: bdDef, rdPhysical: bdRdP, rdMagic: bdRdM },
   };
 }
 

@@ -66,8 +66,8 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
         <div className="stat" title={d.breakdown.def.join('\n')}><span className="stat-val">{d.def}</span><span className="stat-lbl">Defesa</span></div>
         <div className="stat" title="10 + FÉ"><span className="stat-val">{d.von}</span><span className="stat-lbl">Vontade</span></div>
         <div className="stat" title="+1 em todos os testes a cada nível par"><span className="stat-val">{fmtMod(d.testBonus)}</span><span className="stat-lbl">Bônus de teste</span></div>
-        <div className="stat" title="Redução de dano contra dano físico"><span className="stat-val">{d.rdPhysical}</span><span className="stat-lbl">RD física</span></div>
-        <div className="stat" title="Redução de dano contra dano mágico"><span className="stat-val">{d.rdMagic}</span><span className="stat-lbl">RD mágica</span></div>
+        <div className="stat" title={['Redução de dano contra dano físico', ...d.breakdown.rdPhysical].join('\n')}><span className="stat-val">{d.rdPhysical}</span><span className="stat-lbl">RD física</span></div>
+        <div className="stat" title={['Redução de dano contra dano mágico', ...d.breakdown.rdMagic].join('\n')}><span className="stat-val">{d.rdMagic}</span><span className="stat-lbl">RD mágica</span></div>
       </div>
 
       <Vitals ch={ch} d={d} readOnly={readOnly} />

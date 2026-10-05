@@ -54,13 +54,18 @@ export interface CharacterDraft {
 
 // ── Itens ────────────────────────────────────────────────────────────────────
 
-export type ItemType = 'arma' | 'protecao' | 'escudo' | 'catalisador' | 'consumivel' | 'municao' | 'equipamento' | 'outro';
+export type ItemType =
+  | 'arma' | 'protecao' | 'escudo'
+  | 'catalisador_sagrado' | 'catalisador_profano' | 'catalisador_etereo'
+  | 'consumivel' | 'municao' | 'equipamento' | 'outro';
 
 export const ITEM_TYPES: Record<ItemType, string> = {
   arma: 'Arma',
   protecao: 'Proteção',
   escudo: 'Escudo',
-  catalisador: 'Catalisador',
+  catalisador_sagrado: 'Catalisador sagrado',
+  catalisador_profano: 'Catalisador profano',
+  catalisador_etereo: 'Catalisador etéreo',
   consumivel: 'Consumível',
   municao: 'Munição',
   equipamento: 'Equipamento',
@@ -74,12 +79,23 @@ export interface Durability {
   def: number;
 }
 
+/** Efeitos de um item equipado sobre quem o usa. */
+export interface ItemEffects {
+  def: number;
+  rdPhysical: number;
+  rdMagic: number;
+}
+
+export const NO_EFFECTS: ItemEffects = { def: 0, rdPhysical: 0, rdMagic: 0 };
+
 /** Durabilidade padrão sugerida ao criar um item de cada tipo. */
 export const DEFAULT_DURABILITY: Record<ItemType, Durability> = {
   arma: { pv: 10, rd: 5, def: 12 },
   protecao: { pv: 20, rd: 5, def: 10 },
   escudo: { pv: 15, rd: 8, def: 10 },
-  catalisador: { pv: 5, rd: 2, def: 13 },
+  catalisador_sagrado: { pv: 5, rd: 2, def: 13 },
+  catalisador_profano: { pv: 5, rd: 2, def: 13 },
+  catalisador_etereo: { pv: 3, rd: 1, def: 14 },
   consumivel: { pv: 1, rd: 0, def: 12 },
   municao: { pv: 1, rd: 1, def: 15 },
   equipamento: { pv: 5, rd: 2, def: 11 },
@@ -92,8 +108,8 @@ export interface ItemData {
   description: string;
   /** Texto livre: "1d8", "2d6 + FOR"... */
   damage: string;
-  /** Bônus de DEF de quem usa, quando equipado e inteiro. */
-  defBonus: number;
+  /** Bônus para quem usa, aplicados só com o item equipado e inteiro. */
+  effects: ItemEffects;
   /** Valor em moedas. */
   value: number;
   /** Durabilidade máxima do objeto. */

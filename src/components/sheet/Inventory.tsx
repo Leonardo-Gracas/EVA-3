@@ -6,6 +6,8 @@ import ActButton from '../common/ActButton';
 import Modal from '../common/Modal';
 import ItemFormModal from './ItemForm';
 
+const fmt = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
 /** Selos do item: tipo, dano, DEF, durabilidade e valor. Usado no inventário e na biblioteca. */
 export function ItemBadges({ it, pv }: { it: ItemData; pv?: number }) {
   const broken = pv !== undefined && pv <= 0;
@@ -13,7 +15,9 @@ export function ItemBadges({ it, pv }: { it: ItemData; pv?: number }) {
     <>
       <span className="badge">{ITEM_TYPES[it.type] ?? 'Outro'}</span>
       {it.damage && <span className="badge badge-err">{it.damage}</span>}
-      {it.defBonus !== 0 && <span className="badge badge-ok">DEF {it.defBonus > 0 ? '+' : ''}{it.defBonus}</span>}
+      {it.effects.def !== 0 && <span className="badge badge-ok" title="Bônus de Defesa quando equipado">DEF {fmt(it.effects.def)}</span>}
+      {it.effects.rdPhysical !== 0 && <span className="badge badge-ok" title="Bônus de RD física quando equipado">RD fís. {fmt(it.effects.rdPhysical)}</span>}
+      {it.effects.rdMagic !== 0 && <span className="badge badge-ok" title="Bônus de RD mágica quando equipado">RD mág. {fmt(it.effects.rdMagic)}</span>}
       <span className={`badge${broken ? ' badge-err' : ''}`} title="Durabilidade do objeto: PV · RD · Defesa">
         {broken ? 'Quebrado' : `PV ${pv !== undefined ? `${pv}/` : ''}${it.durability.pv}`} · RD {it.durability.rd} · DEF {it.durability.def}
       </span>
@@ -64,7 +68,7 @@ export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: 
                     <ActButton perm="item_equip" className={`btn btn-sm${it.equipped ? ' btn-primary' : ''}`}
                       title={it.equipped ? 'Desequipar' : 'Equipar'}
                       onClick={() => act({ type: 'item/equip', characterId: ch.id, itemId: it.id, equipped: !it.equipped })}>
-                      <Shield size={13} />
+                      <Shield size={13} /><span className="hide-sm">{it.equipped ? 'Equipado' : 'Equipar'}</span>
                     </ActButton>
                     <ActButton perm="item_durability" className="btn btn-sm btn-ghost" title="Dano / reparo" onClick={() => setRepairing(it)}><Hammer size={13} /></ActButton>
                     <ActButton perm="item_update" className="btn btn-sm btn-ghost" title="Editar" onClick={() => setEditing(it)}><Pencil size={13} /></ActButton>

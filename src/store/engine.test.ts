@@ -66,7 +66,7 @@ describe('motor', () => {
     s = r.state;
     // bloqueada
     s = dispatch(s, gm, { type: 'permissions/global', key: 'item_add', value: 'blocked' }, ctx).state;
-    r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador', description: '', damage: '', defBonus: 0, value: 5, durability: { pv: 5, rd: 2, def: 13 } } }, ctx);
+    r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador_sagrado', description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 5, durability: { pv: 5, rd: 2, def: 13 } } }, ctx);
     expect(r).toMatchObject({ ok: false, error: /bloqueou/ });
   });
 
@@ -133,7 +133,7 @@ describe('motor', () => {
   it('itens: durabilidade, quebrado não protege, RD extra', () => {
     const { s: s0, cid } = setup();
     let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
-    const shield = { name: 'Escudo', type: 'escudo' as const, description: '', damage: '', defBonus: 2, value: 30, durability: { pv: 15, rd: 8, def: 10 } };
+    const shield = { name: 'Escudo', type: 'escudo' as const, description: '', damage: '', effects: { def: 2, rdPhysical: 1, rdMagic: 0 }, value: 30, durability: { pv: 15, rd: 8, def: 10 } };
     s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: shield, qty: 1 }, ctx).state;
     const it = s.characters[cid].inventory[0];
     expect(it.pv).toBe(15);
@@ -143,19 +143,33 @@ describe('motor', () => {
     expect(s.characters[cid].inventory[0].pv).toBe(0);
     expect(deriveStats(s.characters[cid]).def).toBe(10);
     s = dispatch(s, gm, { type: 'character/rdBonus', characterId: cid, physical: 3, magic: 1 }, ctx).state;
-    const d = deriveStats(s.characters[cid]);
+    // escudo quebrado: só o ajuste do mestre conta
+    let d = deriveStats(s.characters[cid]);
     expect([d.rdPhysical, d.rdMagic]).toEqual([3, 1]);
+    // reparado e equipado: soma DEF +2 e RD física +1 do escudo
+    s = dispatch(s, gm, { type: 'item/durability', characterId: cid, itemId: it.id, pv: 15 }, ctx).state;
+    d = deriveStats(s.characters[cid]);
+    expect([d.def, d.rdPhysical, d.rdMagic]).toEqual([12, 4, 1]);
+    // desequipado: nenhum efeito
+    s = dispatch(s, gm, { type: 'item/equip', characterId: cid, itemId: it.id, equipped: false }, ctx).state;
+    d = deriveStats(s.characters[cid]);
+    expect([d.def, d.rdPhysical]).toEqual([10, 3]);
     expect(dispatch(s, p1, { type: 'character/rdBonus', characterId: cid, physical: 9, magic: 9 }, ctx).ok).toBe(false);
   });
 
   it('migra itens e ameaças antigos', () => {
     const { s: s0, cid } = setup();
     const old = structuredClone(s0) as any;
-    old.characters[cid].inventory = [{ id: 'x', name: 'Faca', type: 'arma', description: '', damage: '1d4', defBonus: 0, qty: 1, equipped: false }];
+    old.characters[cid].inventory = [
+      { id: 'x', name: 'Faca', type: 'arma', description: '', damage: '1d4', defBonus: 0, qty: 1, equipped: false },
+      { id: 'y', name: 'Terço', type: 'catalisador', description: '', damage: '', defBonus: 1, qty: 1, equipped: true },
+    ];
     delete old.characters[cid].rdBonus;
     old.threats = { t1: { id: 't1', name: 'Velho', rd: 4, attributes: {}, attacks: [], abilities: [], current: { pv: 1, pe: 0 } } };
     const m = migrate(old);
     expect(m.characters[cid].inventory[0]).toMatchObject({ value: 0, pv: 10, durability: { pv: 10, rd: 5, def: 12 } });
+    expect(m.characters[cid].inventory[1]).toMatchObject({ type: 'catalisador_sagrado', effects: { def: 1, rdPhysical: 0, rdMagic: 0 } });
+    expect(m.characters[cid].inventory[1]).not.toHaveProperty('defBonus');
     expect(m.threats.t1).toMatchObject({ rdPhysical: 4, rdMagic: 0 });
     expect(m.characters[cid].rdBonus).toEqual({ physical: 0, magic: 0 });
   });
