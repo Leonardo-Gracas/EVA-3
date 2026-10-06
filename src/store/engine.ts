@@ -5,7 +5,7 @@ import type {
   Actor, Character, CharacterDraft, CharacterKind, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
   PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
-import { DEFAULT_DURABILITY, GM_OWNER, ITEM_TYPES } from '../model/types';
+import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, GM_OWNER, ITEM_TYPES } from '../model/types';
 import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
 } from '../model/permissions';
@@ -44,6 +44,7 @@ const MAX_ITEMS = 200;
 const MAX_LIBRARY = 500;
 const MAX_NPCS = 200;
 const MAX_THREATS = 300;
+const MAX_GOLD = 9_999_999;
 
 // ── Criação ──────────────────────────────────────────────────────────────────
 
@@ -152,6 +153,8 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
     current: { pv: 0, pe: 0 },
     permanentLoss: { pv: 0, pe: 0 },
     rdBonus: { physical: 0, magic: 0 },
+    movement: DEFAULT_MOVEMENT,
+    gold: 0,
     inventory: [],
     notes: draft.notes,
     status: kind === 'npc' ? 'approved' : 'pending',
@@ -226,7 +229,7 @@ function itemLabel(it: ItemData, qty?: number) {
 // ── Autorização (dono / papel) ───────────────────────────────────────────────
 
 const GM_ONLY = new Set<GameAction['type']>([
-  'character/approve', 'character/reject', 'character/permanentLoss', 'character/rdBonus',
+  'character/approve', 'character/reject', 'character/permanentLoss', 'character/rdBonus', 'character/movement',
   'npc/create', 'npc/visibility',
   'threat/upsert', 'threat/duplicate', 'threat/delete', 'threat/resource', 'threat/visibility',
   'library/upsert', 'library/delete', 'library/give',
@@ -470,9 +473,24 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
     case 'item/add': {
       const c = getChar(s, a.characterId);
       if (c.inventory.length >= MAX_ITEMS) fail('Inventário cheio.');
-      const item = cleanItem(a.item);
       const qty = int(a.qty ?? 1, 1, 999, 'Quantidade');
-      c.inventory.push({ ...item, id: ctx.newId(), qty, equipped: false, pv: item.durability.pv });
+      let item: ItemData;
+      let libraryId: string | undefined;
+      if (a.libraryId) {
+        // Da biblioteca: vale o item como está lá agora, não o que o cliente mandou.
+        const lib = s.itemLibrary[a.libraryId] ?? fail('Item não encontrado na biblioteca.');
+        const { id: _id, createdAt: _c, updatedAt: _u, ...data } = lib;
+        item = structuredClone(data);
+        libraryId = lib.id;
+      } else {
+        item = cleanItem(a.item);
+        if (a.toLibrary) {
+          if (Object.keys(s.itemLibrary).length >= MAX_LIBRARY) fail('Biblioteca cheia.');
+          libraryId = ctx.newId();
+          s.itemLibrary[libraryId] = { ...structuredClone(item), id: libraryId, createdAt: now, updatedAt: now };
+        }
+      }
+      c.inventory.push({ ...item, id: ctx.newId(), qty, equipped: false, pv: item.durability.pv, ...(libraryId ? { libraryId } : {}) });
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${itemLabel(item, qty)}.` });
       return;
@@ -530,6 +548,25 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const c = getChar(s, a.characterId);
       c.rdBonus = { physical: int(a.physical, -99, 99, 'RD física'), magic: int(a.magic, -99, 99, 'RD mágica') };
       c.updatedAt = now;
+      return;
+    }
+
+    case 'character/movement': {
+      const c = getChar(s, a.characterId);
+      c.movement = int(a.movement, 0, 999, 'Deslocamento');
+      c.updatedAt = now;
+      return;
+    }
+
+    case 'gold/set': {
+      const c = getChar(s, a.characterId);
+      const gold = int(a.gold, 0, MAX_GOLD, 'Ouro');
+      if (gold === c.gold) return;
+      const before = c.gold;
+      c.gold = gold;
+      c.updatedAt = now;
+      const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
+      log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name}: ouro ${before} → ${gold}${reason ? ` (${reason})` : ''}.` });
       return;
     }
 
@@ -686,7 +723,11 @@ export function describeAction(s: TableState, a: GameAction): string {
       const ab = a.abilityId ? getAbility(a.abilityId) : null;
       return `${n}: subir para nível ${(c?.levels.length ?? 0) + 1} — ${CLASSES[a.classId]?.name ?? a.classId}${ab ? `, ${ab.name}` : ''}`;
     }
-    case 'item/add': return `${n}: adicionar ${itemLabel(a.item, a.qty)}`;
+    case 'item/add': {
+      const lib = a.libraryId ? s.itemLibrary[a.libraryId] : undefined;
+      return `${n}: adicionar ${itemLabel(lib ?? a.item, a.qty)}${lib ? ' (da biblioteca)' : a.toLibrary ? ' (novo, vai para a biblioteca)' : ''}`;
+    }
+    case 'gold/set': return `${n}: ouro ${c?.gold ?? '?'} → ${a.gold}${a.reason ? ` (${a.reason})` : ''}`;
     case 'item/update': {
       const it = c?.inventory.find((i) => i.id === a.itemId);
       return `${n}: editar ${it?.name ?? 'item'} → ${itemLabel(a.item, a.qty)}`;

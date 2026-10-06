@@ -172,5 +172,47 @@ describe('motor', () => {
     expect(m.characters[cid].inventory[1]).not.toHaveProperty('defBonus');
     expect(m.threats.t1).toMatchObject({ rdPhysical: 4, rdMagic: 0 });
     expect(m.characters[cid].rdBonus).toEqual({ physical: 0, magic: 0 });
+    expect(m.characters[cid]).toMatchObject({ movement: 9, gold: 0 });
+  });
+
+  it('item da biblioteca e item novo que vai para a biblioteca', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    s = dispatch(s, gm, { type: 'permissions/global', key: 'item_add', value: 'free' }, ctx).state;
+    const espada = { name: 'Espada', type: 'arma' as const, description: '', damage: '1d8', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 10, durability: { pv: 10, rd: 5, def: 12 } };
+    s = dispatch(s, gm, { type: 'library/upsert', item: espada }, ctx).state;
+    const libId = Object.keys(s.itemLibrary)[0];
+    expect(buildPlayerView(s, 'p1', new Set()).library.map((i) => i.name)).toEqual(['Espada']);
+    // Da biblioteca: o motor usa o item da biblioteca, não o que o cliente mandou.
+    let r = dispatch(s, p1, { type: 'item/add', characterId: cid, item: { ...espada, damage: '9d99' }, qty: 2, libraryId: libId }, ctx);
+    expect(r.ok).toBe(true);
+    s = r.state;
+    expect(s.characters[cid].inventory[0]).toMatchObject({ name: 'Espada', damage: '1d8', qty: 2, libraryId: libId });
+    // Criado no inventário: também entra na biblioteca.
+    r = dispatch(s, p1, { type: 'item/add', characterId: cid, item: { ...espada, name: 'Adaga', damage: '1d4' }, qty: 1, toLibrary: true }, ctx);
+    s = r.state;
+    const adaga = Object.values(s.itemLibrary).find((i) => i.name === 'Adaga');
+    expect(adaga).toBeDefined();
+    expect(s.characters[cid].inventory[1]).toMatchObject({ name: 'Adaga', libraryId: adaga!.id });
+    expect(dispatch(s, p1, { type: 'item/add', characterId: cid, item: espada, qty: 1, libraryId: 'nao-existe' }, ctx).ok).toBe(false);
+  });
+
+  it('ouro tem permissão própria e deslocamento é do mestre', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    expect(s.characters[cid]).toMatchObject({ movement: 9, gold: 0 });
+    // Padrão: solicitar.
+    let r = dispatch(s, p1, { type: 'gold/set', characterId: cid, gold: 50 }, ctx);
+    expect(r.ok && r.requested).toBe(true);
+    s = dispatch(s, gm, { type: 'permissions/player', playerId: 'p1', key: 'gold_change', value: 'free' }, ctx).state;
+    r = dispatch(s, p1, { type: 'gold/set', characterId: cid, gold: 50, reason: 'Recompensa' }, ctx);
+    expect(r.ok && r.state.characters[cid].gold).toBe(50);
+    s = r.state;
+    expect(dispatch(s, p1, { type: 'gold/set', characterId: cid, gold: -1 }, ctx).ok).toBe(false);
+    s = dispatch(s, gm, { type: 'permissions/player', playerId: 'p1', key: 'gold_change', value: 'blocked' }, ctx).state;
+    expect(dispatch(s, p1, { type: 'gold/set', characterId: cid, gold: 10 }, ctx).ok).toBe(false);
+    expect(dispatch(s, p1, { type: 'character/movement', characterId: cid, movement: 30 }, ctx).ok).toBe(false);
+    r = dispatch(s, gm, { type: 'character/movement', characterId: cid, movement: 12 }, ctx);
+    expect(r.ok && r.state.characters[cid].movement).toBe(12);
   });
 });

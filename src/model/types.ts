@@ -18,6 +18,9 @@ export type CharacterKind = 'pc' | 'npc';
 /** Dono das fichas de NPC. */
 export const GM_OWNER = 'gm';
 
+/** Deslocamento padrão de uma ficha, em metros. */
+export const DEFAULT_MOVEMENT = 9;
+
 export interface Character {
   id: string;
   kind: CharacterKind;
@@ -34,6 +37,10 @@ export interface Character {
   permanentLoss: { pv: number; pe: number };
   /** RD extra concedida pelo mestre (bênçãos, maldições, condições). */
   rdBonus: { physical: number; magic: number };
+  /** Deslocamento em metros. Só o mestre altera. */
+  movement: number;
+  /** Dinheiro carregado (moedas de ouro), à parte dos itens. */
+  gold: number;
   inventory: InventoryItem[];
   notes: string;
   status: CharacterStatus;
@@ -196,6 +203,7 @@ export type PermissionKey =
   | 'item_remove'
   | 'item_equip'
   | 'item_durability'
+  | 'gold_change'
   | 'notes_update';
 
 export type Permissions = Record<PermissionKey, ActionPermission>;
@@ -281,12 +289,15 @@ export type GameAction =
   | { type: 'resource/set'; characterId: string; pv: number; pe: number; reason?: string }
   | { type: 'ability/use'; characterId: string; abilityId: string; pe: number; pv: number; note?: string }
   | { type: 'level/up'; characterId: string; classId: ClassId; abilityId: string | null }
-  | { type: 'item/add'; characterId: string; item: ItemData; qty: number }
+  /** libraryId: copia o item da biblioteca. toLibrary: também cria o item na biblioteca. */
+  | { type: 'item/add'; characterId: string; item: ItemData; qty: number; libraryId?: string; toLibrary?: boolean }
   | { type: 'item/update'; characterId: string; itemId: string; item: ItemData; qty: number }
   | { type: 'item/remove'; characterId: string; itemId: string }
   | { type: 'item/equip'; characterId: string; itemId: string; equipped: boolean }
   | { type: 'item/durability'; characterId: string; itemId: string; pv: number; reason?: string }
   | { type: 'character/rdBonus'; characterId: string; physical: number; magic: number }
+  | { type: 'character/movement'; characterId: string; movement: number }
+  | { type: 'gold/set'; characterId: string; gold: number; reason?: string }
   | { type: 'notes/update'; characterId: string; notes: string }
   | { type: 'library/upsert'; item: ItemData; itemId?: string }
   | { type: 'library/delete'; itemId: string }
@@ -319,6 +330,8 @@ export interface PlayerView {
   me: { id: string; name: string };
   players: Array<{ id: string; name: string; online: boolean }>;
   myCharacters: Character[];
+  /** Biblioteca de itens do mestre, para escolher ao adicionar no inventário. */
+  library: LibraryItem[];
   others: PublicCharacter[];
   threats: Array<{ id: string; name: string; concept: string }>;
   myRequests: PendingRequest[];

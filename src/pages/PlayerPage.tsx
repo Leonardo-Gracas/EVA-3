@@ -5,9 +5,8 @@ import { ActProvider, type ActApi, useAct } from '../components/act';
 import type { Character, CharacterDraft, PlayerView } from '../model/types';
 import { PERMISSION_LABELS } from '../model/permissions';
 import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
-import CharacterSheet from '../components/sheet/CharacterSheet';
+import CharacterSheet, { DeleteCharacterButton } from '../components/sheet/CharacterSheet';
 import CharacterWizard from '../components/sheet/CharacterWizard';
-import ConfirmButton from '../components/common/ConfirmButton';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { RequestStatus } from '../components/gm/RequestsPanel';
@@ -20,7 +19,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const view = snap.view;
   const [tab, setTab] = useState<Tab>('ficha');
 
-  const api: ActApi = useMemo(() => ({ role: 'player', permissions: view?.permissions ?? null, send: sendAction }), [view?.permissions]);
+  const api: ActApi = useMemo(() => ({ role: 'player', permissions: view?.permissions ?? null, library: view?.library ?? [], send: sendAction }), [view?.permissions, view?.library]);
 
   if (!view) {
     return (
@@ -147,7 +146,7 @@ function MySheets({ view }: { view: PlayerView }) {
               : <span>O mestre devolveu a ficha para ajustes.{current.rejectReason && <> Motivo: <strong>{current.rejectReason}</strong></>}</span>}
           </div>
           <button className="btn btn-sm" onClick={() => setRedoing(current.id)}>Refazer ficha</button>
-          <ConfirmButton onConfirm={() => act({ type: 'character/delete', characterId: current.id }, 'Ficha excluída.')}>Excluir</ConfirmButton>
+          <DeleteCharacterButton ch={current}>Excluir</DeleteCharacterButton>
         </div>
       )}
       <CharacterSheet ch={current} />

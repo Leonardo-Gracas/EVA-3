@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Gift, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import type { LibraryItem, TableState } from '../../model/types';
-import { ItemBadges } from '../sheet/Inventory';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
+import ItemCard from '../common/ItemCard';
 import Modal from '../common/Modal';
 import ItemFormModal from '../sheet/ItemForm';
 
@@ -30,20 +30,15 @@ export default function ItemLibrary({ table }: { table: TableState }) {
         <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus size={14} /> Novo item</button>
       </div>
       {items.length === 0 && <div className="empty">Crie itens aqui e entregue aos personagens.</div>}
-      <div>
+      <div className="item-list">
         {items.map((it) => (
-          <div key={it.id} className="inv-row">
-            <div className="grow">
-              <div className="row-wrap">
-                <strong>{it.name}</strong>
-                <ItemBadges it={it} />
-              </div>
-              {it.description && <div className="small muted" style={{ marginTop: 2 }}>{it.description}</div>}
-            </div>
-            <button className="btn btn-sm" onClick={() => setGiving(it)}><Gift size={13} /> Entregar</button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setEditing(it)} title="Editar"><Pencil size={13} /></button>
-            <ConfirmButton className="btn btn-sm btn-ghost" onConfirm={() => act({ type: 'library/delete', itemId: it.id })}><Trash2 size={13} /></ConfirmButton>
-          </div>
+          <ItemCard key={it.id} it={it} actions={(
+            <>
+              <button className="btn btn-sm" onClick={() => setGiving(it)}><Gift size={13} /> Entregar</button>
+              <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setEditing(it)} title="Editar"><Pencil size={14} /></button>
+              <ConfirmButton className="btn btn-sm btn-ghost btn-icon" onConfirm={() => act({ type: 'library/delete', itemId: it.id })}><Trash2 size={14} /></ConfirmButton>
+            </>
+          )} />
         ))}
       </div>
       {creating && (

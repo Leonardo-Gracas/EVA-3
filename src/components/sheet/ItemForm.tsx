@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { DEFAULT_DURABILITY, ITEM_TYPES, NO_EFFECTS, type ItemData, type ItemType } from '../../model/types';
 import { LIMITS } from '../../rules/validate';
 import Modal from '../common/Modal';
@@ -21,9 +21,11 @@ const n = (v: string, min = 0) => Math.max(min, parseInt(v, 10) || 0);
 // Estrutura de seções inspirada no AddItemModal do Mesa20: geral, combate,
 // durabilidade e descrição. A durabilidade nasce com o padrão do tipo.
 export default function ItemFormModal({
-  title, initial, initialQty, withQty = true, submitLabel = 'Salvar', onSubmit, onClose,
+  title, initial, initialQty, withQty = true, submitLabel = 'Salvar', note, onSubmit, onClose,
 }: {
   title: string;
+  /** Aviso no topo do formulário. */
+  note?: ReactNode;
   initial?: ItemData;
   initialQty?: number;
   withQty?: boolean;
@@ -72,6 +74,7 @@ export default function ItemFormModal({
     <Modal open width={600} title={title} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn btn-primary" disabled={!name.trim() || n(pv) < 1} onClick={submit}>{submitLabel}</button></>}>
       <div className="col gap-lg">
+        {note && <div className="tiny muted">{note}</div>}
         <div className="field">
           <label className="label">Nome</label>
           <input className="input" autoFocus value={name} maxLength={LIMITS.itemName} onChange={(e) => setName(e.target.value)} />

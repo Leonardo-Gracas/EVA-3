@@ -1,6 +1,6 @@
 // Mesas do mestre salvas no IndexedDB deste navegador + backup em arquivo .json.
 import type { ItemData, TableState } from '../model/types';
-import { DEFAULT_DURABILITY, ITEM_TYPES, NO_EFFECTS } from '../model/types';
+import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, NO_EFFECTS } from '../model/types';
 import { DEFAULT_PERMISSIONS } from '../model/permissions';
 
 const DB_NAME = 'eva3';
@@ -143,6 +143,8 @@ export function migrate(t: TableState): TableState {
     c.notes ??= '';
     c.kind ??= 'pc';
     c.rdBonus ??= { physical: 0, magic: 0 };
+    c.movement ??= DEFAULT_MOVEMENT;
+    c.gold ??= 0;
     for (const it of c.inventory) migrateItem(it, true);
     c.visible ??= false;
   }

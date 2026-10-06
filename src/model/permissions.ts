@@ -9,6 +9,7 @@ export const PERMISSION_KEYS: PermissionKey[] = [
   'item_remove',
   'item_equip',
   'item_durability',
+  'gold_change',
   'notes_update',
 ];
 
@@ -16,11 +17,12 @@ export const PERMISSION_LABELS: Record<PermissionKey, { label: string; hint: str
   resource_change: { label: 'Alterar PV/PE atuais', hint: 'Dano, cura, gasto e recuperação manual de PV e PE.' },
   ability_use: { label: 'Usar habilidade', hint: 'Gasta PE/PV pelo botão "Usar" da habilidade.' },
   level_up: { label: 'Subir de nível', hint: 'Escolher classe e habilidade do próximo nível.' },
-  item_add: { label: 'Adicionar item', hint: 'Criar item no próprio inventário.' },
+  item_add: { label: 'Adicionar item', hint: 'Pegar um item da biblioteca ou criar um novo (que também vai para a biblioteca).' },
   item_update: { label: 'Editar item', hint: 'Mudar nome, dano, quantidade etc. de um item do inventário.' },
   item_remove: { label: 'Remover item', hint: 'Descartar item do inventário.' },
   item_equip: { label: 'Equipar / desequipar', hint: 'Itens equipados aplicam seus bônus de DEF e RD.' },
   item_durability: { label: 'Durabilidade de itens', hint: 'Dano e reparo no PV dos objetos do inventário.' },
+  gold_change: { label: 'Alterar ouro', hint: 'Ganhar, gastar ou definir o dinheiro carregado.' },
   notes_update: { label: 'Editar anotações', hint: 'Texto livre da ficha.' },
 };
 
@@ -39,6 +41,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   item_remove: 'request',
   item_equip: 'free',
   item_durability: 'free',
+  gold_change: 'request',
   notes_update: 'free',
 };
 
@@ -65,6 +68,7 @@ export function permissionFor(action: GameAction): PermissionKey | null {
     case 'item/remove': return 'item_remove';
     case 'item/equip': return 'item_equip';
     case 'item/durability': return 'item_durability';
+    case 'gold/set': return 'gold_change';
     case 'notes/update': return 'notes_update';
     default: return null;
   }

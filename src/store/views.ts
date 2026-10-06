@@ -13,6 +13,7 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
     me: { id: playerId, name: me?.name ?? 'Jogador' },
     players: Object.values(s.players).map((p) => ({ id: p.id, name: p.name, online: online.has(p.id) })),
     myCharacters: chars.filter((c) => c.ownerId === playerId),
+    library: Object.values(s.itemLibrary ?? {}).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
     others: chars
       .filter((c) => c.ownerId !== playerId && c.status === 'approved' && (c.kind !== 'npc' || c.visible))
       .map((c) => ({

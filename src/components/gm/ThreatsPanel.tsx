@@ -5,6 +5,7 @@ import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { parseExpr } from '../../rules/dice';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
+import ResourceAdjustModal, { peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
 import ThreatEditor from './ThreatEditor';
 import { hostStore } from '../../net/host';
 
@@ -75,11 +76,21 @@ function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void 
   const { act } = useAct();
   const [editing, setEditing] = useState(false);
   const [hidden, setHidden] = useState(true);
-  const [amount, setAmount] = useState('');
-  const n = Math.abs(parseInt(amount, 10) || 0);
+  const [adjust, setAdjust] = useState<AdjustStart | null>(null);
 
-  const setRes = (pv: number, pe: number, reason?: string) =>
-    act({ type: 'threat/resource', threatId: t.id, pv: Math.min(t.pvMax, pv), pe: Math.max(0, Math.min(t.peMax, pe)), reason });
+  const setRes = async (pv: number, pe: number, reason?: string) =>
+    (await act({ type: 'threat/resource', threatId: t.id, pv: Math.min(t.pvMax, pv), pe: Math.max(0, Math.min(t.peMax, pe)), reason })).ok;
+  const tracks: AdjustTrack[] = [
+    {
+      key: 'pv', label: 'PV', icon: <Heart size={16} color="var(--pv)" />, color: 'var(--pv)', barClass: 'bar-pv',
+      current: t.current.pv, max: t.pvMax, ops: pvOps(t.rdPhysical, t.rdMagic),
+      status: (v) => (v <= 0 && t.current.pv > 0 ? 'A ameaça é abatida (PV ≤ 0).' : undefined),
+    },
+    {
+      key: 'pe', label: 'PE', icon: <Zap size={16} color="var(--pe)" />, color: 'var(--pe)', barClass: 'bar-pe',
+      current: t.current.pe, max: t.peMax, min: 0, ops: peOps(),
+    },
+  ];
   const roll = (expr: string, label: string, attr?: (typeof ATTR_KEYS)[number]) =>
     act({ type: 'roll', expr, threatId: t.id, attr, label, hidden });
 
@@ -117,32 +128,39 @@ function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void 
           {t.current.pv <= 0 && <span className="badge badge-err">Abatida</span>}
         </div>
         <div className="grid-2">
-          <div className="vital">
-            <div className="vital-top">
-              <Heart size={16} color="var(--pv)" /><span className="vital-label" style={{ color: 'var(--pv)' }}>PV</span>
-              <span className="vital-num">{t.current.pv}</span><span className="vital-max">/ {t.pvMax}</span>
+          {tracks.map((x) => (
+            <div className="vital" key={x.key}>
+              <button className="vital-hit" title={`Ajustar ${x.label}`} onClick={() => setAdjust({ track: x.key })}>
+                <div className="vital-top">
+                  {x.icon}<span className="vital-label" style={{ color: x.color }}>{x.label}</span>
+                  <span className="vital-num">{x.current}</span><span className="vital-max">/ {x.max}</span>
+                </div>
+                <div className={`bar ${x.current < 0 ? 'bar-neg' : x.barClass}`} style={{ marginTop: 6 }}>
+                  <div style={{ width: x.current < 0 ? '100%' : pct(x.current, x.max!) }} />
+                </div>
+              </button>
+              <div className="vital-actions">
+                {x.key === 'pv' ? (
+                  <>
+                    <button className="btn btn-sm" onClick={() => setAdjust({ track: 'pv', op: 'phys' })}>Dano</button>
+                    <button className="btn btn-sm" onClick={() => setAdjust({ track: 'pv', op: 'heal' })}>Curar</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn btn-sm" onClick={() => setAdjust({ track: 'pe', op: 'spend' })}>Gastar</button>
+                    <button className="btn btn-sm" onClick={() => setAdjust({ track: 'pe', op: 'recover' })}>Recuperar</button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className={`bar ${t.current.pv < 0 ? 'bar-neg' : 'bar-pv'}`}><div style={{ width: t.current.pv < 0 ? '100%' : pct(t.current.pv, t.pvMax) }} /></div>
-          </div>
-          <div className="vital">
-            <div className="vital-top">
-              <Zap size={16} color="var(--pe)" /><span className="vital-label" style={{ color: 'var(--pe)' }}>PE</span>
-              <span className="vital-num">{t.current.pe}</span><span className="vital-max">/ {t.peMax}</span>
-            </div>
-            <div className="bar bar-pe"><div style={{ width: pct(t.current.pe, t.peMax) }} /></div>
-          </div>
+          ))}
         </div>
-        <div className="row-wrap mt">
-          <input className="input" style={{ width: 90 }} inputMode="numeric" placeholder="Qtd." value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - Math.max(0, n - t.rdPhysical), t.current.pe, `Dano físico ${n}${t.rdPhysical ? ` − RD ${t.rdPhysical}` : ''}`)} title="Aplica a RD física">Dano físico</button>
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - Math.max(0, n - t.rdMagic), t.current.pe, `Dano mágico ${n}${t.rdMagic ? ` − RD ${t.rdMagic}` : ''}`)} title="Aplica a RD mágica">Dano mágico</button>
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv - n, t.current.pe, `Dano direto ${n}`)} title="Ignora a RD">Dano direto</button>
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv + n, t.current.pe, 'Cura')}>Cura</button>
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv, t.current.pe - n, 'Gasto')}>−PE</button>
-          <button className="btn btn-sm" disabled={!n} onClick={() => setRes(t.current.pv, t.current.pe + n, 'Recuperação')}>+PE</button>
-          <span className="spacer" />
-          <ConfirmButton className="btn btn-sm btn-ghost" confirmText="Restaurar?" onConfirm={() => setRes(t.pvMax, t.peMax, 'Restaurada')}>Restaurar</ConfirmButton>
-        </div>
+        {adjust && (
+          <ResourceAdjustModal title={`Ajustar ${t.name}`} tracks={tracks} start={adjust}
+            onApply={(k, v, reason) => (k === 'pv' ? setRes(v, t.current.pe, reason) : setRes(t.current.pv, v, reason))}
+            onRestoreAll={{ label: 'Restaurar tudo', run: () => setRes(t.pvMax, t.peMax, 'Restaurada') }}
+            onClose={() => setAdjust(null)} />
+        )}
       </div>
 
       <div className="card">

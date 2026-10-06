@@ -1,7 +1,7 @@
 // Ponte única entre a tela e a mesa. No mestre aplica direto pelo motor; no
 // jogador envia ao mestre. A tela não precisa saber de qual lado está.
 import { createContext, useContext, useCallback, type ReactNode } from 'react';
-import type { ActionPermission, GameAction, Permissions, PermissionKey } from '../model/types';
+import type { ActionPermission, GameAction, LibraryItem, Permissions, PermissionKey } from '../model/types';
 import { toast } from './common/toast';
 
 export interface Ack { ok: boolean; error?: string; requested?: boolean; message?: string }
@@ -10,6 +10,8 @@ export interface ActApi {
   role: 'gm' | 'player';
   /** Permissões efetivas (jogador). O mestre pode tudo. */
   permissions: Permissions | null;
+  /** Biblioteca de itens do mestre (o jogador recebe uma cópia na visão). */
+  library: LibraryItem[];
   send: (a: GameAction) => Promise<Ack>;
 }
 
@@ -37,7 +39,7 @@ export function useAct() {
     return api.permissions[key];
   }, [api]);
 
-  return { act, perm, role: api.role };
+  return { act, perm, role: api.role, library: api.library };
 }
 
 export function permHint(p: ActionPermission): string | undefined {

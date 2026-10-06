@@ -20,13 +20,9 @@ import Reference from '../components/Reference';
 
 type Tab = 'fichas' | 'ameacas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
-const api: ActApi = {
-  role: 'gm',
-  permissions: null,
-  send: async (a) => {
-    const r = gmDispatch(a);
-    return r.ok ? { ok: true } : { ok: false, error: r.error };
-  },
+const send: ActApi['send'] = async (a) => {
+  const r = gmDispatch(a);
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
 };
 
 export default function GmPage({ onLeave }: { onLeave: () => void }) {
@@ -40,6 +36,9 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
     // só ao abrir
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table?.id]);
+
+  const library = table?.itemLibrary;
+  const api: ActApi = useMemo(() => ({ role: 'gm', permissions: null, library: Object.values(library ?? {}), send }), [library]);
 
   if (!table) return null;
   const pending = table.requests.filter((r) => r.status === 'pending').length;

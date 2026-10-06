@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Check, Dices, Eye, EyeOff, NotebookPen, Skull, Undo2, X } from 'lucide-react';
-import type { Character } from '../../model/types';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Check, Coins, Dices, Eye, EyeOff, Footprints, NotebookPen, Skull, Undo2, X } from 'lucide-react';
+import { DEFAULT_MOVEMENT, type Character } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { CLASSES } from '../../rules/classes';
 import { deriveStats, testModifier } from '../../rules/derive';
 import { LIMITS } from '../../rules/validate';
 import { useAct } from '../act';
 import ActButton from '../common/ActButton';
-import ConfirmButton from '../common/ConfirmButton';
+import ConfirmModal from '../common/ConfirmModal';
+import ResourceAdjustModal, { goldOps } from '../common/ResourceAdjust';
 import Vitals from './Vitals';
 import AbilitiesPanel from './AbilitiesPanel';
 import Inventory from './Inventory';
@@ -31,11 +32,35 @@ export function ClassChips({ ch }: { ch: Character }) {
   );
 }
 
+const GOLD_CHIPS = [1, 3, 5, 10, 15, 20, 25, 50, 100, 500];
+
+/** Excluir ficha sempre passa por um modal de confirmação. */
+export function DeleteCharacterButton({ ch, className = 'btn btn-danger btn-sm', children }: { ch: Character; className?: string; children?: ReactNode }) {
+  const { act } = useAct();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className={className} onClick={() => setOpen(true)}>{children ?? <><X size={14} /> Excluir</>}</button>
+      {open && (
+        <ConfirmModal title="Excluir ficha" confirmLabel={`Excluir ${ch.name}`} onClose={() => setOpen(false)}
+          onConfirm={async () => (await act({ type: 'character/delete', characterId: ch.id }, 'Ficha excluída.')).ok}>
+          <p>Excluir a ficha de <strong>{ch.name}</strong>{ch.kind === 'npc' ? ' (NPC)' : ''}?</p>
+          <p className="small muted mt">Atributos, níveis, inventário, ouro e anotações serão apagados. Não dá para desfazer.</p>
+        </ConfirmModal>
+      )}
+    </>
+  );
+}
+
 export default function CharacterSheet({ ch, ownerName }: { ch: Character; ownerName?: string }) {
-  const { act, role } = useAct();
+  const { act, role, perm } = useAct();
   const d = deriveStats(ch);
   const isGm = role === 'gm';
   const readOnly = ch.status !== 'approved';
+  const [goldOpen, setGoldOpen] = useState(false);
+  const goldPerm = perm('gold_change');
+  const canGold = !readOnly && goldPerm !== 'blocked';
+  const gold = ch.gold ?? 0;
 
   const rollAttr = (attr: (typeof ATTR_KEYS)[number]) =>
     act({ type: 'roll', characterId: ch.id, attr, expr: 'd20' });
@@ -68,7 +93,28 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
         <div className="stat" title="+1 em todos os testes a cada nível par"><span className="stat-val">{fmtMod(d.testBonus)}</span><span className="stat-lbl">Bônus de teste</span></div>
         <div className="stat" title={['Redução de dano contra dano físico', ...d.breakdown.rdPhysical].join('\n')}><span className="stat-val">{d.rdPhysical}</span><span className="stat-lbl">RD física</span></div>
         <div className="stat" title={['Redução de dano contra dano mágico', ...d.breakdown.rdMagic].join('\n')}><span className="stat-val">{d.rdMagic}</span><span className="stat-lbl">RD mágica</span></div>
+        <div className="stat" title="Distância percorrida num movimento">
+          <span className="stat-val">{ch.movement ?? DEFAULT_MOVEMENT}<span className="stat-unit">m</span></span>
+          <span className="stat-lbl"><Footprints size={11} /> Deslocamento</span>
+        </div>
+        <button className="stat stat-btn" disabled={!canGold}
+          title={!canGold ? 'Dinheiro carregado' : goldPerm === 'request' ? 'Ganhar ou gastar ouro (precisa da aprovação do mestre)' : 'Ganhar ou gastar ouro'}
+          onClick={() => setGoldOpen(true)}>
+          <span className="stat-val gold">{gold.toLocaleString('pt-BR')}</span>
+          <span className="stat-lbl"><Coins size={11} /> Dinheiro</span>
+          {canGold && goldPerm === 'request' && <span className="req-dot" aria-label="pede aprovação" />}
+        </button>
       </div>
+
+      {goldOpen && (
+        <ResourceAdjustModal title={`Ouro — ${ch.name}`} perm="gold_change" onClose={() => setGoldOpen(false)}
+          tracks={[{
+            key: 'gold', label: 'Ouro', icon: <Coins size={16} color="var(--gold)" />, color: 'var(--gold)', barClass: 'bar-dur',
+            current: gold, min: 0, ops: goldOps(), chips: GOLD_CHIPS,
+            status: (v) => (v <= 0 ? 'Fica sem dinheiro.' : undefined),
+          }]}
+          onApply={async (_k, v, reason) => (await act({ type: 'gold/set', characterId: ch.id, gold: v, reason })).ok} />
+      )}
 
       <Vitals ch={ch} d={d} readOnly={readOnly} />
 
@@ -138,6 +184,7 @@ function GmControls({ ch }: { ch: Character }) {
   const [lossPe, setLossPe] = useState(String(ch.permanentLoss.pe));
   const [rdP, setRdP] = useState(String(ch.rdBonus?.physical ?? 0));
   const [rdM, setRdM] = useState(String(ch.rdBonus?.magic ?? 0));
+  const [mov, setMov] = useState(String(ch.movement ?? DEFAULT_MOVEMENT));
   const num = (v: string) => v.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
 
   if (ch.status !== 'approved') {
@@ -147,7 +194,7 @@ function GmControls({ ch }: { ch: Character }) {
           <div className="row-wrap">
             <button className="btn btn-primary btn-sm" onClick={() => act({ type: 'character/approve', characterId: ch.id }, 'Ficha aprovada.')}><Check size={14} /> Aprovar</button>
             {ch.status === 'pending' && <button className="btn btn-sm" onClick={() => setRejecting(true)}><Undo2 size={14} /> Devolver</button>}
-            <ConfirmButton onConfirm={() => act({ type: 'character/delete', characterId: ch.id }, 'Ficha excluída.')}><X size={14} /> Excluir</ConfirmButton>
+            <DeleteCharacterButton ch={ch} />
           </div>
         ) : (
           <div className="col">
@@ -171,8 +218,8 @@ function GmControls({ ch }: { ch: Character }) {
             {ch.visible ? <Eye size={14} /> : <EyeOff size={14} />} {ch.visible ? 'Visível' : 'Oculto'}
           </button>
         )}
-        <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE e RD extra"><Skull size={14} /> Ajustes</button>
-        <ConfirmButton onConfirm={() => act({ type: 'character/delete', characterId: ch.id }, 'Ficha excluída.')}><X size={14} /> Excluir</ConfirmButton>
+        <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE, RD extra e deslocamento"><Skull size={14} /> Ajustes</button>
+        <DeleteCharacterButton ch={ch} />
       </div>
       {lossOpen && (
         <div className="row-wrap">
@@ -180,10 +227,12 @@ function GmControls({ ch }: { ch: Character }) {
           <label className="small secondary">PE <input className="input" style={{ width: 70 }} value={lossPe} onChange={(e) => setLossPe(e.target.value.replace(/[^\d]/g, ''))} /></label>
           <label className="small secondary" title="RD física extra">RD fís. <input className="input" style={{ width: 64 }} value={rdP} onChange={(e) => setRdP(num(e.target.value))} /></label>
           <label className="small secondary" title="RD mágica extra">RD mág. <input className="input" style={{ width: 64 }} value={rdM} onChange={(e) => setRdM(num(e.target.value))} /></label>
+          <label className="small secondary" title="Deslocamento em metros">Desl. <input className="input" style={{ width: 64 }} value={mov} onChange={(e) => setMov(e.target.value.replace(/[^\d]/g, ''))} /> m</label>
           <button className="btn btn-sm btn-primary" onClick={async () => {
             const a = await act({ type: 'character/permanentLoss', characterId: ch.id, pv: parseInt(lossPv, 10) || 0, pe: parseInt(lossPe, 10) || 0 });
-            const b = await act({ type: 'character/rdBonus', characterId: ch.id, physical: parseInt(rdP, 10) || 0, magic: parseInt(rdM, 10) || 0 }, 'Ajustes salvos.');
-            if (a.ok && b.ok) setLossOpen(false);
+            const b = await act({ type: 'character/rdBonus', characterId: ch.id, physical: parseInt(rdP, 10) || 0, magic: parseInt(rdM, 10) || 0 });
+            const c = await act({ type: 'character/movement', characterId: ch.id, movement: parseInt(mov, 10) || 0 }, 'Ajustes salvos.');
+            if (a.ok && b.ok && c.ok) setLossOpen(false);
           }}>Salvar</button>
         </div>
       )}
