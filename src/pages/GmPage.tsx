@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Download, Eye, Inbox, LogOut, Package, Plus, ScrollText, Shield, Skull, UserPlus, VenetianMask } from 'lucide-react';
+import { ArrowLeft, BookOpen, ClipboardList, Dices, Download, Eye, Inbox, LogOut, Package, Plus, Shield, Skull, UserPlus, VenetianMask } from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
 import CharacterWizard from '../components/sheet/CharacterWizard';
@@ -32,7 +32,9 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const [tab, setTab] = useState<Tab>('fichas');
   const [invite, setInvite] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const openSheet = (id: string) => { setSelected(id); setTab('fichas'); };
+  // No celular, a aba Fichas mostra a lista ou a ficha aberta, uma de cada vez.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('fichas'); };
 
   // Rolagens de todos (inclusive as ocultas) como aviso, exceto quando o registro já está aberto.
   useRollToasts(table?.log ?? [], () => tab !== 'registro');
@@ -50,37 +52,67 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const pending = table.requests.filter((r) => r.status === 'pending').length;
   const pendingSheets = Object.values(table.characters).filter((c) => c.status === 'pending').length;
 
-  const saved = snap.saveError
+  const saveError = snap.saveError
     ? <span className="small" style={{ color: 'var(--error)' }} title={snap.saveError}>Erro ao salvar</span>
-    : snap.lastSavedAt ? <span className="tiny muted hide-sm">Salvo {new Date(snap.lastSavedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span> : null;
+    : null;
+  const savedAt = snap.lastSavedAt ? new Date(snap.lastSavedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+  const leave = async () => { await flush(); onLeave(); };
 
   return (
     <ActProvider value={api}>
       <div className="shell">
         <TopBar title={table.name}>
+          {saveError}
           <ConnStatus status={snap.status} message={snap.message} />
           <GmInbox table={table} onOpenSheet={openSheet} onOpenRequests={() => setTab('pedidos')} />
-          <button className="code-pill" onClick={() => setInvite(true)} title="Convidar jogadores">{table.roomCode}</button>
-          {saved}
-          <button className="btn btn-sm btn-ghost" onClick={() => downloadTable(table)} title="Exportar backup (.json)"><Download size={14} /><span className="hide-sm">Backup</span></button>
-          <button className="btn btn-sm btn-ghost" onClick={async () => { await flush(); onLeave(); }} title="Fechar sala"><LogOut size={14} /></button>
+          <button className="code-pill desktop-only" onClick={() => setInvite(true)} title="Convidar jogadores">{table.roomCode}</button>
+          {!saveError && savedAt && <span className="tiny muted desktop-only">Salvo {savedAt}</span>}
+          <button className="btn btn-sm btn-ghost desktop-only" onClick={() => downloadTable(table)} title="Exportar backup (.json)"><Download size={14} />Backup</button>
+          <button className="btn btn-sm btn-ghost desktop-only" onClick={leave} title="Fechar sala"><LogOut size={14} /></button>
         </TopBar>
         <Tabs<Tab>
           value={tab}
           onChange={setTab}
+          onReselect={(t) => { if (t === 'fichas') setSheetOpen(false); }}
+          mobileBar
           tabs={[
             { id: 'fichas', label: 'Fichas', icon: <ClipboardList size={14} />, count: pendingSheets },
-            { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
+            { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
+            { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
-            { id: 'registro', label: 'Dados e registro', icon: <ScrollText size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
           ]}
+          more={(close) => (
+            <div className="col">
+              <div className="menu-title">Sessão</div>
+              <div className="menu-session">
+                <div className="grow">
+                  <strong>{table.name}</strong>
+                  <div className="tiny muted">{saveError ? 'Erro ao salvar' : savedAt ? `Salvo às ${savedAt}` : 'Ainda não salvo'}</div>
+                </div>
+                <span className="conn"><span className={`dot${snap.status === 'online' ? ' dot-on' : ''}`} /> {snap.status === 'online' ? 'Online' : snap.message}</span>
+              </div>
+              <button className="menu-item" onClick={() => { close(); setInvite(true); }}>
+                <span className="menu-icon"><UserPlus size={14} /></span>
+                <span className="grow">Convidar jogadores</span>
+                <span className="code-pill">{table.roomCode}</span>
+              </button>
+              <button className="menu-item" onClick={() => downloadTable(table)}>
+                <span className="menu-icon"><Download size={14} /></span>
+                <span className="grow">Exportar backup (.json)</span>
+              </button>
+              <button className="menu-item menu-danger" onClick={leave}>
+                <span className="menu-icon"><LogOut size={14} /></span>
+                <span className="grow">Fechar sala</span>
+              </button>
+            </div>
+          )}
         />
         <GmNotifications table={table} onOpenSheet={openSheet} />
         <main className="page">
-          {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} />}
+          {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'ameacas' && <ThreatsPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
@@ -96,8 +128,9 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   );
 }
 
-function Characters({ table, online, onInvite, selected, setSelected }: {
+function Characters({ table, online, onInvite, selected, setSelected, sheetOpen, setSheetOpen }: {
   table: TableState; online: string[]; onInvite: () => void; selected: string | null; setSelected: (id: string) => void;
+  sheetOpen: boolean; setSheetOpen: (open: boolean) => void;
 }) {
   const { act } = useAct();
   const [creatingNpc, setCreatingNpc] = useState(false);
@@ -109,6 +142,8 @@ function Characters({ table, online, onInvite, selected, setSelected }: {
 
   // Ficha aberta por fora (sino, aviso): sai do cadastro de NPC.
   useEffect(() => { setCreatingNpc(false); }, [selected]);
+  // Voltar à lista (tocar de novo em Fichas) também desiste do cadastro de NPC.
+  useEffect(() => { if (!sheetOpen) setCreatingNpc(false); }, [sheetOpen]);
 
   useEffect(() => {
     if (!current && !creatingNpc) {
@@ -117,9 +152,12 @@ function Characters({ table, online, onInvite, selected, setSelected }: {
     }
   }, [current, all, selected, creatingNpc]);
 
+  const open = (id: string) => { setCreatingNpc(false); setSelected(id); setSheetOpen(true); window.scrollTo({ top: 0 }); };
+  const back = () => { setCreatingNpc(false); setSheetOpen(false); window.scrollTo({ top: 0 }); };
+
   return (
-    <div className="split">
-      <div className="col">
+    <div className={`split split-master${sheetOpen || creatingNpc ? ' split-detail-open' : ''}`}>
+      <div className="col split-list">
         {players.length === 0 && (
           <div className="empty col" style={{ alignItems: 'center' }}>
             <p>Nenhum jogador entrou ainda.</p>
@@ -137,7 +175,7 @@ function Characters({ table, online, onInvite, selected, setSelected }: {
                 {!chars.length && <span className="tiny muted">sem ficha</span>}
               </div>
               <div className="col" style={{ gap: 6 }}>
-                {chars.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => { setCreatingNpc(false); setSelected(c.id); }} />)}
+                {chars.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => open(c.id)} />)}
               </div>
             </div>
           );
@@ -147,27 +185,28 @@ function Characters({ table, online, onInvite, selected, setSelected }: {
             <VenetianMask size={15} className="gold" />
             <strong>NPCs</strong>
             <span className="spacer" />
-            <button className="btn btn-sm" onClick={() => setCreatingNpc(true)}><Plus size={13} /> NPC</button>
+            <button className="btn btn-sm" onClick={() => { setCreatingNpc(true); setSheetOpen(true); window.scrollTo({ top: 0 }); }}><Plus size={13} /> NPC</button>
           </div>
           <div className="col" style={{ gap: 6 }}>
-            {npcs.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => { setCreatingNpc(false); setSelected(c.id); }} />)}
+            {npcs.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => open(c.id)} />)}
           </div>
         </div>
       </div>
-      <div>
+      <div className="split-detail">
+        <button className="btn btn-sm btn-ghost split-back" onClick={back}><ArrowLeft size={14} /> Todas as fichas</button>
         {creatingNpc ? (
           <>
             <h2 className="mb">Novo NPC</h2>
             <CharacterWizard
               submitLabel="Criar NPC"
-              onCancel={() => setCreatingNpc(false)}
+              onCancel={back}
               onSubmit={async (draft) => {
                 const before = new Set(Object.keys(table.characters));
                 const r = await act({ type: 'npc/create', draft }, 'NPC criado.');
                 if (r.ok) {
                   const fresh = Object.values(hostStore.get().table?.characters ?? {}).find((c) => !before.has(c.id));
                   setCreatingNpc(false);
-                  if (fresh) setSelected(fresh.id);
+                  if (fresh) setSelected(fresh.id); else setSheetOpen(false);
                 }
                 return r.ok;
               }}

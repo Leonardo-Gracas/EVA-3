@@ -46,7 +46,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
         <TopBar title={view.table.name}>
           <span className="tiny muted hide-sm">Mestre: {view.table.gmName}</span>
           <ConnStatus status={snap.status} message={snap.message} />
-          <button className="btn btn-sm btn-ghost" onClick={onLeave} title="Sair da mesa"><LogOut size={14} /></button>
+          <button className="btn btn-sm btn-ghost desktop-only" onClick={onLeave} title="Sair da mesa"><LogOut size={14} /></button>
         </TopBar>
         {snap.status !== 'online' && (
           <div className="center small" style={{ background: 'rgba(217,160,63,0.12)', color: 'var(--warning)', padding: 6 }}>{snap.message}</div>
@@ -57,11 +57,27 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           mobileBar
           tabs={[
             { id: 'ficha', label: 'Minha ficha', short: 'Ficha', icon: <ClipboardList size={14} /> },
-            { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
-            { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
+            { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
+            { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
           ]}
+          more={() => (
+            <div className="col">
+              <div className="menu-title">Sessão</div>
+              <div className="menu-session">
+                <div className="grow">
+                  <strong>{view.table.name}</strong>
+                  <div className="tiny muted">Mestre: {view.table.gmName}</div>
+                </div>
+                <span className="conn"><span className={`dot${snap.status === 'online' ? ' dot-on' : ''}`} /> {snap.status === 'online' ? 'Online' : snap.message}</span>
+              </div>
+              <button className="menu-item menu-danger" onClick={onLeave}>
+                <span className="menu-icon"><LogOut size={14} /></span>
+                <span className="grow">Sair da mesa</span>
+              </button>
+            </div>
+          )}
         />
         <PlayerNotifications requests={view.myRequests} characters={view.myCharacters} />
         <main className="page">

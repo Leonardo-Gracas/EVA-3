@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, useSyncExternalStore, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Store } from '../../net/emitter';
 
@@ -56,24 +56,85 @@ export function Toasts() {
   const list = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div className="toasts" aria-live="polite">
-      {list.map((t) => (
-        <div key={t.id} className={`toast toast-${t.kind}`}>
-          <div className="toast-main">
-            <div className="grow">
-              {t.title && <div className="toast-title">{t.title}</div>}
-              {t.text && <div className="toast-text">{t.text}</div>}
-            </div>
-            <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="Fechar aviso"><X size={14} /></button>
-          </div>
-          {t.actions && t.actions.length > 0 && (
-            <div className="toast-actions">
-              {t.actions.map((a, i) => (
-                <button key={i} className={a.className ?? 'btn btn-sm'} onClick={async () => { await a.run(); dismiss(t.id); }}>{a.label}</button>
-              ))}
-            </div>
-          )}
+      {list.map((t) => <ToastCard key={t.id} t={t} />)}
+    </div>
+  );
+}
+
+/** Deslocamento (px) que separa um toque de um arrasto. */
+const DRAG_SLOP = 8;
+const SWIPE_MS = 180;
+
+/** Aviso que fecha no X ou ao ser arrastado para o lado. */
+function ToastCard({ t }: { t: Toast }) {
+  const el = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; x: number; y: number; at: number; dx: number; on: boolean } | null>(null);
+  const moved = useRef(false);
+
+  const slide = (dx: number, animate: boolean) => {
+    const n = el.current;
+    if (!n) return;
+    n.style.transition = animate ? `transform ${SWIPE_MS}ms ease, opacity ${SWIPE_MS}ms ease` : 'none';
+    n.style.transform = dx ? `translateX(${dx}px)` : '';
+    n.style.opacity = dx ? `${Math.max(0, 1 - Math.abs(dx) / n.offsetWidth)}` : '';
+  };
+
+  const onDown = (e: PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    moved.current = false;
+    drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), dx: 0, on: false };
+  };
+  const onMove = (e: PointerEvent) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.x;
+    if (!d.on) {
+      const dy = e.clientY - d.y;
+      // Gesto vertical: deixa a página rolar.
+      if (Math.abs(dy) > DRAG_SLOP && Math.abs(dy) > Math.abs(dx)) { drag.current = null; return; }
+      if (Math.abs(dx) < DRAG_SLOP) return;
+      d.on = true;
+      moved.current = true;
+      el.current?.setPointerCapture(e.pointerId);
+    }
+    d.dx = dx;
+    slide(dx, false);
+  };
+  const onUp = (e: PointerEvent) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.id !== e.pointerId || !d.on) return;
+    const w = el.current?.offsetWidth ?? 300;
+    const speed = Math.abs(d.dx) / Math.max(1, performance.now() - d.at);
+    if (Math.abs(d.dx) > w * 0.35 || (speed > 0.5 && Math.abs(d.dx) > 30)) {
+      slide(Math.sign(d.dx) * (w + 40), true);
+      setTimeout(() => dismiss(t.id), SWIPE_MS);
+    } else {
+      slide(0, true);
+    }
+  };
+  // Um arrasto não pode terminar acionando um botão do aviso.
+  const onClickCapture = (e: MouseEvent) => {
+    if (moved.current) { e.stopPropagation(); e.preventDefault(); moved.current = false; }
+  };
+
+  return (
+    <div ref={el} className={`toast toast-${t.kind}`}
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onClickCapture={onClickCapture}>
+      <div className="toast-main">
+        <div className="grow">
+          {t.title && <div className="toast-title">{t.title}</div>}
+          {t.text && <div className="toast-text">{t.text}</div>}
         </div>
-      ))}
+        <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="Fechar aviso"><X size={14} /></button>
+      </div>
+      {t.actions && t.actions.length > 0 && (
+        <div className="toast-actions">
+          {t.actions.map((a, i) => (
+            <button key={i} className={a.className ?? 'btn btn-sm'} onClick={async () => { await a.run(); dismiss(t.id); }}>{a.label}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
