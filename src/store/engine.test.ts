@@ -83,6 +83,13 @@ describe('motor', () => {
     expect(dispatch(s, p1, { type: 'ability/use', characterId: cid, abilityId: 'devocao', pe: 99, pv: 0 }, ctx)).toMatchObject({ ok: false });
   });
 
+  it('jogador rola sem ficha mesmo com characterId nulo (serialização do PeerJS)', () => {
+    const { s } = setup();
+    const r = dispatch(s, p1, { type: 'roll', expr: 'd20', characterId: null as unknown as undefined }, ctx);
+    expect(r.ok).toBe(true);
+    expect(r.state.log[r.state.log.length - 1]?.roll?.total).toBe(3);
+  });
+
   it('visão do jogador esconde fichas e rolagens alheias', () => {
     const { s: s0, cid } = setup();
     let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;

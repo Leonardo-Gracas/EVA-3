@@ -165,7 +165,9 @@ input, textarea, select { font-family: inherit; font-size: 14px; color: inherit;
 }
 .tab:hover { color: var(--text-primary); }
 .tab-active { color: var(--gold-soft); border-bottom-color: var(--gold); }
-.tab .count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 6px; font-weight: 700; }
+.tab .count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 6px; font-weight: 700; order: 1; }
+.tab-icon { display: contents; }
+.tab-short { display: none; }
 .page { padding: 20px; max-width: 1240px; width: 100%; margin: 0 auto; flex: 1; }
 .page-narrow { max-width: 760px; }
 
@@ -353,6 +355,24 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .log-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 6px; align-items: center; }
 .roll-total { font-size: 22px; font-weight: 800; color: var(--gold-soft); min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
 .roll-dice { font-size: 12px; color: var(--text-muted); }
+
+/* ── Painel de dados ─────────────────────────────────────── */
+.dice-panel { display: grid; grid-template-columns: minmax(0, 340px) 1fr; gap: 16px; align-items: start; }
+.dice-composer { display: flex; flex-direction: column; gap: 14px; }
+.dice-composer-title { margin-bottom: 0; }
+.dice-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dice-chip {
+  min-width: 44px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-elevated);
+  color: var(--text-secondary); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; transition: all var(--transition);
+}
+.dice-chip:hover { border-color: var(--border-light); color: var(--text-primary); }
+.dice-chip.on { background: var(--gold-dim); border-color: var(--gold); color: var(--gold-soft); }
+.dice-main { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
+.dice-more { display: flex; flex-direction: column; gap: 14px; }
+.dice-actions { display: flex; gap: 8px; }
+.dice-more-toggle { display: none; }
+.dice-more-toggle .count { background: var(--gold); color: #1a140c; border-radius: 999px; font-size: 10px; padding: 0 6px; font-weight: 700; }
+.dice-roll { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .crit { color: var(--success); }
 .fumble { color: var(--error); }
 
@@ -373,12 +393,45 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 /* ── Toasts ──────────────────────────────────────────────── */
 .toasts { position: fixed; bottom: 16px; right: 16px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; max-width: min(380px, calc(100vw - 32px)); }
 .toast {
-  padding: 10px 14px; border-radius: var(--radius); background: var(--bg-overlay); border: 1px solid var(--border-light);
-  box-shadow: var(--shadow); font-size: 13px; animation: fadeIn 160ms ease;
+  padding: 10px 12px 10px 14px; border-radius: var(--radius); background: var(--bg-overlay); border: 1px solid var(--border-light);
+  border-left-width: 3px; box-shadow: var(--shadow); font-size: 13px; animation: fadeIn 160ms ease;
 }
 .toast-error { border-color: var(--accent); }
 .toast-ok { border-color: var(--success); }
 .toast-request { border-color: var(--warning); }
+.toast-roll { border-color: var(--border-gold); border-left-color: var(--gold); }
+.toast-main { display: flex; align-items: flex-start; gap: 8px; }
+.toast-title { font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
+.toast-text { color: var(--text-secondary); overflow-wrap: anywhere; }
+.toast-close { color: var(--text-muted); padding: 2px; border-radius: var(--radius-sm); flex-shrink: 0; }
+.toast-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+.toast-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; flex-wrap: wrap; }
+
+/* ── Caixa de entrada do mestre ──────────────────────────── */
+.inbox { position: relative; }
+.inbox-btn { position: relative; }
+.inbox-btn.has { color: var(--warning); }
+.inbox-btn .count { margin-left: 2px; background: var(--warning); color: #1a140c; border-radius: 999px; font-size: 10px; padding: 0 6px; font-weight: 700; }
+.inbox-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 1500; width: min(400px, calc(100vw - 24px));
+  background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); padding: 10px; display: flex; flex-direction: column; gap: 8px; animation: fadeIn 140ms ease;
+}
+.inbox-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px; }
+.inbox-list { display: flex; flex-direction: column; gap: 6px; max-height: min(60vh, 460px); overflow-y: auto; }
+.inbox-list .empty { padding: 18px 12px; }
+.inbox-item {
+  display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: var(--radius);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+}
+.inbox-item svg { vertical-align: -1px; }
+
+/* ── Ouro no inventário ──────────────────────────────────── */
+.gold-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 10px;
+  background: var(--gold-dim); border: 1px solid var(--border-gold); border-radius: var(--radius);
+}
+.gold-amount { font-size: 18px; font-weight: 700; color: var(--gold-soft); font-variant-numeric: tabular-nums; }
 
 .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .code-pill {
@@ -403,6 +456,28 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 /* ── Responsivo ──────────────────────────────────────────── */
 @media (max-width: 900px) {
   .split { grid-template-columns: 1fr; }
+  /* Dados no celular: o registro vem primeiro e o compositor fica preso ao rodapé, como num chat. */
+  .dice-panel { display: flex; flex-direction: column; min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 100px); }
+  .dice-log { order: 1; width: 100%; }
+  .dice-log .log { max-height: none; overflow: visible; padding-right: 0; }
+  .dice-composer {
+    order: 2; width: 100%; margin-top: auto; position: sticky; bottom: var(--bottom-nav-h, 0px); z-index: 10; gap: 10px;
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.55); border-color: var(--border-light);
+    max-height: calc(100dvh - var(--bottom-nav-h, 0px) - 72px); overflow-y: auto; overscroll-behavior: contain;
+  }
+  .dice-composer-title { display: none; }
+  .dice-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding: 0 2px; }
+  .dice-chips::-webkit-scrollbar { display: none; }
+  .dice-chip { flex-shrink: 0; min-height: 40px; }
+  .dice-main { grid-template-columns: minmax(0, 1fr) 104px; gap: 8px; }
+  .dice-main .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .dice-more:not(.open) { display: none; }
+  .dice-more { padding: 12px 0 2px; border-top: 1px solid var(--border); }
+  .dice-more .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .dice-more { gap: 10px; }
+  .dice-more-toggle { display: inline-flex; min-height: 44px; }
+  .dice-roll { min-height: 44px; font-size: 15px; }
+  .seg button { padding: 8px 12px; font-size: 13px; }
   .attrs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -414,6 +489,43 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .hero h1 { font-size: 32px; }
   .modal-overlay { align-items: flex-end; padding: 0; }
   .modal { border-radius: var(--radius-lg) var(--radius-lg) 0 0; max-height: 92vh; }
+  .inbox-panel { position: fixed; top: 52px; left: 12px; right: 12px; width: auto; }
+  .toasts { left: 12px; right: 12px; bottom: calc(var(--bottom-nav-h, 0px) + 12px); max-width: none; }
+  /* 16px evita o zoom automático do iOS ao focar um campo. */
+  .input, .select, .textarea { font-size: 16px; }
+  .page:has(> .dice-panel) { padding-bottom: 0; }
+  .dice-panel { min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 62px); }
+  .dice-composer { margin: auto -12px 0; width: auto; padding: 12px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; border-bottom: none; }
+}
+
+/* ── Barra de navegação inferior (jogador no celular) ────── */
+@media (max-width: 640px) {
+  body:has(.tabs-mobile-bar) { --bottom-nav-h: calc(62px + env(safe-area-inset-bottom, 0px)); }
+  .shell:has(> .tabs-mobile-bar) { padding-bottom: var(--bottom-nav-h); }
+  .tabs-mobile-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; gap: 0; overflow: visible;
+    padding: 0 4px env(safe-area-inset-bottom, 0px); border-bottom: none; border-top: 1px solid var(--border);
+    background: rgba(15, 13, 11, 0.96); backdrop-filter: blur(10px);
+  }
+  .tabs-mobile-bar .tab {
+    flex: 1 1 0; min-width: 0; height: 62px; flex-direction: column; justify-content: center; gap: 4px;
+    padding: 6px 2px; border-bottom: none; font-size: 11px; font-weight: 600; color: var(--text-muted);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tabs-mobile-bar .tab-label { display: none; }
+  .tabs-mobile-bar .tab-short { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .tabs-mobile-bar .tab-icon {
+    display: inline-flex; position: relative; align-items: center; justify-content: center;
+    width: 52px; height: 28px; border-radius: 999px; transition: background var(--transition);
+  }
+  .tabs-mobile-bar .tab-icon svg { width: 20px; height: 20px; }
+  .tabs-mobile-bar .tab:active .tab-icon { background: var(--bg-hover); }
+  .tabs-mobile-bar .tab-active { color: var(--gold-soft); }
+  .tabs-mobile-bar .tab-active .tab-icon { background: var(--gold-dim); }
+  .tabs-mobile-bar .tab .count {
+    position: absolute; top: -3px; left: 30px; min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px;
+    text-align: center; box-shadow: 0 0 0 2px var(--bg-base);
+  }
 }
 
 @media (max-width: 560px) { .hide-sm { display: none; } }

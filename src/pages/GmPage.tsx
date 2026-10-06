@@ -17,6 +17,7 @@ import ItemLibrary from '../components/gm/ItemLibrary';
 import PermissionsPanel from '../components/gm/PermissionsPanel';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
+import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
 type Tab = 'fichas' | 'ameacas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
@@ -30,6 +31,11 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const table = snap.table;
   const [tab, setTab] = useState<Tab>('fichas');
   const [invite, setInvite] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const openSheet = (id: string) => { setSelected(id); setTab('fichas'); };
+
+  // Rolagens de todos (inclusive as ocultas) como aviso, exceto quando o registro já está aberto.
+  useRollToasts(table?.log ?? [], () => tab !== 'registro');
 
   useEffect(() => {
     if (table && Object.keys(table.players).length === 0) setInvite(true);
@@ -53,6 +59,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
       <div className="shell">
         <TopBar title={table.name}>
           <ConnStatus status={snap.status} message={snap.message} />
+          <GmInbox table={table} onOpenSheet={openSheet} onOpenRequests={() => setTab('pedidos')} />
           <button className="code-pill" onClick={() => setInvite(true)} title="Convidar jogadores">{table.roomCode}</button>
           {saved}
           <button className="btn btn-sm btn-ghost" onClick={() => downloadTable(table)} title="Exportar backup (.json)"><Download size={14} /><span className="hide-sm">Backup</span></button>
@@ -71,8 +78,9 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
           ]}
         />
+        <GmNotifications table={table} onOpenSheet={openSheet} />
         <main className="page">
-          {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} />}
+          {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} />}
           {tab === 'ameacas' && <ThreatsPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
@@ -88,15 +96,19 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   );
 }
 
-function Characters({ table, online, onInvite }: { table: TableState; online: string[]; onInvite: () => void }) {
+function Characters({ table, online, onInvite, selected, setSelected }: {
+  table: TableState; online: string[]; onInvite: () => void; selected: string | null; setSelected: (id: string) => void;
+}) {
   const { act } = useAct();
-  const [selected, setSelected] = useState<string | null>(null);
   const [creatingNpc, setCreatingNpc] = useState(false);
   const players = useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
   const all = Object.values(table.characters);
   const byOwner = (id: string) => all.filter((c) => c.ownerId === id).sort((a, b) => a.createdAt - b.createdAt);
   const npcs = all.filter((c) => c.kind === 'npc').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const current = selected ? table.characters[selected] : undefined;
+
+  // Ficha aberta por fora (sino, aviso): sai do cadastro de NPC.
+  useEffect(() => { setCreatingNpc(false); }, [selected]);
 
   useEffect(() => {
     if (!current && !creatingNpc) {

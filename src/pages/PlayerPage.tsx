@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Inbox, LogOut, Plus, ScrollText, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { ActProvider, type ActApi, useAct } from '../components/act';
 import type { Character, CharacterDraft, PlayerView } from '../model/types';
@@ -11,6 +11,7 @@ import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { RequestStatus } from '../components/gm/RequestsPanel';
 import { deriveStats } from '../rules/derive';
+import { PlayerNotifications, useRollToasts } from '../components/Notifications';
 
 type Tab = 'ficha' | 'mesa' | 'pedidos' | 'registro' | 'regras';
 
@@ -18,6 +19,9 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
   const view = snap.view;
   const [tab, setTab] = useState<Tab>('ficha');
+
+  // As próprias rolagens aparecem como aviso, exceto com o registro aberto.
+  useRollToasts(view?.log ?? [], (e) => tab !== 'registro' && e.playerId === view?.me.id);
 
   const api: ActApi = useMemo(() => ({ role: 'player', permissions: view?.permissions ?? null, library: view?.library ?? [], send: sendAction }), [view?.permissions, view?.library]);
 
@@ -50,14 +54,16 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
         <Tabs<Tab>
           value={tab}
           onChange={setTab}
+          mobileBar
           tabs={[
-            { id: 'ficha', label: 'Minha ficha', icon: <ClipboardList size={14} /> },
+            { id: 'ficha', label: 'Minha ficha', short: 'Ficha', icon: <ClipboardList size={14} /> },
             { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
-            { id: 'registro', label: 'Dados e registro', icon: <ScrollText size={14} /> },
+            { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
           ]}
         />
+        <PlayerNotifications requests={view.myRequests} characters={view.myCharacters} />
         <main className="page">
           {tab === 'ficha' && <MySheets view={view} />}
           {tab === 'mesa' && <TableInfo view={view} />}

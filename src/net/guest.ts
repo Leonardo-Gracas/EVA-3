@@ -54,7 +54,8 @@ export function sendAction(action: GameAction): Promise<Ack> {
       resolve({ ok: false, error: 'O mestre demorou para responder.' });
     }, ACK_TIMEOUT);
     pending.set(id, { resolve, timer });
-    conn!.send({ t: 'action', id, action });
+    // A serialização binária do PeerJS transforma campos `undefined` em `null`; o JSON os remove.
+    conn!.send({ t: 'action', id, action: JSON.parse(JSON.stringify(action)) as GameAction });
   });
 }
 

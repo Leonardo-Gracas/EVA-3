@@ -240,7 +240,8 @@ function authorize(s: TableState, actor: Actor, a: GameAction) {
   if (actor.role === 'gm') return;
   if (GM_ONLY.has(a.type)) fail('Apenas o mestre pode fazer isso.');
   if (a.type === 'roll' && a.threatId) fail('Apenas o mestre rola pelas ameaças.');
-  if ('characterId' in a && a.characterId !== undefined) {
+  // O PeerJS serializa `undefined` como `null`: os dois significam "sem ficha".
+  if ('characterId' in a && a.characterId != null) {
     const c = getChar(s, a.characterId);
     if (c.ownerId !== actor.playerId) fail('Essa ficha não é sua.');
     const needsApproved = !['character/resubmit', 'character/delete'].includes(a.type);

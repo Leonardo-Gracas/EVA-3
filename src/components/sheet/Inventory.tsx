@@ -5,11 +5,14 @@ import { useAct } from '../act';
 import ActButton from '../common/ActButton';
 import ItemCard, { ItemIcon } from '../common/ItemCard';
 import Modal from '../common/Modal';
-import ResourceAdjustModal from '../common/ResourceAdjust';
+import ResourceAdjustModal, { goldOps } from '../common/ResourceAdjust';
 import ItemFormModal from './ItemForm';
+
+const GOLD_CHIPS = [1, 3, 5, 10, 15, 20, 25, 50, 100, 500];
 
 export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: boolean }) {
   const { act } = useAct();
+  const [goldOpen, setGoldOpen] = useState(false);
   // Adicionar: primeiro o seletor da biblioteca; "Criar novo" troca para o formulário.
   const [adding, setAdding] = useState<'pick' | 'create' | null>(null);
   const [editing, setEditing] = useState<InventoryItem | null>(null);
@@ -26,7 +29,18 @@ export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: 
           <ActButton perm="item_add" onClick={() => setAdding('pick')}><Plus size={14} /> Item</ActButton>
         )}
       </div>
-      {ch.inventory.length === 0 && <div className="empty">Inventário vazio.</div>}
+      <div className="gold-row">
+        <Coins size={18} className="gold" />
+        <div className="grow">
+          <div className="gold-amount">{(ch.gold ?? 0).toLocaleString('pt-BR')} <span className="small muted">de ouro</span></div>
+        </div>
+        {!readOnly && (
+          <ActButton perm="gold_change" className="btn btn-sm" title="Ganhar ou gastar ouro" onClick={() => setGoldOpen(true)}>
+            <Coins size={13} /> Ganhar / gastar
+          </ActButton>
+        )}
+      </div>
+      {ch.inventory.length === 0 && <div className="empty">Nenhum item.</div>}
       <div className="item-list">
         {ch.inventory.map((it) => (
           <ItemCard key={it.id} it={it} pv={it.pv} qty={it.qty} equipped={it.equipped}
@@ -57,6 +71,7 @@ export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: 
         <ItemFormModal title={`Editar ${editing.name}`} initial={editing} initialQty={editing.qty} onClose={() => setEditing(null)}
           onSubmit={async (item, qty) => (await act({ type: 'item/update', characterId: ch.id, itemId: editing.id, item, qty }, 'Item atualizado.')).ok} />
       )}
+      {goldOpen && <GoldModal ch={ch} onClose={() => setGoldOpen(false)} />}
       {repairing && <DurabilityModal ch={ch} it={repairing} onClose={() => setRepairing(null)} />}
     </div>
   );
@@ -133,6 +148,19 @@ function LibraryPickModal({ ch, onCreate, onClose }: { ch: Character; onCreate: 
         )}
       </div>
     </Modal>
+  );
+}
+
+function GoldModal({ ch, onClose }: { ch: Character; onClose: () => void }) {
+  const { act } = useAct();
+  return (
+    <ResourceAdjustModal title={`Ouro — ${ch.name}`} perm="gold_change" onClose={onClose}
+      tracks={[{
+        key: 'gold', label: 'Ouro', icon: <Coins size={16} color="var(--gold)" />, color: 'var(--gold)', barClass: 'bar-dur',
+        current: ch.gold ?? 0, min: 0, ops: goldOps(), chips: GOLD_CHIPS,
+        status: (v) => (v <= 0 ? 'Fica sem dinheiro.' : undefined),
+      }]}
+      onApply={async (_k, v, reason) => (await act({ type: 'gold/set', characterId: ch.id, gold: v, reason })).ok} />
   );
 }
 
