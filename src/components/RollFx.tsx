@@ -2,7 +2,7 @@
 // (e por um tempo mínimo, para dar suspense), depois pousam e mostram o total.
 // Cada dado tem a sua forma (d4 pirâmide, d6 cubo… e um molde genérico para d3, d17 etc.).
 // Um 20 natural ganha raios, faíscas e a faixa de crítico; um 1, o tremor vermelho.
-// O jogador também vê as rolagens abertas das entidades do mestre; das ocultas, só o 20 ou o 1.
+// O jogador também vê as rolagens abertas do mestre; das ocultas, só o 20 ou o 1.
 import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { LogEntry } from '../model/types';
 import { ATTRIBUTES, type AttrKey } from '../rules/attributes';
