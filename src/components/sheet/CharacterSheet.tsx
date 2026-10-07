@@ -103,7 +103,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
 export function AttributesCard({ ch, d, readOnly }: { ch: Character; d: Derived; readOnly?: boolean }) {
   const { act } = useAct();
   const rollAttr = async (attr: (typeof ATTR_KEYS)[number]) => {
-    const fx = startRollFx(ch.name, attr);
+    const fx = startRollFx({ who: ch.name, attr, expr: 'd20' });
     const r = await act({ type: 'roll', characterId: ch.id, attr, expr: 'd20' });
     if (!r.ok) cancelRollFx(fx);
   };

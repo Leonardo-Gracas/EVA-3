@@ -137,6 +137,30 @@ describe('motor', () => {
     expect(dispatch(s, p1, { type: 'roll', expr: 'd20', threatId: t.id }, ctx).ok).toBe(false);
   });
 
+  it('rolagem do mestre: aberta chega inteira; oculta, só o 20 ou 1 natural', () => {
+    const { s: s0 } = setup();
+    const data = {
+      name: 'Possuído', concept: '', notes: '',
+      attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
+      pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0, attacks: [], abilities: [],
+    };
+    let s = dispatch(s0, gm, { type: 'threat/upsert', data }, ctx).state;
+    const t = Object.values(s.threats)[0];
+    const nat20: EngineCtx = { ...ctx, rng: () => 20 };
+    s = dispatch(s, gm, { type: 'roll', expr: 'd20+6', threatId: t.id, label: 'Ataque: Garras' }, ctx).state;
+    s = dispatch(s, gm, { type: 'roll', expr: 'd20', threatId: t.id, attr: 'FOR', hidden: true }, ctx).state;
+    s = dispatch(s, gm, { type: 'roll', expr: 'd20', threatId: t.id, attr: 'FOR', hidden: true }, nat20).state;
+    s = dispatch(s, gm, { type: 'roll', expr: '2d20', threatId: t.id, hidden: true }, nat20).state;
+    s = dispatch(s, p2, { type: 'roll', expr: 'd20', hidden: true }, nat20).state;
+    const rolls = buildPlayerView(s, 'p1', new Set()).log.filter((e) => e.roll);
+    expect(rolls).toHaveLength(2);
+    expect(rolls[0]).toMatchObject({ characterName: 'Possuído', roll: { expr: 'd20+6', modifier: 6, total: 9 } });
+    expect(rolls[1]).toEqual({
+      id: s.log[s.log.length - 3].id, at: 1000, kind: 'roll', actorName: 'Mestre', text: 'rolagem oculta', hidden: true, secret: true,
+      roll: { expr: 'd20', dice: [{ sides: 20, value: 20 }], modifier: 0, total: 20 },
+    });
+  });
+
   it('itens: durabilidade, quebrado não protege, RD extra', () => {
     const { s: s0, cid } = setup();
     let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;

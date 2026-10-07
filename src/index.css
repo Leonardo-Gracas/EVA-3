@@ -605,7 +605,7 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .ref-lead { font-size: 14px; }
 }
 
-/* ── Animação dos testes de atributo ─────────────────────── */
+/* ── Animação das rolagens ───────────────────────────────── */
 .fx-overlay {
   position: fixed; inset: 0; z-index: 1900; display: grid; place-items: center; padding: 16px;
   background: radial-gradient(circle at 50% 45%, rgba(15, 13, 11, 0.55), rgba(5, 4, 3, 0.86) 70%);
@@ -613,14 +613,18 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 }
 /* Altura reservada para o resultado: o dado não pula quando ele aparece. */
 .fx-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; min-height: 390px; }
-.fx-die { width: 148px; height: 148px; position: relative; z-index: 2; }
-.fx-d20 { width: 100%; height: 100%; overflow: visible; }
-.fx-d20-body { fill: var(--bg-elevated); stroke: var(--gold); stroke-width: 2.5; stroke-linejoin: round; }
-.fx-d20-face { fill: var(--bg-overlay); stroke: var(--gold); stroke-width: 1.5; stroke-linejoin: round; }
-.fx-d20-edge { fill: none; stroke: var(--border-gold); stroke-width: 1.4; }
-.fx-d20-num { font-family: var(--font-display); font-weight: 700; font-size: 25px; fill: var(--gold-soft); }
+/* Vários dados lado a lado, menores quanto mais forem (--die vem do componente). */
+.fx-dice { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; max-width: min(92vw, 460px); min-height: 148px; position: relative; z-index: 2; }
+.fx-die { width: var(--die, 148px); height: var(--die, 148px); position: relative; }
+.fx-more { font-family: var(--font-display); font-size: 18px; color: var(--text-muted); }
+.fx-shape { width: 100%; height: 100%; overflow: visible; }
+.fx-shape-body { fill: var(--bg-elevated); stroke: var(--gold); stroke-width: 2.5; stroke-linejoin: round; }
+.fx-shape-face { fill: var(--bg-overlay); stroke: var(--gold); stroke-width: 1.5; stroke-linejoin: round; }
+.fx-shape-edge { fill: none; stroke: var(--border-gold); stroke-width: 1.4; }
+.fx-shape-num { font-family: var(--font-display); font-weight: 700; font-size: 25px; fill: var(--gold-soft); }
+.fx-shape-tag { font-size: 9px; letter-spacing: 0.06em; fill: var(--text-muted); }
 .fx-rolling { animation: fx-tumble 520ms cubic-bezier(.45, .05, .55, .95) infinite; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.6)); }
-.fx-rolling .fx-d20-num { opacity: 0.85; }
+.fx-rolling .fx-shape-num { opacity: 0.85; }
 .fx-landed { animation: fx-land 520ms cubic-bezier(.2, 1.4, .4, 1) both; }
 .fx-hit .fx-landed { filter: drop-shadow(0 0 14px rgba(201, 162, 74, 0.35)); }
 
@@ -637,10 +641,10 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 /* 20 natural: ouro, raios girando, faíscas e faixa de crítico. */
 .fx-crit { background: radial-gradient(circle at 50% 42%, rgba(201, 162, 74, 0.28), rgba(5, 4, 3, 0.9) 68%); }
 .fx-crit .fx-stage { animation: fx-shake 420ms 80ms ease both; }
-.fx-crit .fx-d20-body { fill: #3a2c12; stroke: #ffe3a0; stroke-width: 3; }
-.fx-crit .fx-d20-face { fill: #5a4418; stroke: #ffe3a0; }
-.fx-crit .fx-d20-edge { stroke: rgba(255, 227, 160, 0.7); }
-.fx-crit .fx-d20-num { fill: #fff6dc; }
+.fx-crit .fx-shape-body { fill: #3a2c12; stroke: #ffe3a0; stroke-width: 3; }
+.fx-crit .fx-shape-face { fill: #5a4418; stroke: #ffe3a0; }
+.fx-crit .fx-shape-edge { stroke: rgba(255, 227, 160, 0.7); }
+.fx-crit .fx-shape-num { fill: #fff6dc; }
 .fx-crit .fx-landed { animation: fx-land-crit 760ms cubic-bezier(.2, 1.5, .4, 1) both, fx-glow 1.6s 700ms ease-in-out infinite alternate; }
 .fx-crit .fx-caption { text-shadow: 0 1px 8px #000, 0 0 2px #000; }
 .fx-crit .fx-total { color: #ffe9b0; text-shadow: 0 0 18px rgba(227, 196, 124, 0.85), 0 0 42px rgba(201, 162, 74, 0.55); }
@@ -666,10 +670,10 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 /* 1 natural: vermelho e tremor seco. */
 .fx-fumble { background: radial-gradient(circle at 50% 42%, rgba(179, 52, 59, 0.22), rgba(5, 4, 3, 0.88) 68%); }
 .fx-fumble .fx-landed { animation: fx-land 520ms cubic-bezier(.2, 1.4, .4, 1) both, fx-shake 360ms 300ms ease both; }
-.fx-fumble .fx-d20-body { fill: #2a1012; stroke: var(--error); }
-.fx-fumble .fx-d20-face { fill: #3a1418; stroke: var(--error); }
-.fx-fumble .fx-d20-edge { stroke: rgba(214, 69, 79, 0.5); }
-.fx-fumble .fx-d20-num { fill: #f2a3a8; }
+.fx-fumble .fx-shape-body { fill: #2a1012; stroke: var(--error); }
+.fx-fumble .fx-shape-face { fill: #3a1418; stroke: var(--error); }
+.fx-fumble .fx-shape-edge { stroke: rgba(214, 69, 79, 0.5); }
+.fx-fumble .fx-shape-num { fill: #f2a3a8; }
 .fx-fumble .fx-total { color: #f2a3a8; }
 .fx-fumble .fx-banner { color: var(--error); font-size: 22px; }
 

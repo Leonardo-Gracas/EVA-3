@@ -102,9 +102,9 @@ export function ThreatSheet(props: { t: Threat; onDuplicated?: () => void } | { 
     },
   ];
   const roll = async (expr: string, label: string, attr?: (typeof ATTR_KEYS)[number]) => {
-    const fx = attr ? startRollFx(t.name, attr) : undefined;
+    const fx = startRollFx({ who: t.name, attr, label, expr });
     const r = await act({ type: 'roll', expr, ...(combatantId ? { combatantId } : { threatId: book!.id }), attr, label, hidden });
-    if (!r.ok && fx) cancelRollFx(fx);
+    if (!r.ok) cancelRollFx(fx);
   };
 
   return (

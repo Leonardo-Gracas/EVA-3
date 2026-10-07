@@ -6,7 +6,7 @@ import type { Character, LogEntry, PendingRequest, TableState } from '../model/t
 import { PERMISSION_LABELS } from '../model/permissions';
 import { useAct } from './act';
 import { dismissTag, notify } from './common/toast';
-import { claimRollEntry } from './RollFx';
+import { claimRollEntry, playRollFx } from './RollFx';
 
 /** Chama `onNew` para itens que surgirem depois da primeira renderização. */
 function useNewItems<T>(items: T[], key: (t: T) => string, onNew: (t: T) => void) {
@@ -53,13 +53,13 @@ function RollBody({ e }: { e: LogEntry }) {
       <div className={`roll-total${d20 === 20 ? ' crit' : d20 === 1 ? ' fumble' : ''}`}>{r.total}</div>
       <div className="grow">
         <div className="small secondary">{e.text}</div>
-        <div className="roll-dice">
+        {e.secret ? <strong className={d20 === 20 ? 'crit' : 'fumble'}>{d20 === 20 ? 'Crítico!' : 'Falha crítica'}</strong> : <div className="roll-dice">
           [{r.dice.map((x) => `${x.value < 0 ? '−' : ''}${Math.abs(x.value)}`).join(', ')}]
           {r.modifier ? ` ${r.modifier > 0 ? '+' : '−'} ${Math.abs(r.modifier)}` : ''}
           {d20 === 20 && <strong className="crit"> · crítico!</strong>}
           {d20 === 1 && <strong className="fumble"> · falha crítica</strong>}
           {vs && <> · alvo {r.target} → <strong className={vs === 'acerto' ? 'crit' : 'fumble'}>{vs}</strong></>}
-        </div>
+        </div>}
       </div>
     </div>
   );
@@ -67,12 +67,16 @@ function RollBody({ e }: { e: LogEntry }) {
 
 /**
  * Mostra como aviso as rolagens novas que passarem em `show`. A rolagem que a
- * animação de teste está esperando vai para ela, sem aviso repetido.
+ * animação está esperando vai para ela, sem aviso repetido; as que passarem em
+ * `animate` ganham a animação inteira (ou o aviso, se o dado estiver ocupado).
  */
-export function useRollToasts(log: LogEntry[], show: (e: LogEntry) => boolean) {
+export function useRollToasts(log: LogEntry[], show: (e: LogEntry) => boolean, animate?: (e: LogEntry) => boolean) {
   useNewItems(log, (e) => e.id, (e) => {
     if (claimRollEntry(e)) return;
-    if (e.kind !== 'roll' || !e.roll || !show(e)) return;
+    if (e.kind !== 'roll' || !e.roll) return;
+    if (animate?.(e)) {
+      if (playRollFx(e)) return;
+    } else if (!show(e)) return;
     notify({
       kind: 'roll',
       title: <><Dices size={13} /> {e.characterName ?? e.actorName}{e.hidden ? ' (oculta)' : ''}</>,

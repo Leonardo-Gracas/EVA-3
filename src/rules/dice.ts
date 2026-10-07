@@ -63,3 +63,9 @@ export function rollExpr(expr: string, extraModifier = 0, rng: Rng = cryptoRng):
   total += modifier;
   return { expr, dice, modifier, total };
 }
+
+/** O d20 de uma rolagem de um dado só (o que decide crítico e falha crítica). */
+export function naturalD20(r?: RollResult): number | null {
+  const d = r?.dice;
+  return d && d.length === 1 && d[0].sides === 20 ? d[0].value : null;
+}

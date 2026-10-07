@@ -299,6 +299,11 @@ export interface LogEntry {
   hidden?: boolean;
   /** Jogador autor, para mostrar a ele as entradas ocultas que ele mesmo fez. */
   playerId?: string;
+  /**
+   * Só na visão do jogador: rolagem oculta do mestre que deu 20 ou 1 natural.
+   * Chega sem quem rolou, total ou modificador — só o d20, para a animação.
+   */
+  secret?: boolean;
 }
 
 export interface TableState {

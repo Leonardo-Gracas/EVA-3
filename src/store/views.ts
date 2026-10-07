@@ -1,7 +1,8 @@
 // O que cada jogador recebe: só a própria ficha completa e dados públicos.
-import type { PlayerCombat, PlayerCombatant, PlayerView, TableState } from '../model/types';
+import type { LogEntry, PlayerCombat, PlayerCombatant, PlayerView, TableState } from '../model/types';
 import { effectivePermissions } from '../model/permissions';
 import { titleOf } from '../rules/derive';
+import { naturalD20 } from '../rules/dice';
 import { combatantInfo, conditionRemaining, currentCombatant } from './combat';
 
 const LOG_FOR_PLAYERS = 150;
@@ -34,9 +35,23 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
       .map((t) => ({ id: t.id, name: t.name, concept: t.concept })),
     myRequests: s.requests.filter((r) => r.playerId === playerId).slice(-40),
     permissions: effectivePermissions(s.permissions, playerId),
-    log: s.log.filter((e) => !e.hidden || e.playerId === playerId).slice(-LOG_FOR_PLAYERS),
+    log: s.log.flatMap((e) => entryFor(e, playerId)).slice(-LOG_FOR_PLAYERS),
     combat: buildPlayerCombat(s, playerId),
   };
+}
+
+/**
+ * Entradas ocultas ficam com o mestre (e com o jogador que rolou). Da rolagem oculta
+ * do mestre que deu 20 ou 1 natural, o jogador recebe só o d20 — para sentir a pressão.
+ */
+function entryFor(e: LogEntry, playerId: string): LogEntry[] {
+  if (!e.hidden || e.playerId === playerId) return [e];
+  const nat = e.playerId ? null : naturalD20(e.roll);
+  if (nat !== 20 && nat !== 1) return [];
+  return [{
+    id: e.id, at: e.at, kind: 'roll', actorName: e.actorName, text: 'rolagem oculta', hidden: true, secret: true,
+    roll: { expr: 'd20', dice: [{ sides: 20, value: nat }], modifier: 0, total: nat },
+  }];
 }
 
 /** Fila sem os ocultos; dos outros, só o estado descritivo (nunca números). */

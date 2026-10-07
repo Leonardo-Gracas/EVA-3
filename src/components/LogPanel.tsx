@@ -5,6 +5,7 @@ import { ATTR_KEYS, ATTRIBUTES } from '../rules/attributes';
 import type { Character, LogEntry, Threat } from '../model/types';
 import { useAct } from './act';
 import ConfirmButton from './common/ConfirmButton';
+import { cancelRollFx, startRollFx } from './RollFx';
 
 const QUICK_DICE = ['d20', 'd4', 'd6', 'd8', 'd10', 'd12', 'd100'];
 
@@ -24,8 +25,10 @@ function Entry({ e }: { e: LogEntry }) {
           <div className="grow">
             <div><strong>{e.characterName ?? e.actorName}</strong> <span className="secondary">{e.text}</span></div>
             <div className="roll-dice">
-              [{r.dice.map((x) => `${x.value < 0 ? '−' : ''}${Math.abs(x.value)}`).join(', ')}]
-              {r.modifier ? ` ${r.modifier > 0 ? '+' : '−'} ${Math.abs(r.modifier)}` : ''}
+              {e.secret ? <strong className={d20 === 20 ? 'crit' : 'fumble'}>{d20 === 20 ? 'crítico!' : 'falha crítica'}</strong> : <>
+                [{r.dice.map((x) => `${x.value < 0 ? '−' : ''}${Math.abs(x.value)}`).join(', ')}]
+                {r.modifier ? ` ${r.modifier > 0 ? '+' : '−'} ${Math.abs(r.modifier)}` : ''}
+              </>}
               {r.target !== undefined && <> · alvo {r.target} → <strong className={vs === 'acerto' ? 'crit' : 'fumble'}>{vs}</strong></>}
             </div>
           </div>
@@ -67,16 +70,22 @@ export default function LogPanel({ log, characters, threats = [] }: { log: LogEn
     if (threatId && !threats.some((t) => t.id === threatId)) setWho('');
   }, [approved, threats, charId, threatId]);
 
-  const roll = () => act({
-    type: 'roll',
-    expr: expr.trim() || 'd20',
-    characterId: charId || undefined,
-    threatId: threatId || undefined,
-    attr: attr || undefined,
-    label: label.trim() || undefined,
-    target: target ? parseInt(target, 10) : undefined,
-    hidden,
-  });
+  const roll = async () => {
+    const e = expr.trim() || 'd20';
+    const name = charId ? approved.find((c) => c.id === charId)?.name : threats.find((t) => t.id === threatId)?.name;
+    const fx = startRollFx({ who: name, attr: attr || undefined, label: label.trim() || undefined, expr: e });
+    const r = await act({
+      type: 'roll',
+      expr: e,
+      characterId: charId || undefined,
+      threatId: threatId || undefined,
+      attr: attr || undefined,
+      label: label.trim() || undefined,
+      target: target ? parseInt(target, 10) : undefined,
+      hidden,
+    });
+    if (!r.ok) cancelRollFx(fx);
+  };
 
   const shown = filter === 'roll' ? log.filter((e) => e.kind === 'roll') : log;
   const extras = [attr, label, target, hidden].filter(Boolean).length;
