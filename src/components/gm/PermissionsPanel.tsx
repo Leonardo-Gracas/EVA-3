@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
+import { LIMITS } from '../../rules/validate';
 import type { ActionPermission, PermissionKey, TableState } from '../../model/types';
 import { MAX_LEVEL } from '../../rules/classes';
 import { PERMISSION_KEYS, PERMISSION_LABELS, PERMISSION_VALUES } from '../../model/permissions';
@@ -28,8 +30,24 @@ export default function PermissionsPanel({ table }: { table: TableState }) {
 
   const setStartLevel = (level: number) => act({ type: 'table/startLevel', level }, `Novos personagens começam no nível ${level}.`);
 
+  const [name, setName] = useState(table.name);
+  useEffect(() => setName(table.name), [table.name]);
+  const trimmedName = name.trim();
+  const rename = () => {
+    if (trimmedName && trimmedName !== table.name) void act({ type: 'table/rename', name: trimmedName }, `Campanha renomeada para "${trimmedName}".`);
+  };
+
   return (
     <div className="col gap-lg">
+      <div className="card">
+        <div className="card-title">Campanha</div>
+        <form className="row-wrap" onSubmit={(e) => { e.preventDefault(); rename(); }}>
+          <input className="input" style={{ flex: 1, minWidth: 0 }} value={name} maxLength={LIMITS.tableName}
+            aria-label="Nome da campanha" placeholder="Nome da campanha" onChange={(e) => setName(e.target.value)} />
+          <button type="submit" className="btn btn-sm" disabled={!trimmedName || trimmedName === table.name}>Salvar nome</button>
+        </form>
+      </div>
+
       <div className="card">
         <div className="card-title">Criação de personagem</div>
         <div className="row-wrap">

@@ -100,6 +100,14 @@ describe('motor', () => {
     expect(v2.log.some((e) => e.kind === 'roll')).toBe(false);
   });
 
+  it('nome da campanha: só o mestre renomeia', () => {
+    const { s: s0 } = setup();
+    expect(dispatch(s0, p1, { type: 'table/rename', name: 'Outra' }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s0, gm, { type: 'table/rename', name: '   ' }, ctx)).toMatchObject({ ok: false });
+    const s = dispatch(s0, gm, { type: 'table/rename', name: '  Nova Campanha  ' }, ctx).state;
+    expect(buildPlayerView(s, 'p1', new Set()).table.name).toBe('Nova Campanha');
+  });
+
   it('nível inicial: o mestre define e a ficha do jogador precisa seguir', () => {
     const { s: s0 } = setup();
     expect(dispatch(s0, p1, { type: 'table/startLevel', level: 3 }, ctx)).toMatchObject({ ok: false });
