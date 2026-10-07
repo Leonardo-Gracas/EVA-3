@@ -162,7 +162,9 @@ export default function LogPanel({ log, characters, threats = [] }: { log: LogEn
             <button className={filter === 'roll' ? 'on-inherit' : ''} aria-pressed={filter === 'roll'} onClick={() => setFilter('roll')}>Rolagens</button>
           </div>
           {role === 'gm' && (
-            <ConfirmButton className="btn btn-sm btn-ghost" onConfirm={() => act({ type: 'log/clear' }, 'Registro limpo.')}><Trash2 size={13} /></ConfirmButton>
+            <ConfirmButton className="btn btn-sm btn-ghost" title="Limpar registro" modalTitle="Limpar registro" confirmLabel="Limpar registro"
+              message={<><p>Apagar todas as entradas do registro?</p><p className="small muted mt">Rolagens e mensagens somem para todos na mesa. Não dá para desfazer.</p></>}
+              onConfirm={() => act({ type: 'log/clear' }, 'Registro limpo.')}><Trash2 size={13} /></ConfirmButton>
           )}
         </div>
         {shown.length === 0 && <div className="empty">Nada por aqui ainda. Suas rolagens aparecem aqui.</div>}

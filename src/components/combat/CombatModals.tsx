@@ -7,6 +7,7 @@ import { characterInfo, combatantInfo, GROUP_OPS, groupDamageResult, rdFor, thre
 import { hostStore } from '../../net/host';
 import { useAct } from '../act';
 import Modal from '../common/Modal';
+import { AmountSteps, STEPS } from '../common/ResourceAdjust';
 import ConfirmModal from '../common/ConfirmModal';
 import ThreatEditor from '../gm/ThreatEditor';
 import { pct, roundsLabel } from './common';
@@ -163,8 +164,6 @@ export function AddCombatantsModal({ table, combat, onClose }: { table: TableSta
 
 // ── Dano em grupo ────────────────────────────────────────────────────────────
 
-const CHIPS = [1, 2, 3, 5, 8, 10, 12, 15, 20, 25];
-
 export function GroupDamageModal({ table, combat, ids, onClose, onDone }: {
   table: TableState; combat: Combat; ids: string[]; onClose: () => void; onDone: () => void;
 }) {
@@ -217,15 +216,9 @@ export function GroupDamageModal({ table, combat, ids, onClose, onDone }: {
 
         <div className="field">
           <label className="label" htmlFor="grp-amount">Quantidade {op === 'phys' || op === 'mag' ? <span className="muted">(antes da RD de cada alvo)</span> : null}</label>
-          <div className="adj-amount">
-            <button type="button" className="btn btn-icon" onClick={() => setAmount(String(Math.max(0, (n || 0) - 1)))} aria-label="Diminuir"><Minus size={16} /></button>
-            <input id="grp-amount" className="input adj-input" autoFocus inputMode="numeric" autoComplete="off" value={amount} placeholder="0"
-              onFocus={(e) => e.target.select()} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
-            <button type="button" className="btn btn-icon" onClick={() => setAmount(String((n || 0) + 1))} aria-label="Aumentar"><Plus size={16} /></button>
-          </div>
-          <div className="row-wrap">
-            {CHIPS.map((c) => <button type="button" key={c} className="btn btn-sm adj-chip" onClick={() => setAmount(String(c))}>{c}</button>)}
-          </div>
+          <input id="grp-amount" className="input adj-input" autoFocus inputMode="numeric" autoComplete="off" value={amount} placeholder="0"
+            onFocus={(e) => e.target.select()} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
+          <AmountSteps steps={STEPS} onBump={(d) => setAmount(String(Math.max(0, (n || 0) + d)))} />
         </div>
 
         <div className="grp-preview">

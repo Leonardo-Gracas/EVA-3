@@ -4,11 +4,11 @@ import { ITEM_TYPES, type Character, type InventoryItem, type LibraryItem } from
 import { useAct } from '../act';
 import ActButton from '../common/ActButton';
 import ItemCard, { ItemIcon } from '../common/ItemCard';
+import ConfirmModal from '../common/ConfirmModal';
 import Modal from '../common/Modal';
-import ResourceAdjustModal, { goldOps } from '../common/ResourceAdjust';
+import ResourceAdjustModal, { GOLD_STEPS, goldOps } from '../common/ResourceAdjust';
 import ItemFormModal from './ItemForm';
 
-const GOLD_CHIPS = [1, 3, 5, 10, 15, 20, 25, 50, 100, 500];
 
 export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: boolean }) {
   const { act } = useAct();
@@ -17,6 +17,7 @@ export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: 
   const [adding, setAdding] = useState<'pick' | 'create' | null>(null);
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [repairing, setRepairing] = useState<InventoryItem | null>(null);
+  const [removing, setRemoving] = useState<InventoryItem | null>(null);
   const total = ch.inventory.reduce((s, it) => s + it.value * it.qty, 0);
 
   return (
@@ -54,11 +55,18 @@ export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: 
                 <ActButton perm="item_durability" className="btn btn-sm btn-ghost btn-icon" title="Durabilidade: dano e reparo" onClick={() => setRepairing(it)}><Hammer size={14} /></ActButton>
                 <ActButton perm="item_update" className="btn btn-sm btn-ghost btn-icon" title="Editar" onClick={() => setEditing(it)}><Pencil size={14} /></ActButton>
                 <ActButton perm="item_remove" className="btn btn-sm btn-ghost btn-icon" title="Remover"
-                  onClick={() => act({ type: 'item/remove', characterId: ch.id, itemId: it.id })}><Trash2 size={14} /></ActButton>
+                  onClick={() => setRemoving(it)}><Trash2 size={14} /></ActButton>
               </>
             )} />
         ))}
       </div>
+      {removing && (
+        <ConfirmModal title="Remover item" confirmLabel={`Remover ${removing.name}`} onClose={() => setRemoving(null)}
+          onConfirm={async () => (await act({ type: 'item/remove', characterId: ch.id, itemId: removing.id }, 'Item removido.')).ok}>
+          <p>Remover <strong>{removing.name}</strong>{removing.qty > 1 ? ` (×${removing.qty})` : ''} do inventário de <strong>{ch.name}</strong>?</p>
+          <p className="small muted mt">Não dá para desfazer.</p>
+        </ConfirmModal>
+      )}
       {adding === 'pick' && (
         <LibraryPickModal ch={ch} onCreate={() => setAdding('create')} onClose={() => setAdding(null)} />
       )}
@@ -157,7 +165,7 @@ function GoldModal({ ch, onClose }: { ch: Character; onClose: () => void }) {
     <ResourceAdjustModal title={`Ouro — ${ch.name}`} perm="gold_change" onClose={onClose}
       tracks={[{
         key: 'gold', label: 'Ouro', icon: <Coins size={16} color="var(--gold)" />, color: 'var(--gold)', barClass: 'bar-dur',
-        current: ch.gold ?? 0, min: 0, ops: goldOps(), chips: GOLD_CHIPS,
+        current: ch.gold ?? 0, min: 0, ops: goldOps(), steps: GOLD_STEPS,
         status: (v) => (v <= 0 ? 'Fica sem dinheiro.' : undefined),
       }]}
       onApply={async (_k, v, reason) => (await act({ type: 'gold/set', characterId: ch.id, gold: v, reason })).ok} />

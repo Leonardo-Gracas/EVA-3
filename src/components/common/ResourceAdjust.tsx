@@ -35,14 +35,15 @@ export interface AdjustTrack {
   ops: AdjustOp[];
   /** Aviso sobre o valor resultante (ex.: "Fica inconsciente"). */
   status?: (v: number) => string | undefined;
-  /** Atalhos de quantidade; padrão CHIPS. */
-  chips?: number[];
+  /** Passos dos botões −/+ que vão montando a quantidade; padrão STEPS. */
+  steps?: number[];
 }
 
 export interface AdjustStart { track?: string; op?: string }
 
 const SET = 'set';
-const CHIPS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 35];
+export const STEPS = [1, 5, 10, 30];
+export const GOLD_STEPS = [1, 5, 10, 50, 100, 500];
 
 const clamp = (t: AdjustTrack, v: number) => Math.min(t.max ?? Infinity, t.min === undefined ? v : Math.max(t.min, v));
 const pctOf = (v: number, max: number) => Math.max(0, Math.min(100, (v / Math.max(1, max)) * 100));
@@ -152,24 +153,17 @@ export default function ResourceAdjustModal({ title, tracks, start, perm, onAppl
 
         <div className="field">
           <label className="label" htmlFor="adj-amount">{isSet ? `Novo valor de ${t.label}` : 'Quantidade'}</label>
-          <div className="adj-amount">
-            <button type="button" className="btn btn-icon" onClick={() => bump(-1)} aria-label="Diminuir"><Minus size={16} /></button>
-            <input id="adj-amount" className="input adj-input" autoFocus inputMode="numeric" autoComplete="off"
-              value={amount} placeholder="0"
-              onFocus={(e) => e.target.select()}
-              onChange={(e) => setAmount(e.target.value.replace(isSet && (t.min ?? -1) < 0 ? /[^\d-]/g : /[^\d]/g, ''))} />
-            <button type="button" className="btn btn-icon" onClick={() => bump(1)} aria-label="Aumentar"><Plus size={16} /></button>
-          </div>
-          <div className="row-wrap">
-            {isSet ? (
-              <>
-                {t.max !== undefined && <button type="button" className="btn btn-sm" onClick={() => setAmount(String(t.max))}>Máximo ({t.max})</button>}
-                {t.min !== undefined && t.min >= 0 && <button type="button" className="btn btn-sm" onClick={() => setAmount(String(t.min))}>Zerar</button>}
-              </>
-            ) : (t.chips ?? CHIPS).map((c) => (
-              <button type="button" key={c} className="btn btn-sm adj-chip" onClick={() => setAmount(String(c))}>{c}</button>
-            ))}
-          </div>
+          <input id="adj-amount" className="input adj-input" autoFocus inputMode="numeric" autoComplete="off"
+            value={amount} placeholder="0"
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => setAmount(e.target.value.replace(isSet && (t.min ?? -1) < 0 ? /[^\d-]/g : /[^\d]/g, ''))} />
+          <AmountSteps steps={t.steps ?? STEPS} onBump={bump} />
+          {isSet && (t.max !== undefined || (t.min !== undefined && t.min >= 0)) && (
+            <div className="row-wrap">
+              {t.max !== undefined && <button type="button" className="btn" onClick={() => setAmount(String(t.max))}>Máximo ({t.max})</button>}
+              {t.min !== undefined && t.min >= 0 && <button type="button" className="btn" onClick={() => setAmount(String(t.min))}>Zerar</button>}
+            </div>
+          )}
           {op?.hint && !isSet && <div className="tiny muted">{op.hint}</div>}
         </div>
 
@@ -206,6 +200,21 @@ export default function ResourceAdjustModal({ title, tracks, start, perm, onAppl
         <button type="submit" hidden />
       </form>
     </Modal>
+  );
+}
+
+/** Pares −N / +N que somam ou subtraem do valor digitado. */
+export function AmountSteps({ steps, onBump }: { steps: number[]; onBump: (d: number) => void }) {
+  return (
+    <div className="adj-steps">
+      {steps.map((s) => (
+        <div key={s} className="adj-step" role="group" aria-label={`Passo de ${s}`}>
+          <button type="button" className="adj-step-down" onClick={() => onBump(-s)} aria-label={`Diminuir ${s}`}><Minus size={18} /></button>
+          <span className="adj-step-n">{s}</span>
+          <button type="button" className="adj-step-up" onClick={() => onBump(s)} aria-label={`Aumentar ${s}`}><Plus size={18} /></button>
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -1,32 +1,37 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import ConfirmModal from './ConfirmModal';
 
-// Botão de dois cliques: o primeiro arma, o segundo confirma. Evita diálogos do navegador.
+// Botão de ação destrutiva: o clique abre um modal de confirmação.
+// `onConfirm` pode devolver `false` (ou um Ack com `ok: false`) para manter o modal aberto.
 export default function ConfirmButton({
-  onConfirm, children, confirmText = 'Confirmar?', className = 'btn btn-danger btn-sm', disabled, title,
+  onConfirm, children, modalTitle, message, confirmLabel = 'Excluir', className = 'btn btn-danger btn-sm', disabled, title,
 }: {
-  onConfirm: () => void;
+  onConfirm: () => unknown;
   children: ReactNode;
-  confirmText?: string;
+  modalTitle: string;
+  message: ReactNode;
+  confirmLabel?: string;
   className?: string;
   disabled?: boolean;
   title?: string;
 }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 3000);
-    return () => clearTimeout(t);
-  }, [armed]);
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      className={className}
-      disabled={disabled}
-      title={title}
-      onClick={() => {
-        if (armed) { setArmed(false); onConfirm(); } else setArmed(true);
-      }}
-    >
-      {armed ? confirmText : children}
-    </button>
+    <>
+      <button className={className} disabled={disabled} title={title} aria-label={title} onClick={() => setOpen(true)}>
+        {children}
+      </button>
+      {open && (
+        <ConfirmModal title={modalTitle} confirmLabel={confirmLabel} onClose={() => setOpen(false)}
+          onConfirm={async () => {
+            const r = await onConfirm();
+            if (r === false) return false;
+            if (r && typeof r === 'object' && 'ok' in r) return Boolean(r.ok);
+            return true;
+          }}>
+          {message}
+        </ConfirmModal>
+      )}
+    </>
   );
 }

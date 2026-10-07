@@ -36,7 +36,9 @@ export default function ItemLibrary({ table }: { table: TableState }) {
             <>
               <button className="btn btn-sm" onClick={() => setGiving(it)}><Gift size={13} /> Entregar</button>
               <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setEditing(it)} title="Editar"><Pencil size={14} /></button>
-              <ConfirmButton className="btn btn-sm btn-ghost btn-icon" onConfirm={() => act({ type: 'library/delete', itemId: it.id })}><Trash2 size={14} /></ConfirmButton>
+              <ConfirmButton className="btn btn-sm btn-ghost btn-icon" title="Excluir" modalTitle="Excluir item da biblioteca" confirmLabel={`Excluir ${it.name}`}
+                message={<><p>Excluir <strong>{it.name}</strong> da biblioteca?</p><p className="small muted mt">Cópias já entregues aos personagens continuam nos inventários. Não dá para desfazer.</p></>}
+                onConfirm={() => act({ type: 'library/delete', itemId: it.id })}><Trash2 size={14} /></ConfirmButton>
             </>
           )} />
         ))}

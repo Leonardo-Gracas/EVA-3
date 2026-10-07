@@ -111,7 +111,9 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
                 </div>
                 <button className="btn btn-sm btn-primary" onClick={() => resume(t.id)}><Play size={13} /> Abrir</button>
                 <button className="btn btn-sm btn-ghost" onClick={() => exportOne(t.id)} title="Exportar backup"><Download size={13} /></button>
-                <ConfirmButton className="btn btn-sm btn-ghost" confirmText="Excluir?" onConfirm={async () => { await deleteTable(t.id); void refresh(); }}><Trash2 size={13} /></ConfirmButton>
+                <ConfirmButton className="btn btn-sm btn-ghost" title="Excluir mesa" modalTitle="Excluir mesa" confirmLabel={`Excluir ${t.name}`}
+                  message={<><p>Excluir a mesa <strong>{t.name}</strong>?</p><p className="small muted mt">Fichas, ameaças, itens e registro desta mesa serão apagados deste navegador. Exporte o backup antes se quiser guardar. Não dá para desfazer.</p></>}
+                  onConfirm={async () => { await deleteTable(t.id); void refresh(); }}><Trash2 size={13} /></ConfirmButton>
               </div>
             ))}
           </div>

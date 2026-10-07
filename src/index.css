@@ -246,10 +246,24 @@ button.vital-hit:disabled { cursor: default; }
 .adj-down.on { background: var(--accent-dim); border-color: var(--accent); color: #f2a3a8; }
 .adj-up.on { background: rgba(90, 167, 124, 0.18); border-color: var(--success); color: #9ad6b3; }
 .adj-set.on { background: var(--gold-dim); border-color: var(--gold); color: var(--gold-soft); }
-.adj-amount { display: flex; gap: 6px; align-items: stretch; }
 .adj-input { text-align: center; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 6px 10px; }
-.adj-amount .btn-icon { padding: 0 14px; }
-.adj-chip { min-width: 40px; }
+.adj-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.adj-step {
+  display: flex; align-items: stretch; height: 46px; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border); background: var(--bg-elevated);
+}
+.adj-step > button {
+  flex: 1; display: flex; align-items: center; justify-content: center; min-width: 44px;
+  color: var(--text-secondary); transition: background var(--transition), color var(--transition);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.adj-step-down:hover, .adj-step-down:active { background: var(--accent-dim); color: #f2a3a8; }
+.adj-step-up:hover, .adj-step-up:active { background: rgba(90, 167, 124, 0.18); color: #9ad6b3; }
+.adj-step-n {
+  display: flex; align-items: center; justify-content: center; min-width: 38px; padding: 0 4px;
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); user-select: none;
+}
 .adj-preview {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--radius);
   background: var(--bg-elevated); border: 1px solid var(--border); border-left: 3px solid var(--c);

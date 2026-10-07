@@ -127,7 +127,9 @@ export function ThreatSheet(props: { t: Threat; onDuplicated?: () => void } | { 
               </button>
               <button className="btn btn-sm" onClick={() => setEditing(true)}><Pencil size={14} /> Editar</button>
               <button className="btn btn-sm" onClick={async () => { const r = await act({ type: 'threat/duplicate', threatId: book.id }, 'Ameaça duplicada.'); if (r.ok && 'onDuplicated' in props) props.onDuplicated?.(); }}><Copy size={14} /> Duplicar</button>
-              <ConfirmButton onConfirm={() => act({ type: 'threat/delete', threatId: book.id }, 'Ameaça excluída.')}><Trash2 size={14} /></ConfirmButton>
+              <ConfirmButton title="Excluir ameaça" modalTitle="Excluir ameaça" confirmLabel={`Excluir ${t.name}`}
+                message={<><p>Excluir a ameaça <strong>{t.name}</strong>?</p><p className="small muted mt">Não dá para desfazer.</p></>}
+                onConfirm={() => act({ type: 'threat/delete', threatId: book.id }, 'Ameaça excluída.')}><Trash2 size={14} /></ConfirmButton>
             </div>
           )}
         </div>

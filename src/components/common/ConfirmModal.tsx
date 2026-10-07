@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import Modal from './Modal';
 
-// Confirmação em modal para ações sem volta (ex.: excluir ficha). Para casos
-// leves, o ConfirmButton de dois cliques basta.
+// Confirmação em modal para ações sem volta (ex.: excluir ficha). Para um botão
+// que já abre o modal sozinho, use o ConfirmButton.
 export default function ConfirmModal({ title, children, confirmLabel, onConfirm, onClose }: {
   title: string;
   children: ReactNode;
