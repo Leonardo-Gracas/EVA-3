@@ -2,7 +2,7 @@
 // Jogador nunca altera estado direto — manda uma GameAction, o motor confere
 // dono da ficha, regra e permissão (livre / solicitar / bloqueada) e aplica.
 import type {
-  Actor, Character, CharacterDraft, CharacterKind, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
+  Actor, Character, CharacterDraft, CharacterKind, Combat, Combatant, CombatThreat, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
   PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, GM_OWNER, ITEM_TYPES } from '../model/types';
@@ -15,6 +15,7 @@ import { getAbility } from '../rules/abilities';
 import { deriveStats } from '../rules/derive';
 import { LIMITS, validateDraft, validateLevelPick } from '../rules/validate';
 import { cryptoRng, rollExpr, type Rng } from '../rules/dice';
+import { combatantInfo, conditionExpired, GROUP_OPS, groupDamageResult, rdFor } from './combat';
 
 export interface EngineCtx {
   now: () => number;
@@ -45,6 +46,9 @@ const MAX_LIBRARY = 500;
 const MAX_NPCS = 200;
 const MAX_THREATS = 300;
 const MAX_GOLD = 9_999_999;
+const MAX_COMBATANTS = 60;
+const MAX_CONDITIONS = 12;
+const MAX_SPAWN = 20;
 
 // ── Criação ──────────────────────────────────────────────────────────────────
 
@@ -65,6 +69,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     permissions: { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} },
     requests: [],
     log: [],
+    combat: null,
   };
 }
 
@@ -222,6 +227,157 @@ function clampCurrent(c: Character) {
   c.current.pe = Math.max(0, Math.min(d.peMax, c.current.pe));
 }
 
+/** Cópia de uma ameaça com PV/PE cheios e o próximo número livre no nome. */
+function duplicateThreat(s: TableState, src: Threat, ctx: EngineCtx): Threat {
+  if (Object.keys(s.threats).length >= MAX_THREATS) fail('Limite de ameaças atingido.');
+  const base = src.name.replace(/ \d+$/, '');
+  const same = Object.values(s.threats).filter((t) => t.name.replace(/ \d+$/, '') === base).length;
+  const now = ctx.now();
+  const copy: Threat = {
+    ...structuredClone(src),
+    id: ctx.newId(),
+    name: `${base} ${same + 1}`.slice(0, LIMITS.name),
+    current: { pv: src.pvMax, pe: src.peMax },
+    visible: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  s.threats[copy.id] = copy;
+  return copy;
+}
+
+// ── Combate ──────────────────────────────────────────────────────────────────
+
+function getCombat(s: TableState): Combat {
+  return s.combat ?? fail('Nenhum combate aberto.');
+}
+
+function getCombatant(c: Combat, id: unknown): Combatant {
+  return c.order.find((x) => x.id === id) ?? fail('Combatente não encontrado na fila.');
+}
+
+function combatantName(s: TableState, cb: Combatant): string {
+  return combatantInfo(s, cb)?.name ?? '?';
+}
+
+/** Depois de mexer na fila, mantém o turno em quem estava agindo (ou na posição de reserva). */
+function keepTurn(c: Combat, currentId: string | undefined, fallback: number) {
+  const idx = currentId ? c.order.findIndex((x) => x.id === currentId) : -1;
+  c.turn = idx >= 0 ? idx : Math.max(0, Math.min(fallback, c.order.length - 1));
+}
+
+/** Ao começar um turno, encerra as condições cujo ponto final a vez alcançou. */
+function startTurn(s: TableState, c: Combat, ctx: EngineCtx) {
+  for (const cb of c.order) {
+    const ended = cb.conditions.filter((x) => conditionExpired(c, x));
+    if (!ended.length) continue;
+    cb.conditions = cb.conditions.filter((x) => !ended.includes(x));
+    const name = combatantName(s, cb);
+    log(s, ctx, {
+      kind: 'system', actorName: 'Combate', characterName: name,
+      text: `${ended.map((x) => x.name).join(', ')} de ${name} ${ended.length > 1 ? 'acabaram' : 'acabou'}.`, hidden: cb.hidden,
+    });
+  }
+}
+
+/**
+ * Quem sai da fila deixa a posição para o seguinte: as condições ancoradas
+ * nele passam a terminar na vez de quem ficou no lugar. Se era o último da
+ * fila, o lugar dele é o fim da rodada, ou seja, o começo da seguinte.
+ */
+function reanchorConditions(before: Combatant[], removed: Set<string>) {
+  const kept = before.filter((x) => !removed.has(x.id));
+  for (const cb of kept) {
+    for (const cond of cb.conditions) {
+      if (!cond.sourceId || !removed.has(cond.sourceId)) continue;
+      const i = before.findIndex((x) => x.id === cond.sourceId);
+      const heir = before.slice(i + 1).find((x) => !removed.has(x.id));
+      if (heir) {
+        cond.sourceId = heir.id;
+      } else {
+        cond.sourceId = kept[0]?.id ?? null;
+        if (cond.endsAtRound !== null) cond.endsAtRound += 1;
+      }
+    }
+  }
+}
+
+/** Nova instância de ameaça a partir do molde do livro, com PV/PE cheios. */
+function threatInstance(t: Threat, name: string): CombatThreat {
+  const { id: _id, current: _c, visible: _v, createdAt: _a, updatedAt: _u, ...data } = structuredClone(t);
+  return { ...data, name: name.slice(0, LIMITS.name), current: { pv: t.pvMax, pe: t.peMax } };
+}
+
+/**
+ * Numera as instâncias de um mesmo molde: uma só fica "Goblin"; a partir de
+ * duas, "Goblin 1", "Goblin 2"... sem renumerar quem já tinha número.
+ */
+function nameInstances(c: Combat, templateId: string, base: string) {
+  const group = c.order.filter((x) => x.ref.kind === 'threat' && x.ref.id === templateId && x.threat);
+  if (group.length < 2) return;
+  const re = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (\\d+)$`);
+  const used = new Set(group.map((x) => Number(re.exec(x.threat!.name)?.[1])).filter((n) => n > 0));
+  let next = 1;
+  for (const x of group) {
+    if (re.test(x.threat!.name)) continue;
+    while (used.has(next)) next += 1;
+    x.threat!.name = `${base} ${next}`.slice(0, LIMITS.name);
+    used.add(next);
+  }
+}
+
+/** Passa a vez para frente ou para trás, pulando quem está fora de combate. */
+function advance(s: TableState, ctx: EngineCtx, dir: 1 | -1) {
+  const c = getCombat(s);
+  if (!c.round) fail('Inicie o combate primeiro.');
+  const n = c.order.length;
+  if (!n) fail('A fila está vazia.');
+  let idx = c.turn;
+  let round = c.round;
+  for (let step = 0; step < n; step++) {
+    idx += dir;
+    if (idx >= n) { idx = 0; round += 1; }
+    if (idx < 0) {
+      if (round <= 1) fail('Este já é o primeiro turno.');
+      idx = n - 1;
+      round -= 1;
+    }
+    if (!combatantInfo(s, c.order[idx])?.down) {
+      if (round > c.round) log(s, ctx, { kind: 'system', actorName: 'Combate', text: `Rodada ${round} começou.` });
+      c.turn = idx;
+      c.round = round;
+      if (dir === 1) startTurn(s, c, ctx);
+      return;
+    }
+  }
+  fail('Todos os combatentes estão fora de combate.');
+}
+
+/** Remove combatentes da fila; se quem agia saiu, a vez passa ao seguinte. */
+function removeCombatants(s: TableState, ctx: EngineCtx, drop: (cb: Combatant) => boolean) {
+  const c = s.combat;
+  if (!c || !c.order.some(drop)) return;
+  const cur = c.order[c.turn];
+  const removedBefore = c.order.slice(0, c.turn).filter(drop).length;
+  const curRemoved = !!cur && drop(cur);
+  const before = c.order;
+  c.order = c.order.filter((x) => !drop(x));
+  reanchorConditions(before, new Set(before.filter(drop).map((x) => x.id)));
+  keepTurn(c, curRemoved ? undefined : cur?.id, c.turn - removedBefore);
+  if (!curRemoved || !c.round || !c.order.length) return;
+  if (combatantInfo(s, c.order[c.turn])?.down) {
+    c.turn = (c.turn - 1 + c.order.length) % c.order.length;
+    try { advance(s, ctx, 1); } catch (e) { if (!(e instanceof Fail)) throw e; }
+  } else {
+    startTurn(s, c, ctx);
+  }
+}
+
+/** Ficha excluída sai da fila. (Ameaças não: a instância independe do molde.) */
+function dropCharacterFromCombat(s: TableState, ctx: EngineCtx, characterId: string) {
+  removeCombatants(s, ctx, (x) => x.ref.kind === 'character' && x.ref.id === characterId);
+}
+
 function itemLabel(it: ItemData, qty?: number) {
   return `${it.name}${qty && qty > 1 ? ` ×${qty}` : ''}`;
 }
@@ -233,13 +389,15 @@ const GM_ONLY = new Set<GameAction['type']>([
   'npc/create', 'npc/visibility',
   'threat/upsert', 'threat/duplicate', 'threat/delete', 'threat/resource', 'threat/visibility',
   'library/upsert', 'library/delete', 'library/give',
+  'combat/create', 'combat/end', 'combat/add', 'combat/remove', 'combat/move', 'combat/start', 'combat/next', 'combat/prev',
+  'combat/setTurn', 'combat/hidden', 'combat/conditionAdd', 'combat/conditionRemove', 'combat/groupDamage', 'combat/resource',
   'permissions/global', 'permissions/player', 'request/resolve', 'table/rename', 'log/clear',
 ]);
 
 function authorize(s: TableState, actor: Actor, a: GameAction) {
   if (actor.role === 'gm') return;
   if (GM_ONLY.has(a.type)) fail('Apenas o mestre pode fazer isso.');
-  if (a.type === 'roll' && a.threatId) fail('Apenas o mestre rola pelas ameaças.');
+  if (a.type === 'roll' && (a.threatId || a.combatantId)) fail('Apenas o mestre rola pelas ameaças.');
   // O PeerJS serializa `undefined` como `null`: os dois significam "sem ficha".
   if ('characterId' in a && a.characterId != null) {
     const c = getChar(s, a.characterId);
@@ -300,21 +458,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
     }
 
     case 'threat/duplicate': {
-      const src = getThreat(s, a.threatId);
-      if (Object.keys(s.threats).length >= MAX_THREATS) fail('Limite de ameaças atingido.');
-      const same = Object.values(s.threats).filter((t) => t.name.replace(/ \d+$/, '') === src.name.replace(/ \d+$/, '')).length;
-      const base = src.name.replace(/ \d+$/, '');
-      const copy: Threat = {
-        ...structuredClone(src),
-        id: ctx.newId(),
-        name: `${base} ${same + 1}`.slice(0, LIMITS.name),
-        current: { pv: src.pvMax, pe: src.peMax },
-        visible: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      s.threats[copy.id] = copy;
-      return copy.id;
+      return duplicateThreat(s, getThreat(s, a.threatId), ctx).id;
     }
 
     case 'threat/delete': {
@@ -387,6 +531,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const c = getChar(s, a.characterId);
       if (actor.role === 'player' && c.status === 'approved') fail('Só o mestre pode excluir uma ficha aprovada.');
       delete s.characters[c.id];
+      dropCharacterFromCombat(s, ctx, c.id);
       s.requests = s.requests.filter((r) => r.characterId !== c.id || r.status !== 'pending');
       log(s, ctx, { kind: 'system', actorName: who, characterName: c.name, text: `excluiu a ficha de ${c.name}.` });
       return;
@@ -659,7 +804,11 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       let levelBonus: number | undefined;
       let attr = a.attr;
       if (attr !== undefined && !ATTR_KEYS.includes(attr)) fail('Atributo inválido.');
-      if (a.threatId) {
+      if (a.combatantId) {
+        const t = getCombatant(getCombat(s), a.combatantId).threat ?? fail('Só ameaças em combate rolam por aqui.');
+        charName = t.name;
+        if (attr) extra = t.attributes[attr];
+      } else if (a.threatId) {
         const t = getThreat(s, a.threatId);
         charName = t.name;
         if (attr) extra = t.attributes[attr];
@@ -684,6 +833,206 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
         roll: r,
         hidden: !!a.hidden,
         playerId: actor.role === 'player' ? actor.playerId : undefined,
+      });
+      return;
+    }
+
+    case 'combat/create': {
+      if (s.combat) fail('Já existe um combate aberto.');
+      s.combat = { id: ctx.newId(), round: 0, turn: 0, order: [], startedAt: now };
+      return;
+    }
+
+    case 'combat/end': {
+      const c = getCombat(s);
+      if (c.round > 0) {
+        const down = c.order.filter((cb) => combatantInfo(s, cb)?.down).length;
+        log(s, ctx, {
+          kind: 'system', actorName: who,
+          text: `encerrou o combate após ${c.round} rodada${c.round > 1 ? 's' : ''}${down ? ` (${down} fora de combate)` : ''}.`,
+        });
+      }
+      s.combat = null;
+      return;
+    }
+
+    case 'combat/add': {
+      const c = getCombat(s);
+      if (!Array.isArray(a.refs) || !a.refs.length) fail('Escolha quem entra no combate.');
+      const qty = int(a.qty ?? 1, 1, MAX_SPAWN, 'Quantidade');
+      const added: Combatant[] = [];
+      const push = (cb: Omit<Combatant, 'id' | 'hidden' | 'conditions'>) => {
+        if (c.order.length >= MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
+        const full: Combatant = { id: ctx.newId(), hidden: false, conditions: [], ...cb };
+        c.order.push(full);
+        added.push(full);
+      };
+      for (const ref of a.refs) {
+        if (ref?.kind === 'character') {
+          const ch = getChar(s, ref.id);
+          if (ch.status !== 'approved') fail(`A ficha de ${ch.name} ainda não foi aprovada.`);
+          if (!c.order.some((x) => x.ref.id === ch.id)) push({ ref: { kind: 'character', id: ch.id } });
+        } else if (ref?.kind === 'threat') {
+          // O livro é só o molde: cada entidade na fila é uma instância própria.
+          const t = getThreat(s, ref.id);
+          for (let i = 0; i < qty; i++) push({ ref: { kind: 'threat', id: t.id }, threat: threatInstance(t, t.name) });
+          nameInstances(c, t.id, t.name);
+        } else {
+          fail('Combatente inválido.');
+        }
+      }
+      if (c.round > 0 && added.length) {
+        const names = added.map((x) => combatantName(s, x));
+        log(s, ctx, { kind: 'system', actorName: who, text: `${names.join(', ')} ${names.length > 1 ? 'entraram' : 'entrou'} no combate.`, hidden: true });
+      }
+      return;
+    }
+
+    case 'combat/resource': {
+      const cb = getCombatant(getCombat(s), a.combatantId);
+      const t = cb.threat ?? fail('Só ameaças em combate usam este ajuste.');
+      const pv = int(a.pv, -9999, t.pvMax, 'PV');
+      const pe = int(a.pe, 0, t.peMax, 'PE');
+      const before = { ...t.current };
+      t.current = { pv, pe };
+      const parts: string[] = [];
+      if (before.pv !== pv) parts.push(`PV ${before.pv} → ${pv}`);
+      if (before.pe !== pe) parts.push(`PE ${before.pe} → ${pe}`);
+      if (!parts.length) return;
+      const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
+      log(s, ctx, { kind: 'resource', actorName: who, characterName: t.name, text: `${t.name}: ${parts.join(', ')}${reason ? ` (${reason})` : ''}.`, hidden: cb.hidden });
+      return;
+    }
+
+    case 'combat/remove': {
+      getCombat(s);
+      const ids = new Set(Array.isArray(a.combatantIds) ? a.combatantIds : []);
+      if (!ids.size) fail('Nada para remover.');
+      removeCombatants(s, ctx, (x) => ids.has(x.id));
+      return;
+    }
+
+    case 'combat/move': {
+      const c = getCombat(s);
+      const cb = getCombatant(c, a.combatantId);
+      const to = int(a.to, 0, Math.max(0, c.order.length - 1), 'Posição');
+      const cur = c.order[c.turn]?.id;
+      c.order = c.order.filter((x) => x.id !== cb.id);
+      c.order.splice(to, 0, cb);
+      keepTurn(c, cur, c.turn);
+      return;
+    }
+
+    case 'combat/start': {
+      const c = getCombat(s);
+      if (c.round > 0) fail('O combate já começou.');
+      if (!c.order.length) fail('Adicione alguém à fila primeiro.');
+      const first = c.order.findIndex((x) => !combatantInfo(s, x)?.down);
+      if (first < 0) fail('Todos os combatentes estão fora de combate.');
+      c.round = 1;
+      c.turn = first;
+      c.startedAt = now;
+      log(s, ctx, { kind: 'system', actorName: who, text: 'iniciou o combate. Rodada 1.' });
+      startTurn(s, c, ctx);
+      return;
+    }
+
+    case 'combat/next': {
+      advance(s, ctx, 1);
+      return;
+    }
+
+    case 'combat/prev': {
+      advance(s, ctx, -1);
+      return;
+    }
+
+    case 'combat/endTurn': {
+      const c = getCombat(s);
+      const cur = c.round ? c.order[c.turn] : undefined;
+      // O id evita que um toque duplo pule o turno de outro.
+      if (!cur || cur.id !== a.combatantId) fail('Não é a vez desse personagem.');
+      if (actor.role === 'player') {
+        const ch = cur!.ref.kind === 'character' ? s.characters[cur!.ref.id] : undefined;
+        if (!ch || ch.ownerId !== actor.playerId) fail('Não é a vez do seu personagem.');
+      }
+      advance(s, ctx, 1);
+      return;
+    }
+
+    case 'combat/setTurn': {
+      const c = getCombat(s);
+      if (!c.round) fail('Inicie o combate primeiro.');
+      const idx = c.order.findIndex((x) => x.id === a.combatantId);
+      if (idx < 0) fail('Combatente não encontrado na fila.');
+      c.turn = idx;
+      startTurn(s, c, ctx);
+      return;
+    }
+
+    case 'combat/hidden': {
+      const cb = getCombatant(getCombat(s), a.combatantId);
+      cb.hidden = !!a.hidden;
+      return;
+    }
+
+    case 'combat/conditionAdd': {
+      const c = getCombat(s);
+      const name = str(a.name, 40, 'Condição', true);
+      const rounds = a.rounds === null || a.rounds === undefined ? null : int(a.rounds, 1, 99, 'Duração');
+      const ids = Array.isArray(a.combatantIds) ? a.combatantIds : [];
+      if (!ids.length) fail('Escolha quem recebe a condição.');
+      // Termina na vez de quem está agindo agora, N rodadas adiante.
+      const source = c.round > 0 ? c.order[c.turn] : undefined;
+      const timing = {
+        rounds,
+        sourceId: source?.id ?? null,
+        endsAtRound: rounds === null ? null : source ? c.round + rounds : rounds + 1,
+      };
+      for (const cb of ids.map((id) => getCombatant(c, id))) {
+        // A mesma condição de novo renova a duração em vez de duplicar.
+        const same = cb.conditions.find((x) => x.name.toLowerCase() === name.toLowerCase());
+        if (same) { Object.assign(same, timing); continue; }
+        if (cb.conditions.length >= MAX_CONDITIONS) fail(`${combatantName(s, cb)} já tem condições demais.`);
+        cb.conditions.push({ id: ctx.newId(), name, ...timing });
+      }
+      return;
+    }
+
+    case 'combat/conditionRemove': {
+      const cb = getCombatant(getCombat(s), a.combatantId);
+      cb.conditions = cb.conditions.filter((x) => x.id !== a.conditionId);
+      return;
+    }
+
+    case 'combat/groupDamage': {
+      const c = getCombat(s);
+      const op = a.op in GROUP_OPS ? a.op : fail('Operação inválida.');
+      const amount = int(a.amount, 1, 9999, 'Quantidade');
+      const ids = Array.isArray(a.combatantIds) ? [...new Set(a.combatantIds)] : [];
+      if (!ids.length) fail('Escolha os alvos.');
+      const parts: string[] = [];
+      let allHidden = true;
+      for (const cb of ids.map((id) => getCombatant(c, id))) {
+        const info = combatantInfo(s, cb) ?? fail('Combatente sem ficha.');
+        const pv = groupDamageResult(op, amount, info);
+        if (!cb.hidden) allHidden = false;
+        if (pv === info.pv) continue;
+        if (info.character) {
+          info.character.current.pv = pv;
+          info.character.updatedAt = now;
+        } else {
+          info.threat!.current.pv = pv;
+        }
+        const rd = rdFor(op, info);
+        parts.push(`${info.name} ${info.pv} → ${pv}${rd ? ` (RD ${rd})` : ''}`);
+      }
+      if (!parts.length) return;
+      const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
+      log(s, ctx, {
+        kind: 'resource', actorName: who,
+        text: `${GROUP_OPS[op].label} ${amount}${reason ? ` (${reason})` : ''}: ${parts.join('; ')}.`,
+        hidden: allHidden,
       });
       return;
     }

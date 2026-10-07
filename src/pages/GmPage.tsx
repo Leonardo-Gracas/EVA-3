@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { ArrowLeft, BookOpen, ClipboardList, Dices, Download, Eye, Inbox, LogOut, Package, Plus, Shield, Skull, UserPlus, VenetianMask } from 'lucide-react';
+import { ArrowLeft, BookOpen, ClipboardList, Dices, Download, Eye, Inbox, LogOut, Package, Plus, Shield, Skull, Swords, UserPlus, VenetianMask } from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
 import CharacterWizard from '../components/sheet/CharacterWizard';
 import ThreatsPanel from '../components/gm/ThreatsPanel';
+import CombatPanel from '../components/combat/CombatPanel';
 import { ActProvider, type ActApi } from '../components/act';
 import type { Character, TableState } from '../model/types';
 import { downloadTable } from '../store/persistence';
@@ -19,7 +20,7 @@ import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
-type Tab = 'fichas' | 'ameacas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
+type Tab = 'fichas' | 'combate' | 'ameacas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
 const send: ActApi['send'] = async (a) => {
   const r = gmDispatch(a);
@@ -77,6 +78,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           mobileBar
           tabs={[
             { id: 'fichas', label: 'Fichas', icon: <ClipboardList size={14} />, count: pendingSheets },
+            { id: 'combate', label: table.combat?.round ? `Combate · rodada ${table.combat.round}` : 'Combate', short: 'Combate', icon: <Swords size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
@@ -113,6 +115,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <GmNotifications table={table} onOpenSheet={openSheet} />
         <main className="page">
           {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
+          {tab === 'combate' && <CombatPanel table={table} />}
           {tab === 'ameacas' && <ThreatsPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}

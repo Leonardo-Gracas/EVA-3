@@ -3,9 +3,10 @@ import { Check, Dices, Eye, EyeOff, Footprints, NotebookPen, Skull, Undo2, X } f
 import { DEFAULT_MOVEMENT, type Character } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { CLASSES } from '../../rules/classes';
-import { deriveStats, testModifier } from '../../rules/derive';
+import { deriveStats, testModifier, type Derived } from '../../rules/derive';
 import { LIMITS } from '../../rules/validate';
 import { useAct } from '../act';
+import { cancelRollFx, startRollFx } from '../RollFx';
 import ActButton from '../common/ActButton';
 import ConfirmModal from '../common/ConfirmModal';
 import Vitals from './Vitals';
@@ -50,13 +51,10 @@ export function DeleteCharacterButton({ ch, className = 'btn btn-danger btn-sm',
 }
 
 export default function CharacterSheet({ ch, ownerName }: { ch: Character; ownerName?: string }) {
-  const { act, role } = useAct();
+  const { role } = useAct();
   const d = deriveStats(ch);
   const isGm = role === 'gm';
   const readOnly = ch.status !== 'approved';
-
-  const rollAttr = (attr: (typeof ATTR_KEYS)[number]) =>
-    act({ type: 'roll', characterId: ch.id, attr, expr: 'd20' });
 
   return (
     <div className="sheet">
@@ -93,35 +91,47 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
       </div>
 
       <Vitals ch={ch} d={d} readOnly={readOnly} />
-
-      <div className="card">
-        <div className="row mb">
-          <div className="card-title" style={{ margin: 0 }}>Atributos</div>
-          <div className="spacer" />
-          {!readOnly && <span className="tiny muted"><Dices size={12} style={{ verticalAlign: -2 }} /> Toque para rolar d20 + teste</span>}
-        </div>
-        <div className="attrs">
-          {ATTR_KEYS.map((k) => {
-            const content = (
-              <>
-                <span className="attr-key">{ATTRIBUTES[k].short}</span>
-                <span className="attr-val">{fmtMod(ch.attributes[k])}</span>
-                <span className="attr-test">teste {fmtMod(testModifier(ch, k))}</span>
-              </>
-            );
-            return readOnly ? (
-              <div key={k} className="attr" title={ATTRIBUTES[k].description}>{content}</div>
-            ) : (
-              <button key={k} className="attr" title={`${ATTRIBUTES[k].name}: ${ATTRIBUTES[k].description}`} onClick={() => rollAttr(k)}>{content}</button>
-            );
-          })}
-        </div>
-        {d.damageAttrs.length > 0 && <p className="tiny muted mt">Violência: some FOR ({fmtMod(ch.attributes.FOR)}) ao dano final dos golpes.</p>}
-      </div>
-
+      <AttributesCard ch={ch} d={d} readOnly={readOnly} />
       <AbilitiesPanel ch={ch} d={d} readOnly={readOnly} />
       <Inventory ch={ch} readOnly={readOnly} />
       <Notes ch={ch} readOnly={readOnly && !isGm} />
+    </div>
+  );
+}
+
+/** Atributos com teste de d20 num toque (também usado nos atalhos de combate). */
+export function AttributesCard({ ch, d, readOnly }: { ch: Character; d: Derived; readOnly?: boolean }) {
+  const { act } = useAct();
+  const rollAttr = async (attr: (typeof ATTR_KEYS)[number]) => {
+    const fx = startRollFx(ch.name, attr);
+    const r = await act({ type: 'roll', characterId: ch.id, attr, expr: 'd20' });
+    if (!r.ok) cancelRollFx(fx);
+  };
+
+  return (
+    <div className="card">
+      <div className="row mb">
+        <div className="card-title" style={{ margin: 0 }}>Atributos</div>
+        <div className="spacer" />
+        {!readOnly && <span className="tiny muted"><Dices size={12} style={{ verticalAlign: -2 }} /> Toque para rolar d20 + teste</span>}
+      </div>
+      <div className="attrs">
+        {ATTR_KEYS.map((k) => {
+          const content = (
+            <>
+              <span className="attr-key">{ATTRIBUTES[k].short}</span>
+              <span className="attr-val">{fmtMod(ch.attributes[k])}</span>
+              <span className="attr-test">teste {fmtMod(testModifier(ch, k))}</span>
+            </>
+          );
+          return readOnly ? (
+            <div key={k} className="attr" title={ATTRIBUTES[k].description}>{content}</div>
+          ) : (
+            <button key={k} className="attr" title={`${ATTRIBUTES[k].name}: ${ATTRIBUTES[k].description}`} onClick={() => rollAttr(k)}>{content}</button>
+          );
+        })}
+      </div>
+      {d.damageAttrs.length > 0 && <p className="tiny muted mt">Violência: some FOR ({fmtMod(ch.attributes.FOR)}) ao dano final dos golpes.</p>}
     </div>
   );
 }

@@ -134,6 +134,8 @@ export function migrate(t: TableState): TableState {
   t.itemLibrary ??= {};
   t.requests ??= [];
   t.log ??= [];
+  t.combat ??= null;
+  if (t.combat) migrateCombat(t);
   t.permissions ??= { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} };
   t.permissions.global = { ...DEFAULT_PERMISSIONS, ...t.permissions.global };
   t.permissions.perPlayer ??= {};
@@ -156,6 +158,31 @@ export function migrate(t: TableState): TableState {
     delete legacy.rd;
   }
   return t;
+}
+
+/**
+ * Combate da versão anterior: ameaças apontavam para o livro (agora viram
+ * instância) e condições contavam rodadas soltas (agora terminam numa posição).
+ */
+function migrateCombat(t: TableState) {
+  const c = t.combat!;
+  delete (c as typeof c & { ticked?: unknown }).ticked;
+  c.order = c.order.filter((cb) => {
+    delete (cb as typeof cb & { spawned?: unknown }).spawned;
+    if (cb.ref.kind === 'threat' && !cb.threat) {
+      const src = t.threats[cb.ref.id];
+      if (!src) return false;
+      const { id: _id, visible: _v, createdAt: _c, updatedAt: _u, ...data } = structuredClone(src);
+      cb.threat = data;
+    }
+    for (const cond of cb.conditions) {
+      if (cond.endsAtRound !== undefined) continue;
+      cond.sourceId = c.round > 0 ? cb.id : null;
+      cond.endsAtRound = cond.rounds === null ? null : c.round > 0 ? c.round + cond.rounds : cond.rounds + 1;
+    }
+    return true;
+  });
+  c.turn = Math.max(0, Math.min(c.turn, c.order.length - 1));
 }
 
 /** Itens de versões antigas ganham valor e durabilidade padrão do tipo. */

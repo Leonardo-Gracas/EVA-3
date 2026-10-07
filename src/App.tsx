@@ -10,6 +10,7 @@ import LobbyPage from './pages/LobbyPage';
 import GmPage from './pages/GmPage';
 import PlayerPage from './pages/PlayerPage';
 import { Toasts, toast } from './components/common/toast';
+import { RollFxOverlay } from './components/RollFx';
 
 type Route =
   | { page: 'name'; editing?: boolean }
@@ -76,6 +77,7 @@ export default function App() {
       )}
       {route.page === 'gm' && <GmPage onLeave={leave} />}
       {route.page === 'player' && <PlayerPage onLeave={leave} />}
+      <RollFxOverlay />
       <Toasts />
     </>
   );

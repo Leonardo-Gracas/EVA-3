@@ -181,6 +181,54 @@ export interface Threat extends ThreatData {
   updatedAt: number;
 }
 
+// ── Combate ──────────────────────────────────────────────────────────────────
+
+/** Ficha: o personagem em si. Ameaça: o molde do livro de onde a instância saiu. */
+export type CombatantRef = { kind: 'character' | 'threat'; id: string };
+
+export interface CombatCondition {
+  id: string;
+  name: string;
+  /** Duração escolhida, em rodadas; null = até o mestre remover. */
+  rounds: number | null;
+  /**
+   * Combatente que estava agindo quando a condição foi aplicada. Ela termina
+   * quando a vez chega de novo à posição dele na rodada `endsAtRound`, mesmo
+   * que a ordem mude. null = aplicada antes do combate: termina no começo da rodada.
+   */
+  sourceId: string | null;
+  endsAtRound: number | null;
+}
+
+/** Ameaça em combate: cópia do molde com PV/PE próprios. O livro não muda. */
+export interface CombatThreat extends ThreatData {
+  current: { pv: number; pe: number };
+}
+
+export interface Combatant {
+  id: string;
+  ref: CombatantRef;
+  /** Só em ameaças: a instância desta entidade. */
+  threat?: CombatThreat;
+  /** Oculto dos jogadores (emboscada). */
+  hidden: boolean;
+  conditions: CombatCondition[];
+}
+
+export interface Combat {
+  id: string;
+  /** 0 = montando a fila, ainda não iniciado. */
+  round: number;
+  /** Índice em `order` de quem está agindo. */
+  turn: number;
+  order: Combatant[];
+  startedAt: number;
+}
+
+export type CombatSide = 'pc' | 'npc' | 'threat';
+export type CombatHealth = 'ileso' | 'ferido' | 'muito-ferido' | 'abatido' | 'inconsciente' | 'morto';
+export type GroupDamageOp = 'phys' | 'mag' | 'direct' | 'heal';
+
 // ── Mesa ─────────────────────────────────────────────────────────────────────
 
 export interface PlayerRecord {
@@ -268,6 +316,7 @@ export interface TableState {
   permissions: PermissionState;
   requests: PendingRequest[];
   log: LogEntry[];
+  combat: Combat | null;
 }
 
 // ── Ações ────────────────────────────────────────────────────────────────────
@@ -305,7 +354,25 @@ export type GameAction =
   | { type: 'permissions/global'; key: PermissionKey; value: ActionPermission }
   | { type: 'permissions/player'; playerId: string; key: PermissionKey; value: ActionPermission | null }
   | { type: 'request/resolve'; requestId: string; approve: boolean }
-  | { type: 'roll'; expr: string; characterId?: string; threatId?: string; attr?: AttrKey; label?: string; target?: number; hidden?: boolean }
+  | { type: 'roll'; expr: string; characterId?: string; threatId?: string; combatantId?: string; attr?: AttrKey; label?: string; target?: number; hidden?: boolean }
+  | { type: 'combat/create' }
+  | { type: 'combat/end' }
+  /** Ameaças entram como instâncias do molde; qty > 1 cria várias (Goblin 1, Goblin 2…). */
+  | { type: 'combat/add'; refs: CombatantRef[]; qty?: number }
+  /** PV/PE de uma ameaça em combate (a instância, não o molde). */
+  | { type: 'combat/resource'; combatantId: string; pv: number; pe: number; reason?: string }
+  | { type: 'combat/remove'; combatantIds: string[] }
+  | { type: 'combat/move'; combatantId: string; to: number }
+  | { type: 'combat/start' }
+  | { type: 'combat/next' }
+  | { type: 'combat/prev' }
+  | { type: 'combat/setTurn'; combatantId: string }
+  | { type: 'combat/hidden'; combatantId: string; hidden: boolean }
+  | { type: 'combat/conditionAdd'; combatantIds: string[]; name: string; rounds: number | null }
+  | { type: 'combat/conditionRemove'; combatantId: string; conditionId: string }
+  /** Jogador encerra o turno do próprio personagem. */
+  | { type: 'combat/endTurn'; combatantId: string }
+  | { type: 'combat/groupDamage'; combatantIds: string[]; op: GroupDamageOp; amount: number; reason?: string }
   | { type: 'table/rename'; name: string }
   | { type: 'log/clear' };
 
@@ -325,6 +392,24 @@ export interface PublicCharacter {
   status: CharacterStatus;
 }
 
+export interface PlayerCombatant {
+  id: string;
+  name: string;
+  side: CombatSide;
+  /** Ficha do próprio jogador. */
+  mine: boolean;
+  characterId?: string;
+  health: CombatHealth;
+  conditions: Array<{ id: string; name: string; rounds: number | null }>;
+}
+
+export interface PlayerCombat {
+  round: number;
+  /** null: ainda não iniciado ou a vez é de alguém oculto. */
+  turnId: string | null;
+  order: PlayerCombatant[];
+}
+
 export interface PlayerView {
   table: { id: string; name: string; gmName: string };
   me: { id: string; name: string };
@@ -337,4 +422,5 @@ export interface PlayerView {
   myRequests: PendingRequest[];
   permissions: Permissions;
   log: LogEntry[];
+  combat: PlayerCombat | null;
 }

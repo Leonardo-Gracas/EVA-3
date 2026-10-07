@@ -591,6 +591,112 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .ref-lead { font-size: 14px; }
 }
 
+/* ── Animação dos testes de atributo ─────────────────────── */
+.fx-overlay {
+  position: fixed; inset: 0; z-index: 1900; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(circle at 50% 45%, rgba(15, 13, 11, 0.55), rgba(5, 4, 3, 0.86) 70%);
+  backdrop-filter: blur(3px); animation: fx-fade 180ms ease; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+/* Altura reservada para o resultado: o dado não pula quando ele aparece. */
+.fx-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; min-height: 390px; }
+.fx-die { width: 148px; height: 148px; position: relative; z-index: 2; }
+.fx-d20 { width: 100%; height: 100%; overflow: visible; }
+.fx-d20-body { fill: var(--bg-elevated); stroke: var(--gold); stroke-width: 2.5; stroke-linejoin: round; }
+.fx-d20-face { fill: var(--bg-overlay); stroke: var(--gold); stroke-width: 1.5; stroke-linejoin: round; }
+.fx-d20-edge { fill: none; stroke: var(--border-gold); stroke-width: 1.4; }
+.fx-d20-num { font-family: var(--font-display); font-weight: 700; font-size: 25px; fill: var(--gold-soft); }
+.fx-rolling { animation: fx-tumble 520ms cubic-bezier(.45, .05, .55, .95) infinite; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.6)); }
+.fx-rolling .fx-d20-num { opacity: 0.85; }
+.fx-landed { animation: fx-land 520ms cubic-bezier(.2, 1.4, .4, 1) both; }
+.fx-hit .fx-landed { filter: drop-shadow(0 0 14px rgba(201, 162, 74, 0.35)); }
+
+.fx-caption { display: flex; flex-direction: column; gap: 2px; }
+.fx-who { font-family: var(--font-display); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+.fx-what { font-size: 15px; color: var(--text-secondary); }
+.fx-hint { font-size: 12px; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; animation: fx-pulse 900ms ease-in-out infinite; }
+.fx-result { display: flex; flex-direction: column; align-items: center; gap: 2px; animation: fx-rise 360ms 120ms ease both; }
+.fx-total { font-size: 64px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gold-soft); text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6); }
+.fx-break { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fx-break strong { color: var(--text-primary); }
+.fx-banner { font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 4px; }
+
+/* 20 natural: ouro, raios girando, faíscas e faixa de crítico. */
+.fx-crit { background: radial-gradient(circle at 50% 42%, rgba(201, 162, 74, 0.28), rgba(5, 4, 3, 0.9) 68%); }
+.fx-crit .fx-stage { animation: fx-shake 420ms 80ms ease both; }
+.fx-crit .fx-d20-body { fill: #3a2c12; stroke: #ffe3a0; stroke-width: 3; }
+.fx-crit .fx-d20-face { fill: #5a4418; stroke: #ffe3a0; }
+.fx-crit .fx-d20-edge { stroke: rgba(255, 227, 160, 0.7); }
+.fx-crit .fx-d20-num { fill: #fff6dc; }
+.fx-crit .fx-landed { animation: fx-land-crit 760ms cubic-bezier(.2, 1.5, .4, 1) both, fx-glow 1.6s 700ms ease-in-out infinite alternate; }
+.fx-crit .fx-caption { text-shadow: 0 1px 8px #000, 0 0 2px #000; }
+.fx-crit .fx-total { color: #ffe9b0; text-shadow: 0 0 18px rgba(227, 196, 124, 0.85), 0 0 42px rgba(201, 162, 74, 0.55); }
+.fx-crit .fx-banner {
+  background: linear-gradient(90deg, #c9a24a, #fff3c4, #c9a24a); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: fx-banner 620ms cubic-bezier(.2, 1.6, .4, 1) both, fx-shimmer 1.4s 600ms linear infinite;
+  filter: drop-shadow(0 0 12px rgba(227, 196, 124, 0.6));
+}
+.fx-rays {
+  position: absolute; z-index: 0; left: 50%; top: 74px; width: 560px; height: 560px; margin: -280px 0 0 -280px; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 227, 160, 0.30) 0deg 5deg, transparent 5deg 15deg);
+  -webkit-mask: radial-gradient(circle, #000 12%, transparent 66%); mask: radial-gradient(circle, #000 12%, transparent 66%);
+  animation: fx-rays-in 600ms ease both, fx-spin 14s linear infinite; pointer-events: none;
+}
+.fx-sparks { position: absolute; z-index: 3; left: 50%; top: 74px; width: 0; height: 0; pointer-events: none; }
+.fx-sparks span {
+  position: absolute; left: 0; top: 0; width: var(--s); height: var(--s); margin: calc(var(--s) / -2); border-radius: 50%;
+  background: #ffe9b0; box-shadow: 0 0 8px 2px rgba(227, 196, 124, 0.9); opacity: 0;
+  animation: fx-spark 1100ms cubic-bezier(.1, .7, .3, 1) both;
+}
+
+/* 1 natural: vermelho e tremor seco. */
+.fx-fumble { background: radial-gradient(circle at 50% 42%, rgba(179, 52, 59, 0.22), rgba(5, 4, 3, 0.88) 68%); }
+.fx-fumble .fx-landed { animation: fx-land 520ms cubic-bezier(.2, 1.4, .4, 1) both, fx-shake 360ms 300ms ease both; }
+.fx-fumble .fx-d20-body { fill: #2a1012; stroke: var(--error); }
+.fx-fumble .fx-d20-face { fill: #3a1418; stroke: var(--error); }
+.fx-fumble .fx-d20-edge { stroke: rgba(214, 69, 79, 0.5); }
+.fx-fumble .fx-d20-num { fill: #f2a3a8; }
+.fx-fumble .fx-total { color: #f2a3a8; }
+.fx-fumble .fx-banner { color: var(--error); font-size: 22px; }
+
+@keyframes fx-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fx-tumble {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  25% { transform: translateY(-16px) rotate(95deg) scale(0.92, 1.06); }
+  50% { transform: translateY(0) rotate(180deg) scale(1.06, 0.94); }
+  75% { transform: translateY(-12px) rotate(275deg) scale(0.94, 1.04); }
+  100% { transform: translateY(0) rotate(360deg) scale(1); }
+}
+@keyframes fx-land { 0% { transform: scale(1.35) rotate(-24deg); } 60% { transform: scale(0.94) rotate(4deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes fx-land-crit {
+  0% { transform: scale(0.4) rotate(-200deg); }
+  55% { transform: scale(1.32) rotate(10deg); }
+  80% { transform: scale(0.96) rotate(-3deg); }
+  100% { transform: scale(1.08) rotate(0); }
+}
+@keyframes fx-glow { from { filter: drop-shadow(0 0 14px rgba(255, 227, 160, 0.55)); } to { filter: drop-shadow(0 0 34px rgba(255, 227, 160, 0.95)); } }
+@keyframes fx-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fx-pulse { 50% { opacity: 0.4; } }
+@keyframes fx-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-7px, 3px); } 40% { transform: translate(6px, -4px); }
+  60% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); }
+}
+@keyframes fx-banner { 0% { opacity: 0; transform: scale(2.4); letter-spacing: 0.6em; } 100% { opacity: 1; transform: scale(1); letter-spacing: 0.16em; } }
+@keyframes fx-shimmer { to { background-position: -200% 0; } }
+@keyframes fx-rays-in { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: scale(1); } }
+@keyframes fx-spin { to { rotate: 360deg; } }
+@keyframes fx-spark {
+  0% { opacity: 1; transform: rotate(var(--a)) translateY(0) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(0.3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-rolling { animation: fx-pulse 900ms ease-in-out infinite; }
+  .fx-landed, .fx-crit .fx-landed, .fx-fumble .fx-landed, .fx-crit .fx-stage, .fx-crit .fx-banner, .fx-rays { animation: none; }
+  .fx-sparks { display: none; }
+}
+
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* ── Responsivo ──────────────────────────────────────────── */
@@ -682,4 +788,219 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .brand-text { display: none; }
   .topbar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .topbar > .spacer { display: none; }
+}
+
+/* ── Combate ─────────────────────────────────────────────── */
+/* Lado de cada combatente numa faixa à esquerda: ouro = PJ, azul = NPC, vermelho = ameaça. */
+.side-pc { --side: var(--gold); }
+.side-npc { --side: var(--info); }
+.side-threat { --side: var(--accent); }
+
+.combat { display: flex; flex-direction: column; gap: 16px; }
+.combat-empty { max-width: 560px; margin: 24px auto; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 32px 24px; }
+.combat-empty p { max-width: 460px; }
+
+/* Barra de turno: presa logo abaixo da barra superior. */
+.combat-bar {
+  position: sticky; top: var(--topbar-h, 56px); z-index: 40; display: flex; align-items: center; gap: 14px;
+  margin: -20px -20px 0; padding: 10px 20px; background: rgba(15, 13, 11, 0.95); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.combat-bar-mine { background: linear-gradient(90deg, rgba(201, 162, 74, 0.22), rgba(15, 13, 11, 0.95) 70%); border-bottom-color: var(--border-gold); }
+.combat-round {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 58px; padding: 4px 8px;
+  border: 1px solid var(--border-gold); border-radius: var(--radius); background: var(--gold-dim); line-height: 1.1;
+}
+.combat-round-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+.combat-round-num { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--gold-soft); }
+.combat-now { min-width: 0; }
+.combat-now-who { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.combat-now-who strong { font-family: var(--font-display); letter-spacing: 0.02em; }
+.combat-now-mine { color: var(--gold-soft); }
+.combat-controls { display: flex; align-items: center; gap: 6px; }
+.combat-next { padding: 9px 16px; font-size: 14px; }
+.combat-next kbd {
+  font: 600 10px var(--font-body); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(26, 20, 12, 0.35); opacity: 0.7;
+}
+.combat-follow { align-self: flex-start; border-color: var(--border-gold); color: var(--gold-soft); }
+
+.combat-split { grid-template-columns: minmax(340px, 440px) 1fr; }
+
+/* Fila */
+.cbt-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.cbt-row {
+  position: relative; display: grid; grid-template-columns: 40px 20px minmax(0, 1fr) auto; align-items: center; column-gap: 6px;
+  padding-right: 8px; border-radius: var(--radius); background: var(--bg-surface); border: 1px solid var(--border); overflow: hidden;
+  transition: border-color var(--transition), background var(--transition), opacity var(--transition), box-shadow var(--transition);
+}
+.cbt-row:hover { background: var(--bg-elevated); }
+.cbt-current {
+  border-color: var(--gold); background: linear-gradient(90deg, var(--gold-dim), var(--bg-surface) 70%);
+  box-shadow: 0 0 0 1px var(--gold) inset, 0 0 18px rgba(201, 162, 74, 0.16);
+}
+.cbt-focus:not(.cbt-current) { border-color: var(--border-light); background: var(--bg-elevated); }
+.cbt-selected { border-color: rgba(214, 69, 79, 0.75); box-shadow: 0 0 0 1px rgba(214, 69, 79, 0.55) inset; }
+.cbt-selected:not(.cbt-current) { background: linear-gradient(90deg, rgba(179, 52, 59, 0.14), var(--bg-surface) 65%); }
+
+/* Faixa de alvo: a lateral inteira da linha. Na cor do lado; marcada, vira mira vermelha. */
+.cbt-target {
+  align-self: stretch; display: flex; align-items: center; justify-content: center; min-height: 64px;
+  color: var(--side, var(--text-muted)); background: color-mix(in srgb, var(--side, var(--border)) 16%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--side, var(--border)) 45%, transparent);
+  box-shadow: inset 4px 0 0 var(--side, var(--border)); -webkit-tap-highlight-color: transparent;
+  transition: background var(--transition), color var(--transition);
+}
+.cbt-target svg { opacity: 0.35; transition: opacity var(--transition), transform var(--transition); }
+.cbt-target:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); color: #f2a3a8; }
+.cbt-target:hover svg, .cbt-target:focus-visible svg { opacity: 1; transform: scale(1.1); }
+.cbt-target:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.cbt-target[aria-pressed="true"] { background: var(--accent); color: #fff; box-shadow: inset 4px 0 0 #f2a3a8; border-right-color: var(--accent); }
+.cbt-target[aria-pressed="true"] svg { opacity: 1; }
+/* Com algum alvo marcado, as outras faixas mostram a mira para convidar a marcar mais. */
+.cbt-targeting .cbt-target:not([aria-pressed="true"]) svg { opacity: 0.7; }
+.cbt-quickpick { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cbt-qp {
+  font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; color: var(--text-secondary);
+  border: 1px solid var(--border); background: var(--bg-elevated); transition: all var(--transition);
+}
+.cbt-qp:hover { color: #f2a3a8; border-color: rgba(179, 52, 59, 0.6); background: var(--accent-dim); }
+.cbt-down { opacity: 0.55; }
+.cbt-down .cbt-name { text-decoration: line-through; text-decoration-color: var(--text-muted); }
+.cbt-dragging { opacity: 0.35; }
+.cbt-drop-before::before, .cbt-drop-after::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--gold); box-shadow: 0 0 8px var(--gold);
+}
+.cbt-drop-before::before { top: -5px; }
+.cbt-drop-after::after { bottom: -5px; }
+.cbt-order { display: flex; flex-direction: column; align-items: center; color: var(--text-muted); }
+.cbt-grip { display: inline-flex; cursor: grab; padding: 1px 0; }
+.cbt-row:active .cbt-grip { cursor: grabbing; }
+.cbt-arrow { display: inline-flex; padding: 1px; border-radius: 4px; color: var(--text-muted); opacity: 0; transition: opacity var(--transition); }
+.cbt-arrow:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
+.cbt-arrow:disabled { visibility: hidden; }
+.cbt-row:hover .cbt-arrow, .cbt-arrow:focus-visible { opacity: 1; }
+.cbt-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 8px 0; text-align: left; border-radius: var(--radius-sm); }
+.cbt-main[role="button"] { cursor: pointer; }
+.cbt-main:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.cbt-head { gap: 6px; min-width: 0; }
+.cbt-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbt-play { flex-shrink: 0; }
+.cbt-tag {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 1px 6px; border-radius: 999px;
+  color: var(--text-secondary); border: 1px dashed var(--border-light); white-space: nowrap;
+}
+.cbt-tag-you { color: var(--gold-soft); border: 1px solid var(--border-gold); background: var(--gold-dim); }
+.cbt-stats { white-space: nowrap; }
+.cbt-bar { height: 5px; }
+.cbt-sub { gap: 8px; flex-wrap: wrap; }
+.cbt-actions { display: flex; align-items: center; gap: 4px; }
+.cbt-actions .btn-icon { padding: 5px; }
+.cbt-readonly { display: block; padding: 0 10px; border-left: 3px solid var(--side, var(--border)); }
+.cbt-readonly.cbt-current { border-left-color: var(--side, var(--gold)); }
+.cbt-mine:not(.cbt-current) { background: linear-gradient(90deg, rgba(201, 162, 74, 0.07), var(--bg-surface) 60%); }
+
+/* Barra de ações em grupo: presa ao pé da fila enquanto houver seleção. */
+.cbt-selbar {
+  position: sticky; bottom: calc(var(--bottom-nav-h, 0px) + 12px); z-index: 20; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 10px; border-radius: var(--radius); background: var(--bg-overlay); border: 1px solid rgba(179, 52, 59, 0.55);
+  box-shadow: var(--shadow-lg); animation: fadeIn 160ms ease;
+}
+.cbt-focus-card { border-left: 3px solid var(--side, var(--border)); padding: 12px 14px; }
+
+/* Condições */
+.cond-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.cond-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: rgba(106, 165, 201, 0.12); color: #a9cde3; border: 1px solid rgba(106, 165, 201, 0.35);
+}
+.cond-chip:has(.cond-x) { padding-right: 3px; }
+.cond-last { background: rgba(217, 160, 63, 0.14); color: var(--warning); border-color: rgba(217, 160, 63, 0.4); }
+.cond-rounds { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; opacity: 0.85; }
+.cond-x { display: inline-flex; padding: 2px; border-radius: 50%; color: inherit; opacity: 0.6; }
+.cond-x:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+
+/* Escolha de combatentes */
+.pick-row {
+  display: flex; align-items: center; gap: 6px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated);
+  transition: border-color var(--transition), background var(--transition);
+}
+.pick-row:hover { border-color: var(--border-light); }
+.pick-row.on { border-color: var(--gold); background: var(--gold-dim); }
+.pick-row.locked { opacity: 0.55; }
+.pick-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; min-height: 44px; }
+.pick-main:disabled { cursor: default; }
+.pick-box {
+  display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0;
+  border-radius: 5px; border: 1px solid var(--border-light); color: #1a140c;
+}
+.pick-row.on .pick-box { background: var(--gold); border-color: var(--gold); }
+.pick-row.locked .pick-box { color: var(--text-muted); }
+.pick-qty { display: inline-flex; align-items: center; gap: 4px; padding-right: 8px; }
+.pick-qty .mono { min-width: 28px; text-align: center; font-weight: 700; color: var(--gold-soft); }
+
+/* Prévia do dano em grupo */
+.grp-preview { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; padding-right: 2px; }
+.grp-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-base); border: 1px solid var(--border); }
+
+/* Jogador */
+.combat-player-grid { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.combat-quick-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; text-align: left; color: var(--text-secondary); }
+.combat-endturn { padding: 10px 18px; font-size: 14px; animation: turn-glow 1.8s ease-in-out infinite; }
+.combat-endturn-fab { display: none; }
+.turn-banner {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px 16px; font-size: 14px;
+  color: var(--gold-soft); background: linear-gradient(90deg, rgba(201, 162, 74, 0.08), rgba(201, 162, 74, 0.24), rgba(201, 162, 74, 0.08));
+  border-bottom: 1px solid var(--border-gold); animation: fadeIn 200ms ease;
+}
+.turn-banner strong { font-family: var(--font-display); }
+.turn-banner-cta { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--gold); color: #1a140c; }
+@keyframes turn-glow { 50% { box-shadow: 0 0 0 4px rgba(201, 162, 74, 0.18), 0 0 22px rgba(201, 162, 74, 0.35); } }
+@media (prefers-reduced-motion: reduce) { .combat-endturn, .combat-endturn-fab .btn { animation: none; } }
+
+@media (max-width: 900px) {
+  .combat-split { grid-template-columns: 1fr; }
+  .combat-player-grid { grid-template-columns: 1fr; }
+  /* Sem hover no toque: as setas ficam sempre à mostra (arrastar não funciona no toque). */
+  .cbt-arrow { opacity: 1; }
+  .cbt-grip { display: none; }
+}
+@media (max-width: 640px) {
+  /* Sem backdrop-filter: ele prenderia os controles fixos dentro da barra. */
+  .combat-bar { margin: -14px -12px 0; padding: 8px 12px; gap: 10px; backdrop-filter: none; background: rgb(15, 13, 11); }
+  .combat-bar-mine { background: linear-gradient(90deg, #2e2414, rgb(15, 13, 11) 70%); }
+  .combat-round { min-width: 48px; }
+  .combat-round-num { font-size: 17px; }
+  .combat-now-who { font-size: 14px; }
+  /* Mestre: os controles de turno descem para perto do polegar, acima da barra inferior. */
+  .combat:not(.combat-player) .combat-controls {
+    position: fixed; left: 0; right: 0; bottom: var(--bottom-nav-h, 0px); z-index: 55; padding: 8px 12px;
+    background: rgba(15, 13, 11, 0.97); border-top: 1px solid var(--border-gold); box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.5);
+  }
+  .combat:not(.combat-player) .combat-next { flex: 1; min-height: 46px; font-size: 15px; }
+  .combat:not(.combat-player) .combat-controls .btn-icon { min-width: 46px; min-height: 46px; }
+  .combat:not(.combat-player) { padding-bottom: 66px; }
+  .cbt-selbar { bottom: calc(var(--bottom-nav-h, 0px) + 74px); }
+  .cbt-row { grid-template-columns: 46px 24px minmax(0, 1fr); grid-template-areas: "target order main" "target order actions"; }
+  .cbt-target { grid-area: target; }
+  .cbt-target svg { opacity: 0.6; }
+  .cbt-order { grid-area: order; }
+  .cbt-main { grid-area: main; padding-bottom: 4px; }
+  .cbt-actions { grid-area: actions; flex-wrap: wrap; padding-bottom: 8px; }
+  .cbt-qp { padding: 7px 12px; font-size: 13px; }
+  .cbt-actions .btn { min-height: 36px; }
+  .cbt-actions .btn-icon { min-width: 36px; }
+  .cbt-arrow { padding: 4px; }
+  .cbt-stats { display: none; }
+  /* Jogador: o botão do turno vira uma faixa grande acima da barra inferior. */
+  .combat-endturn { display: none; }
+  .combat-endturn-fab {
+    display: block; position: fixed; left: 0; right: 0; bottom: var(--bottom-nav-h, 0px); z-index: 55; padding: 8px 12px;
+    background: rgba(15, 13, 11, 0.97); border-top: 1px solid var(--border-gold); box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.5);
+  }
+  .combat-endturn-fab .btn { min-height: 50px; animation: turn-glow 1.8s ease-in-out infinite; }
+  .combat-player:has(.combat-endturn-fab) { padding-bottom: 70px; }
+}
+@media (max-width: 560px) {
+  /* Avisos sobem acima da faixa fixa de turno. */
+  body:has(.combat:not(.combat-player)) .toasts, body:has(.combat-endturn-fab) .toasts { bottom: calc(var(--bottom-nav-h, 0px) + 78px); }
 }

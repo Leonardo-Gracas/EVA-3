@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, Dices, Eye, EyeOff, Heart, Pencil, Plus, Search, Swords, Trash2, Zap } from 'lucide-react';
-import type { TableState, Threat } from '../../model/types';
+import type { CombatThreat, TableState, Threat } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { parseExpr } from '../../rules/dice';
 import { useAct } from '../act';
+import { cancelRollFx, startRollFx } from '../RollFx';
 import ConfirmButton from '../common/ConfirmButton';
 import ResourceAdjustModal, { peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
 import ThreatEditor from './ThreatEditor';
@@ -72,14 +73,23 @@ export default function ThreatsPanel({ table }: { table: TableState }) {
   );
 }
 
-function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void }) {
+/**
+ * Ficha de ameaça. Com `combatantId`, mostra a instância de um combate: PV/PE
+ * e rolagens vão para ela, e o molde do livro (editar, duplicar...) fica de fora.
+ */
+export function ThreatSheet(props: { t: Threat; onDuplicated?: () => void } | { t: CombatThreat; combatantId: string; templateName?: string }) {
+  const { t } = props;
+  const combatantId = 'combatantId' in props ? props.combatantId : undefined;
+  const book = combatantId ? undefined : (t as Threat);
   const { act } = useAct();
   const [editing, setEditing] = useState(false);
   const [hidden, setHidden] = useState(true);
   const [adjust, setAdjust] = useState<AdjustStart | null>(null);
 
-  const setRes = async (pv: number, pe: number, reason?: string) =>
-    (await act({ type: 'threat/resource', threatId: t.id, pv: Math.min(t.pvMax, pv), pe: Math.max(0, Math.min(t.peMax, pe)), reason })).ok;
+  const setRes = async (pv: number, pe: number, reason?: string) => {
+    const v = { pv: Math.min(t.pvMax, pv), pe: Math.max(0, Math.min(t.peMax, pe)), reason };
+    return (await act(combatantId ? { type: 'combat/resource', combatantId, ...v } : { type: 'threat/resource', threatId: book!.id, ...v })).ok;
+  };
   const tracks: AdjustTrack[] = [
     {
       key: 'pv', label: 'PV', icon: <Heart size={16} color="var(--pv)" />, color: 'var(--pv)', barClass: 'bar-pv',
@@ -91,27 +101,35 @@ function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void 
       current: t.current.pe, max: t.peMax, min: 0, ops: peOps(),
     },
   ];
-  const roll = (expr: string, label: string, attr?: (typeof ATTR_KEYS)[number]) =>
-    act({ type: 'roll', expr, threatId: t.id, attr, label, hidden });
+  const roll = async (expr: string, label: string, attr?: (typeof ATTR_KEYS)[number]) => {
+    const fx = attr ? startRollFx(t.name, attr) : undefined;
+    const r = await act({ type: 'roll', expr, ...(combatantId ? { combatantId } : { threatId: book!.id }), attr, label, hidden });
+    if (!r.ok && fx) cancelRollFx(fx);
+  };
 
   return (
     <div className="sheet">
       <div className="card card-gold">
         <div className="sheet-head">
           <div className="grow">
-            <div className="sheet-title">Ameaça</div>
+            <div className="sheet-title">{combatantId ? 'Ameaça em combate' : 'Ameaça'}</div>
             <h2 className="sheet-name">{t.name}</h2>
             {t.concept && <div className="secondary">{t.concept}</div>}
+            {'templateName' in props && props.templateName && (
+              <div className="tiny muted mt">Molde: {props.templateName}. Os ajustes aqui valem só para este combate.</div>
+            )}
           </div>
-          <div className="row-wrap">
-            <button className={`btn btn-sm${t.visible ? ' btn-primary' : ''}`} title="Mostrar nome e descrição aos jogadores"
-              onClick={() => act({ type: 'threat/visibility', threatId: t.id, visible: !t.visible })}>
-              {t.visible ? <Eye size={14} /> : <EyeOff size={14} />} {t.visible ? 'Visível' : 'Oculta'}
-            </button>
-            <button className="btn btn-sm" onClick={() => setEditing(true)}><Pencil size={14} /> Editar</button>
-            <button className="btn btn-sm" onClick={async () => { const r = await act({ type: 'threat/duplicate', threatId: t.id }, 'Ameaça duplicada.'); if (r.ok) onDuplicated(); }}><Copy size={14} /> Duplicar</button>
-            <ConfirmButton onConfirm={() => act({ type: 'threat/delete', threatId: t.id }, 'Ameaça excluída.')}><Trash2 size={14} /></ConfirmButton>
-          </div>
+          {book && (
+            <div className="row-wrap">
+              <button className={`btn btn-sm${book.visible ? ' btn-primary' : ''}`} title="Mostrar nome e descrição aos jogadores"
+                onClick={() => act({ type: 'threat/visibility', threatId: book.id, visible: !book.visible })}>
+                {book.visible ? <Eye size={14} /> : <EyeOff size={14} />} {book.visible ? 'Visível' : 'Oculta'}
+              </button>
+              <button className="btn btn-sm" onClick={() => setEditing(true)}><Pencil size={14} /> Editar</button>
+              <button className="btn btn-sm" onClick={async () => { const r = await act({ type: 'threat/duplicate', threatId: book.id }, 'Ameaça duplicada.'); if (r.ok && 'onDuplicated' in props) props.onDuplicated?.(); }}><Copy size={14} /> Duplicar</button>
+              <ConfirmButton onConfirm={() => act({ type: 'threat/delete', threatId: book.id }, 'Ameaça excluída.')}><Trash2 size={14} /></ConfirmButton>
+            </div>
+          )}
         </div>
       </div>
 
@@ -222,9 +240,9 @@ function ThreatSheet({ t, onDuplicated }: { t: Threat; onDuplicated: () => void 
         </div>
       )}
 
-      {editing && (
-        <ThreatEditor title={`Editar ${t.name}`} initial={t} onClose={() => setEditing(false)}
-          onSave={async (data) => (await act({ type: 'threat/upsert', threatId: t.id, data }, 'Ameaça salva.')).ok} />
+      {editing && book && (
+        <ThreatEditor title={`Editar ${book.name}`} initial={book} onClose={() => setEditing(false)}
+          onSave={async (data) => (await act({ type: 'threat/upsert', threatId: book.id, data }, 'Ameaça salva.')).ok} />
       )}
     </div>
   );

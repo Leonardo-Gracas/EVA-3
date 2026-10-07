@@ -6,6 +6,7 @@ import type { Character, LogEntry, PendingRequest, TableState } from '../model/t
 import { PERMISSION_LABELS } from '../model/permissions';
 import { useAct } from './act';
 import { dismissTag, notify } from './common/toast';
+import { claimRollEntry } from './RollFx';
 
 /** Chama `onNew` para itens que surgirem depois da primeira renderização. */
 function useNewItems<T>(items: T[], key: (t: T) => string, onNew: (t: T) => void) {
@@ -64,9 +65,13 @@ function RollBody({ e }: { e: LogEntry }) {
   );
 }
 
-/** Mostra como aviso as rolagens novas que passarem em `show`. */
+/**
+ * Mostra como aviso as rolagens novas que passarem em `show`. A rolagem que a
+ * animação de teste está esperando vai para ela, sem aviso repetido.
+ */
 export function useRollToasts(log: LogEntry[], show: (e: LogEntry) => boolean) {
   useNewItems(log, (e) => e.id, (e) => {
+    if (claimRollEntry(e)) return;
     if (e.kind !== 'roll' || !e.roll || !show(e)) return;
     notify({
       kind: 'roll',

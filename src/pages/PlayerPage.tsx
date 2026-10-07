@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Swords, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { ActProvider, type ActApi, useAct } from '../components/act';
 import type { Character, CharacterDraft, PlayerView } from '../model/types';
@@ -12,16 +12,22 @@ import Reference from '../components/Reference';
 import { RequestStatus } from '../components/gm/RequestsPanel';
 import { deriveStats } from '../rules/derive';
 import { PlayerNotifications, useRollToasts } from '../components/Notifications';
+import CombatView, { myTurnIn, useCombatAlerts } from '../components/combat/CombatView';
 
-type Tab = 'ficha' | 'mesa' | 'pedidos' | 'registro' | 'regras';
+type Tab = 'ficha' | 'combate' | 'mesa' | 'pedidos' | 'registro' | 'regras';
 
 export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
   const view = snap.view;
   const [tab, setTab] = useState<Tab>('ficha');
+  const inCombat = !!view?.combat;
 
   // As próprias rolagens aparecem como aviso, exceto com o registro aberto.
   useRollToasts(view?.log ?? [], (e) => tab !== 'registro' && e.playerId === view?.me.id);
+  useCombatAlerts(view, tab === 'combate', () => { window.scrollTo({ top: 0 }); setTab('combate'); });
+
+  // Combate encerrado com a aba aberta: volta para a ficha.
+  useEffect(() => { if (!inCombat && tab === 'combate') setTab('ficha'); }, [inCombat, tab]);
 
   const api: ActApi = useMemo(() => ({ role: 'player', permissions: view?.permissions ?? null, library: view?.library ?? [], send: sendAction }), [view?.permissions, view?.library]);
 
@@ -39,6 +45,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   }
 
   const pending = view.myRequests.filter((r) => r.status === 'pending').length;
+  const myTurn = myTurnIn(view);
 
   return (
     <ActProvider value={api}>
@@ -57,6 +64,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           mobileBar
           tabs={[
             { id: 'ficha', label: 'Minha ficha', short: 'Ficha', icon: <ClipboardList size={14} /> },
+            ...(inCombat ? [{ id: 'combate' as const, label: myTurn ? 'Combate · sua vez' : 'Combate', short: myTurn ? 'Sua vez' : 'Combate', icon: <Swords size={14} /> }] : []),
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
@@ -80,8 +88,14 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           )}
         />
         <PlayerNotifications requests={view.myRequests} characters={view.myCharacters} />
+        {myTurn && tab !== 'combate' && (
+          <button className="turn-banner" onClick={() => { window.scrollTo({ top: 0 }); setTab('combate'); }}>
+            <Swords size={15} /> <span>Sua vez, <strong>{myTurn.name}</strong>!</span> <span className="turn-banner-cta">Abrir combate</span>
+          </button>
+        )}
         <main className="page">
           {tab === 'ficha' && <MySheets view={view} />}
+          {tab === 'combate' && view.combat && <CombatView view={view} />}
           {tab === 'mesa' && <TableInfo view={view} />}
           {tab === 'pedidos' && <MyRequests view={view} />}
           {tab === 'registro' && <LogPanel log={view.log} characters={view.myCharacters} />}
