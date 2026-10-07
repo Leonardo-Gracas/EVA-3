@@ -128,6 +128,7 @@ export async function readBackup(file: File): Promise<TableState> {
 
 /** Garante campos que versões futuras possam adicionar. */
 export function migrate(t: TableState): TableState {
+  t.startLevel ??= 1;
   t.players ??= {};
   t.characters ??= {};
   t.threats ??= {};

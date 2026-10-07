@@ -179,6 +179,7 @@ function Comecando({ go }: { go: (id: SectionId) => void }) {
         <li><strong>Atributos.</strong> Distribua os {POINT_BUDGET} pontos. <Link to="pontos" go={go}>Como funciona</Link></li>
         <li><strong>Classe.</strong> A classe do nível 1 define seus PV e PE iniciais. <Link to="classes" go={go}>Comparar classes</Link></li>
         <li><strong>Habilidade.</strong> Escolha uma habilidade de 1º nível da classe. <Link to="habilidades" go={go}>Ver lista</Link></li>
+        <li><strong>Níveis seguintes.</strong> Se o mestre definir um nível inicial acima do 1, escolha a classe e a habilidade de cada nível, em ordem, como numa subida de nível.</li>
         <li><strong>Revisão.</strong> Envie a ficha. O mestre aprova ou devolve com um comentário.</li>
       </ol>
 

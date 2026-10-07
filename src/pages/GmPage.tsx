@@ -202,6 +202,7 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
             <h2 className="mb">Novo NPC</h2>
             <CharacterWizard
               submitLabel="Criar NPC"
+              levelEditable
               onCancel={back}
               onSubmit={async (draft) => {
                 const before = new Set(Object.keys(table.characters));

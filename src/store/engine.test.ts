@@ -14,7 +14,7 @@ const p2: Actor = { role: 'player', playerId: 'p2', name: 'Beto' };
 
 const draft: CharacterDraft = {
   name: 'Mizael', concept: 'Padre', notes: '',
-  attributes: { ...emptyAttributes(), FE: 3, CON: 2, PRE: 2 }, classId: 'acolito', abilityId: 'fortificado',
+  attributes: { ...emptyAttributes(), FE: 3, CON: 2, PRE: 2 }, levels: [{ classId: 'acolito', abilityId: 'fortificado' }],
 };
 
 function setup(): { s: TableState; cid: string } {
@@ -98,6 +98,30 @@ describe('motor', () => {
     expect(v2.myCharacters).toHaveLength(0);
     expect(v2.others[0]).not.toHaveProperty('attributes');
     expect(v2.log.some((e) => e.kind === 'roll')).toBe(false);
+  });
+
+  it('nível inicial: o mestre define e a ficha do jogador precisa seguir', () => {
+    const { s: s0 } = setup();
+    expect(dispatch(s0, p1, { type: 'table/startLevel', level: 3 }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s0, gm, { type: 'table/startLevel', level: 13 }, ctx)).toMatchObject({ ok: false });
+    const s = dispatch(s0, gm, { type: 'table/startLevel', level: 3 }, ctx).state;
+    expect(buildPlayerView(s, 'p1', new Set()).table.startLevel).toBe(3);
+    expect(dispatch(s, p1, { type: 'character/create', draft }, ctx)).toMatchObject({ ok: false, error: /nível 3/ });
+    const lv3: CharacterDraft = { ...draft, levels: [...draft.levels, { classId: 'acolito', abilityId: 'clareza' }, { classId: 'acolito', abilityId: 'oracao' }] };
+    const r = dispatch(s, p1, { type: 'character/create', draft: lv3 }, ctx);
+    expect(r.ok).toBe(true);
+    const c = Object.values(r.state.characters).find((x) => x.levels.length === 3)!;
+    const d = deriveStats(c);
+    expect(c.current).toEqual({ pv: d.pvMax, pe: d.peMax });
+    expect(d.abilities.map((a) => a.id)).toEqual(['fortificado', 'clareza', 'oracao']);
+  });
+
+  it('NPC: o mestre escolhe o nível, seguindo a progressão', () => {
+    const { s } = setup();
+    const lv3: CharacterDraft = { ...draft, name: 'Padre Otávio', levels: [...draft.levels, { classId: 'acolito', abilityId: 'clareza' }, { classId: 'acolito', abilityId: 'oracao' }] };
+    expect(dispatch(s, gm, { type: 'npc/create', draft: lv3 }, ctx).ok).toBe(true);
+    const skip: CharacterDraft = { ...lv3, levels: [lv3.levels[0], lv3.levels[2], lv3.levels[1]] };
+    expect(dispatch(s, gm, { type: 'npc/create', draft: skip }, ctx)).toMatchObject({ ok: false, error: /Nível 2/ });
   });
 
   it('NPC: só o mestre cria, nasce aprovado e fica oculto até liberar', () => {

@@ -11,7 +11,7 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
   const me = s.players[playerId];
   const chars = Object.values(s.characters).sort((a, b) => a.createdAt - b.createdAt);
   return {
-    table: { id: s.id, name: s.name, gmName: s.gmName },
+    table: { id: s.id, name: s.name, gmName: s.gmName, startLevel: s.startLevel },
     me: { id: playerId, name: me?.name ?? 'Jogador' },
     players: Object.values(s.players).map((p) => ({ id: p.id, name: p.name, online: online.has(p.id) })),
     myCharacters: chars.filter((c) => c.ownerId === playerId),

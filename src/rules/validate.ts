@@ -73,7 +73,46 @@ export function validateLevelPick(attrs: Attributes, levels: LevelPick[], pick: 
   return null;
 }
 
-export function validateDraft(d: unknown): string | null {
+/**
+ * Ajusta os níveis depois de mudar atributos ou um nível anterior: classe que não
+ * cabe mais (3ª classe) volta para a classe do nível de antes, e habilidade que
+ * deixou de cumprir requisito (ou já foi pega antes) é desmarcada.
+ */
+export function sanitizeLevels(attrs: Attributes, levels: LevelPick[]): LevelPick[] {
+  const out: LevelPick[] = [];
+  for (const l of levels) {
+    let pick = l;
+    if (!classesAvailable(out).includes(pick.classId)) pick = { classId: out[out.length - 1].classId, abilityId: null };
+    if (pick.abilityId && !abilityOptions(attrs, out, pick.classId).find((o) => o.ability.id === pick.abilityId)?.eligible) {
+      pick = { ...pick, abilityId: null };
+    }
+    out.push(pick);
+  }
+  return out;
+}
+
+/** Muda o nível do rascunho: corta os níveis a mais ou repete a última classe, sem habilidade. */
+export function resizeLevels(attrs: Attributes, levels: LevelPick[], level: number): LevelPick[] {
+  const n = Math.max(1, Math.min(MAX_LEVEL, level));
+  if (levels.length >= n) return levels.slice(0, n);
+  const last = levels[levels.length - 1]?.classId ?? CLASS_IDS[0];
+  return sanitizeLevels(attrs, [...levels, ...Array.from({ length: n - levels.length }, () => ({ classId: last, abilityId: null }))]);
+}
+
+/** Primeiro nível (índice) inválido do rascunho e o motivo, ou null se todos valem. */
+export function firstInvalidLevel(attrs: Attributes, levels: LevelPick[]): { index: number; error: string } | null {
+  for (let i = 0; i < levels.length; i++) {
+    const l = levels[i];
+    const error = l && typeof l === 'object'
+      ? validateLevelPick(attrs, levels.slice(0, i), { classId: l.classId, abilityId: l.abilityId ?? null })
+      : 'Nível inválido.';
+    if (error) return { index: i, error };
+  }
+  return null;
+}
+
+/** `level`: nível exigido (o nível inicial da mesa, para jogadores). */
+export function validateDraft(d: unknown, level?: number): string | null {
   if (!d || typeof d !== 'object') return 'Ficha inválida.';
   const draft = d as CharacterDraft;
   if (typeof draft.name !== 'string' || !draft.name.trim()) return 'Dê um nome ao personagem.';
@@ -81,6 +120,10 @@ export function validateDraft(d: unknown): string | null {
   if (typeof draft.concept !== 'string' || draft.concept.length > LIMITS.concept) return 'Conceito longo demais.';
   if (typeof draft.notes !== 'string' || draft.notes.length > LIMITS.notes) return 'Anotações longas demais.';
   if (!isValidAttributeSet(draft.attributes)) return 'Distribuição de atributos inválida.';
-  if (!isClassId(draft.classId)) return 'Escolha uma classe.';
-  return validateLevelPick(draft.attributes, [], { classId: draft.classId, abilityId: draft.abilityId ?? null });
+  if (!Array.isArray(draft.levels) || draft.levels.length < 1 || draft.levels.length > MAX_LEVEL) return 'Nível inválido.';
+  if (level !== undefined && draft.levels.length !== level) return `Personagens desta mesa começam no nível ${level}.`;
+  if (!draft.levels.every((l) => l && typeof l === 'object' && isClassId(l.classId))) return 'Escolha uma classe.';
+  const bad = firstInvalidLevel(draft.attributes, draft.levels);
+  if (!bad) return null;
+  return draft.levels.length > 1 ? `Nível ${bad.index + 1}: ${bad.error}` : bad.error;
 }

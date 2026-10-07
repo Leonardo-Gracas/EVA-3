@@ -54,8 +54,8 @@ export interface CharacterDraft {
   name: string;
   concept: string;
   attributes: Attributes;
-  classId: ClassId;
-  abilityId: string | null;
+  /** levels[0] é o nível 1. Cada nível é validado contra os anteriores, como numa subida de nível. */
+  levels: LevelPick[];
   notes: string;
 }
 
@@ -314,6 +314,8 @@ export interface TableState {
   roomCode: string;
   createdAt: number;
   updatedAt: number;
+  /** Nível com que os jogadores criam personagens. NPCs escolhem o próprio. */
+  startLevel: number;
   players: Record<string, PlayerRecord>;
   characters: Record<string, Character>;
   threats: Record<string, Threat>;
@@ -379,6 +381,7 @@ export type GameAction =
   | { type: 'combat/endTurn'; combatantId: string }
   | { type: 'combat/groupDamage'; combatantIds: string[]; op: GroupDamageOp; amount: number; reason?: string }
   | { type: 'table/rename'; name: string }
+  | { type: 'table/startLevel'; level: number }
   | { type: 'log/clear' };
 
 export type Actor = { role: 'gm'; name: string } | { role: 'player'; playerId: string; name: string };
@@ -416,7 +419,7 @@ export interface PlayerCombat {
 }
 
 export interface PlayerView {
-  table: { id: string; name: string; gmName: string };
+  table: { id: string; name: string; gmName: string; startLevel: number };
   me: { id: string; name: string };
   players: Array<{ id: string; name: string; online: boolean }>;
   myCharacters: Character[];

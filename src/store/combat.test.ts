@@ -13,7 +13,7 @@ const p2: Actor = { role: 'player', playerId: 'p2', name: 'Beto' };
 
 const draft: CharacterDraft = {
   name: 'Mizael', concept: 'Padre', notes: '',
-  attributes: { ...emptyAttributes(), FE: 3, CON: 2, PRE: 2 }, classId: 'acolito', abilityId: 'fortificado',
+  attributes: { ...emptyAttributes(), FE: 3, CON: 2, PRE: 2 }, levels: [{ classId: 'acolito', abilityId: 'fortificado' }],
 };
 
 const goblin: ThreatData = {

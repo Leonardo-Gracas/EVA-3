@@ -10,7 +10,7 @@ import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
 } from '../model/permissions';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../rules/attributes';
-import { CLASSES } from '../rules/classes';
+import { CLASSES, MAX_LEVEL } from '../rules/classes';
 import { getAbility } from '../rules/abilities';
 import { deriveStats } from '../rules/derive';
 import { LIMITS, validateDraft, validateLevelPick } from '../rules/validate';
@@ -62,6 +62,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     roomCode,
     createdAt: now,
     updatedAt: now,
+    startLevel: 1,
     players: {},
     characters: {},
     threats: {},
@@ -119,8 +120,8 @@ function cleanItem(raw: unknown): ItemData {
   };
 }
 
-function cleanDraft(raw: unknown): CharacterDraft {
-  const err = validateDraft(raw);
+function cleanDraft(raw: unknown, level?: number): CharacterDraft {
+  const err = validateDraft(raw, level);
   if (err) fail(err);
   const d = raw as CharacterDraft;
   const attributes = Object.fromEntries(ATTR_KEYS.map((k) => [k, d.attributes[k]])) as CharacterDraft['attributes'];
@@ -129,8 +130,7 @@ function cleanDraft(raw: unknown): CharacterDraft {
     concept: d.concept.trim(),
     notes: d.notes,
     attributes,
-    classId: d.classId,
-    abilityId: d.abilityId ?? null,
+    levels: d.levels.map((l) => ({ classId: l.classId, abilityId: l.abilityId ?? null })),
   };
 }
 
@@ -154,7 +154,7 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
     name: draft.name,
     concept: draft.concept,
     attributes: draft.attributes,
-    levels: [{ classId: draft.classId, abilityId: draft.abilityId }],
+    levels: draft.levels,
     current: { pv: 0, pe: 0 },
     permanentLoss: { pv: 0, pe: 0 },
     rdBonus: { physical: 0, magic: 0 },
@@ -391,7 +391,7 @@ const GM_ONLY = new Set<GameAction['type']>([
   'library/upsert', 'library/delete', 'library/give',
   'combat/create', 'combat/end', 'combat/add', 'combat/remove', 'combat/move', 'combat/start', 'combat/next', 'combat/prev',
   'combat/setTurn', 'combat/hidden', 'combat/conditionAdd', 'combat/conditionRemove', 'combat/groupDamage', 'combat/resource',
-  'permissions/global', 'permissions/player', 'request/resolve', 'table/rename', 'log/clear',
+  'permissions/global', 'permissions/player', 'request/resolve', 'table/rename', 'table/startLevel', 'log/clear',
 ]);
 
 function authorize(s: TableState, actor: Actor, a: GameAction) {
@@ -416,7 +416,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
   switch (a.type) {
     case 'character/create': {
       if (actor.role !== 'player') return fail('Apenas jogadores criam fichas.');
-      const draft = cleanDraft(a.draft);
+      const draft = cleanDraft(a.draft, s.startLevel);
       const mine = Object.values(s.characters).filter((c) => c.ownerId === actor.playerId);
       if (mine.length >= MAX_CHARACTERS_PER_PLAYER) fail('Limite de fichas atingido.');
       const c = buildCharacter(draft, actor.playerId, 'pc', ctx);
@@ -493,10 +493,10 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
     case 'character/resubmit': {
       const c = getChar(s, a.characterId);
       if (c.status === 'approved') fail('Ficha aprovada não pode ser refeita.');
-      const draft = cleanDraft(a.draft);
+      const draft = cleanDraft(a.draft, c.kind === 'pc' ? s.startLevel : undefined);
       Object.assign(c, {
         name: draft.name, concept: draft.concept, notes: draft.notes, attributes: draft.attributes,
-        levels: [{ classId: draft.classId, abilityId: draft.abilityId }],
+        levels: draft.levels,
         status: 'pending', rejectReason: undefined, updatedAt: now,
       });
       const d = deriveStats(c);
@@ -1039,6 +1039,11 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
 
     case 'table/rename': {
       s.name = str(a.name, LIMITS.tableName, 'Nome da mesa', true);
+      return;
+    }
+
+    case 'table/startLevel': {
+      s.startLevel = int(a.level, 1, MAX_LEVEL, 'Nível inicial');
       return;
     }
 

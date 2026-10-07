@@ -1,4 +1,6 @@
+import { Minus, Plus } from 'lucide-react';
 import type { ActionPermission, PermissionKey, TableState } from '../../model/types';
+import { MAX_LEVEL } from '../../rules/classes';
 import { PERMISSION_KEYS, PERMISSION_LABELS, PERMISSION_VALUES } from '../../model/permissions';
 import { useAct } from '../act';
 
@@ -24,8 +26,26 @@ export default function PermissionsPanel({ table }: { table: TableState }) {
     if (value) void act({ type: 'permissions/global', key, value });
   };
 
+  const setStartLevel = (level: number) => act({ type: 'table/startLevel', level }, `Novos personagens começam no nível ${level}.`);
+
   return (
     <div className="col gap-lg">
+      <div className="card">
+        <div className="card-title">Criação de personagem</div>
+        <div className="row-wrap">
+          <span>Nível inicial</span>
+          <div className="stepper">
+            <button className="btn btn-sm btn-icon" disabled={table.startLevel <= 1} onClick={() => setStartLevel(table.startLevel - 1)} aria-label="Diminuir nível inicial"><Minus size={14} /></button>
+            <span className="val">{table.startLevel}</span>
+            <button className="btn btn-sm btn-icon" disabled={table.startLevel >= MAX_LEVEL} onClick={() => setStartLevel(table.startLevel + 1)} aria-label="Aumentar nível inicial"><Plus size={14} /></button>
+          </div>
+        </div>
+        <p className="small secondary mt">
+          Nível com que os jogadores criam fichas novas. Acima do 1, eles escolhem classe e habilidade de cada nível em ordem,
+          como se tivessem subido nível a nível. Fichas já aprovadas não mudam.
+        </p>
+      </div>
+
       <div className="card">
         <div className="card-title">Permissões da mesa</div>
         <p className="small secondary mb">

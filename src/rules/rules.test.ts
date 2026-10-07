@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyAttributes, pointsLeft, isValidAttributeSet } from './attributes';
 import { deriveStats, deathThreshold, titleOf } from './derive';
-import { abilityOptions, validateDraft, validateLevelPick, classesAvailable } from './validate';
+import { abilityOptions, validateDraft, validateLevelPick, classesAvailable, sanitizeLevels, resizeLevels } from './validate';
 import { parseExpr, rollExpr } from './dice';
 import type { LevelPick } from '../model/types';
 
@@ -104,8 +104,30 @@ describe('progressão', () => {
   it('sem habilidade só quando não há opção', () => {
     expect(validateLevelPick(emptyAttributes(), [], { classId: 'acolito', abilityId: null })).toMatch(/Escolha/);
   });
+  it('rascunho acima do nível 1 segue a progressão', () => {
+    const base = { name: 'Mizael', concept: '', notes: '', attributes: { ...emptyAttributes(), FE: 3, PRE: 2, INT: 2, DES: 1, CON: 1 } };
+    // Nível 3 não libera três habilidades de 3º nível: duas de base primeiro.
+    expect(validateDraft({ ...base, levels: [{ classId: 'acolito', abilityId: 'oracao' }, { classId: 'acolito', abilityId: 'clareza' }, { classId: 'acolito', abilityId: 'devocao' }] })).toMatch(/Nível 1: .*3º nível/);
+    expect(validateDraft({ ...base, levels: [{ classId: 'acolito', abilityId: 'devocao' }, { classId: 'acolito', abilityId: 'oracao' }, { classId: 'acolito', abilityId: 'clareza' }] })).toMatch(/Nível 2: .*3º nível/);
+    const ok: LevelPick[] = [{ classId: 'acolito', abilityId: 'devocao' }, { classId: 'acolito', abilityId: 'clareza' }, { classId: 'acolito', abilityId: 'oracao' }];
+    expect(validateDraft({ ...base, levels: ok })).toBeNull();
+    expect(validateDraft({ ...base, levels: ok }, 3)).toBeNull();
+    expect(validateDraft({ ...base, levels: ok }, 2)).toMatch(/nível 2/);
+    expect(validateDraft({ ...base, levels: [...ok, { classId: 'acolito', abilityId: 'devocao' }] })).toMatch(/Nível 4: .*Já possui/);
+  });
+  it('ajuste de níveis desmarca o que deixou de valer', () => {
+    const levels: LevelPick[] = [{ classId: 'acolito', abilityId: 'devocao' }, { classId: 'acolito', abilityId: 'clareza' }, { classId: 'acolito', abilityId: 'oracao' }];
+    // Nível 2 vira Vidente: Oração fica com só 2 níveis de Acólito.
+    const changed = sanitizeLevels(emptyAttributes(), [levels[0], { classId: 'vidente', abilityId: 'lampejos' }, levels[2]]);
+    expect(changed[2]).toEqual({ classId: 'acolito', abilityId: null });
+    // Terceira classe não cabe: volta para a classe do nível anterior.
+    const third = sanitizeLevels(emptyAttributes(), [levels[0], { classId: 'vidente', abilityId: null }, { classId: 'ocultista', abilityId: null }]);
+    expect(third[2].classId).toBe('vidente');
+    expect(resizeLevels(emptyAttributes(), levels, 1)).toEqual([levels[0]]);
+    expect(resizeLevels(emptyAttributes(), [levels[0]], 3)).toEqual([levels[0], { classId: 'acolito', abilityId: null }, { classId: 'acolito', abilityId: null }]);
+  });
   it('rascunho válido', () => {
-    expect(validateDraft({ name: 'Mizael', concept: '', notes: '', attributes: { ...emptyAttributes(), FE: 3, PRE: 2, INT: 2, DES: 1, CON: 1 }, classId: 'acolito', abilityId: 'devocao' })).toBeNull();
+    expect(validateDraft({ name: 'Mizael', concept: '', notes: '', attributes: { ...emptyAttributes(), FE: 3, PRE: 2, INT: 2, DES: 1, CON: 1 }, levels: [{ classId: 'acolito', abilityId: 'devocao' }] })).toBeNull();
   });
 });
 

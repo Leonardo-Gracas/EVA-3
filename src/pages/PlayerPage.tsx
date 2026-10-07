@@ -108,7 +108,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
 }
 
 function toDraft(c: Character): CharacterDraft {
-  return { name: c.name, concept: c.concept, notes: c.notes, attributes: c.attributes, classId: c.levels[0].classId, abilityId: c.levels[0].abilityId };
+  return { name: c.name, concept: c.concept, notes: c.notes, attributes: c.attributes, levels: c.levels };
 }
 
 function MySheets({ view }: { view: PlayerView }) {
@@ -128,6 +128,7 @@ function MySheets({ view }: { view: PlayerView }) {
       <div className="page-narrow" style={{ margin: '0 auto' }}>
         <h2 className="mb">Novo personagem</h2>
         <CharacterWizard
+          level={view.table.startLevel}
           onCancel={chars.length ? () => setCreating(false) : undefined}
           onSubmit={async (draft) => {
             const before = new Set(chars.map((c) => c.id));
@@ -153,6 +154,7 @@ function MySheets({ view }: { view: PlayerView }) {
         <h2 className="mb">Refazer {current.name}</h2>
         <CharacterWizard
           initial={toDraft(current)}
+          level={view.table.startLevel}
           submitLabel="Reenviar para o mestre"
           onCancel={() => setRedoing(null)}
           onSubmit={async (draft) => {
