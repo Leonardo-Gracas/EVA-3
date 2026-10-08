@@ -6,6 +6,7 @@ import { caseChanges } from '../model/cases';
 import { deriveStats } from '../rules/derive';
 import type { Actor, CharacterDraft, TableState } from '../model/types';
 import { emptyAttributes } from '../rules/attributes';
+import { DEFAULT_AVATAR } from '../model/avatar';
 
 let n = 0;
 const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 };
@@ -69,6 +70,31 @@ describe('motor', () => {
     s = dispatch(s, gm, { type: 'permissions/global', key: 'item_add', value: 'blocked' }, ctx).state;
     r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador_sagrado', description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 5, durability: { pv: 5, rd: 2, def: 13 } } }, ctx);
     expect(r).toMatchObject({ ok: false, error: /bloqueou/ });
+  });
+
+  it('aparência: livre para o dono mesmo pendente, sanitizada e visível aos outros', () => {
+    const { s: s0, cid } = setup();
+    expect(s0.characters[cid].avatar).toBeUndefined();
+    const avatar = { ...DEFAULT_AVATAR, hair: 'longo', outfit: 'manto' } as const;
+    let r = dispatch(s0, p1, { type: 'character/avatar', characterId: cid, avatar }, ctx);
+    expect(r.ok && r.requested).toBeFalsy();
+    expect(r.state.characters[cid].avatar).toEqual(avatar);
+    expect(dispatch(r.state, p2, { type: 'character/avatar', characterId: cid, avatar }, ctx)).toMatchObject({ ok: false, error: /não é sua/ });
+    // Lixo vindo da rede vira o padrão, campo a campo.
+    r = dispatch(r.state, p1, { type: 'character/avatar', characterId: cid, avatar: { hair: 'moicano', skin: 's5', x: 1 } as never }, ctx);
+    expect(r.state.characters[cid].avatar).toEqual({ ...DEFAULT_AVATAR, skin: 's5' });
+    const s = dispatch(r.state, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    expect(buildPlayerView(s, 'p2', new Set()).others[0].avatar).toEqual({ ...DEFAULT_AVATAR, skin: 's5' });
+  });
+
+  it('criar e reenviar ficha levam o avatar sanitizado', () => {
+    const s0 = newTable('Mesa', 'Mestre', 'ABCDEF', ctx);
+    s0.players.p1 = { id: 'p1', name: 'Ana', secretHash: 'x', firstSeen: 0, lastSeen: 0 };
+    const r = dispatch(s0, p1, { type: 'character/create', draft: { ...draft, avatar: { ...DEFAULT_AVATAR, eyes: 'arco', y: 2 } as never } }, ctx);
+    const c = Object.values(r.state.characters)[0];
+    expect(c.avatar).toEqual({ ...DEFAULT_AVATAR, eyes: 'arco' });
+    const re = dispatch(r.state, p1, { type: 'character/resubmit', characterId: c.id, draft }, ctx);
+    expect(re.state.characters[c.id].avatar).toEqual({ ...DEFAULT_AVATAR, eyes: 'arco' });
   });
 
   it('usar habilidade gasta PE e sobe de nível', () => {

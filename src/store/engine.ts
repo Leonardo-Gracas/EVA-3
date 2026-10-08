@@ -6,6 +6,7 @@ import type {
   InvestigationCase, ItemData, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
 import { caseChanges, snapshotOf } from '../model/cases';
+import { sanitizeAvatar } from '../model/avatar';
 import { BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, GM_OWNER, ITEM_TYPES } from '../model/types';
 import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
@@ -138,6 +139,7 @@ function cleanDraft(raw: unknown, level?: number): CharacterDraft {
     notes: d.notes,
     attributes,
     levels: d.levels.map((l) => ({ classId: l.classId, abilityId: l.abilityId ?? null })),
+    ...(d.avatar != null ? { avatar: sanitizeAvatar(d.avatar) } : {}),
   };
 }
 
@@ -185,6 +187,7 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
     gold: 0,
     inventory: [],
     notes: draft.notes,
+    ...(draft.avatar ? { avatar: draft.avatar } : {}),
     status: kind === 'npc' ? 'approved' : 'pending',
     createdAt: now,
     updatedAt: now,
@@ -477,7 +480,7 @@ function authorize(s: TableState, actor: Actor, a: GameAction) {
   if ('characterId' in a && a.characterId != null) {
     const c = getChar(s, a.characterId);
     if (c.ownerId !== actor.playerId) fail('Essa ficha não é sua.');
-    const needsApproved = !['character/resubmit', 'character/delete'].includes(a.type);
+    const needsApproved = !['character/resubmit', 'character/delete', 'character/avatar'].includes(a.type);
     if (needsApproved && c.status !== 'approved') fail('A ficha ainda não foi aprovada pelo mestre.');
   }
 }
@@ -571,7 +574,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const draft = cleanDraft(a.draft, c.kind === 'pc' ? s.startLevel : undefined);
       Object.assign(c, {
         name: draft.name, concept: draft.concept, notes: draft.notes, attributes: draft.attributes,
-        levels: draft.levels,
+        levels: draft.levels, avatar: draft.avatar ?? c.avatar,
         status: 'pending', rejectReason: undefined, updatedAt: now,
       });
       fillResources(c);
@@ -796,6 +799,13 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const c = getChar(s, a.characterId);
       if (typeof a.notes !== 'string' || a.notes.length > LIMITS.notes) fail('Anotações longas demais.');
       c.notes = a.notes;
+      c.updatedAt = now;
+      return;
+    }
+
+    case 'character/avatar': {
+      const c = getChar(s, a.characterId);
+      c.avatar = sanitizeAvatar(a.avatar);
       c.updatedAt = now;
       return;
     }
@@ -1345,6 +1355,7 @@ export function describeAction(s: TableState, a: GameAction): string {
       return `${n}: ${it?.name ?? 'item'} PV ${it?.pv ?? '?'} → ${a.pv}${a.reason ? ` (${a.reason})` : ''}`;
     }
     case 'notes/update': return `${n}: editar anotações`;
+    case 'character/avatar': return `${n}: mudar aparência`;
     default: return a.type;
   }
 }

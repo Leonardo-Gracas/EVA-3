@@ -1,5 +1,6 @@
 import type { Attributes, AttrKey } from '../rules/attributes';
 import type { ClassId } from '../rules/classes';
+import type { AvatarConfig } from './avatar';
 
 // ── Ficha ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export interface Character {
   gold: number;
   inventory: InventoryItem[];
   notes: string;
+  /** Ausente em fichas antigas: desenha o avatar padrão. */
+  avatar?: AvatarConfig;
   status: CharacterStatus;
   rejectReason?: string;
   createdAt: number;
@@ -57,6 +60,7 @@ export interface CharacterDraft {
   /** levels[0] é o nível 1. Cada nível é validado contra os anteriores, como numa subida de nível. */
   levels: LevelPick[];
   notes: string;
+  avatar?: AvatarConfig;
 }
 
 // ── Itens ────────────────────────────────────────────────────────────────────
@@ -420,6 +424,8 @@ export type GameAction =
   | { type: 'character/movement'; characterId: string; movement: number }
   | { type: 'gold/set'; characterId: string; gold: number; reason?: string }
   | { type: 'notes/update'; characterId: string; notes: string }
+  /** Livre para o dono, mesmo com a ficha pendente. */
+  | { type: 'character/avatar'; characterId: string; avatar: AvatarConfig }
   | { type: 'library/upsert'; item: ItemData; itemId?: string }
   | { type: 'library/delete'; itemId: string }
   | { type: 'library/give'; itemId: string; characterId: string; qty: number }
@@ -479,11 +485,14 @@ export interface PublicCharacter {
   level: number;
   title: string;
   status: CharacterStatus;
+  avatar?: AvatarConfig;
 }
 
 export interface PlayerCombatant {
   id: string;
   name: string;
+  /** Só fichas (PJ e NPC) têm avatar. */
+  avatar?: AvatarConfig;
   side: CombatSide;
   /** Ficha do próprio jogador. */
   mine: boolean;

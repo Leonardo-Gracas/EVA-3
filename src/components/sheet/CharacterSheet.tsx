@@ -9,6 +9,7 @@ import { useAct } from '../act';
 import { cancelRollFx, startRollFx } from '../RollFx';
 import ActButton from '../common/ActButton';
 import ConfirmModal from '../common/ConfirmModal';
+import { EditableAvatar } from '../common/AvatarEditor';
 import Vitals from './Vitals';
 import AbilitiesPanel from './AbilitiesPanel';
 import Inventory from './Inventory';
@@ -51,7 +52,7 @@ export function DeleteCharacterButton({ ch, className = 'btn btn-danger btn-sm',
 }
 
 export default function CharacterSheet({ ch, ownerName }: { ch: Character; ownerName?: string }) {
-  const { role } = useAct();
+  const { role, act } = useAct();
   const d = deriveStats(ch);
   const isGm = role === 'gm';
   const readOnly = ch.status !== 'approved';
@@ -60,6 +61,9 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
     <div className="sheet">
       <div className="card card-gold">
         <div className="sheet-head">
+          {/* A ficha completa só chega ao dono e ao mestre: os dois podem mudar a aparência. */}
+          <EditableAvatar config={ch.avatar} name={ch.name}
+            onSave={async (avatar) => (await act({ type: 'character/avatar', characterId: ch.id, avatar }, 'Aparência atualizada.')).ok} />
           <div className="grow">
             <div className="sheet-title">{d.title} · Nível {d.level}</div>
             <h2 className="sheet-name">{ch.name}</h2>

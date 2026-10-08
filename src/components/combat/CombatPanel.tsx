@@ -11,6 +11,7 @@ import {
 } from '../../store/combat';
 import { deriveStats } from '../../rules/derive';
 import { useAct } from '../act';
+import Avatar from '../common/Avatar';
 import ResourceAdjustModal, { peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
 import CharacterSheet from '../sheet/CharacterSheet';
 import { ThreatSheet } from '../gm/ThreatsPanel';
@@ -257,6 +258,7 @@ function CombatBoard({ table, combat }: { table: TableState; combat: Combat }) {
                     onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(cb.id); } }}>
                     <div className="row cbt-head">
                       {isTurn && <Play size={12} className="gold cbt-play" fill="currentColor" />}
+                      {info.character && <Avatar config={info.character.avatar} size={24} />}
                       <strong className="cbt-name">{info.name}</strong>
                       {cb.hidden && <EyeOff size={12} className="muted" aria-label="Oculto dos jogadores" />}
                       {isNext && <span className="cbt-tag">a seguir</span>}

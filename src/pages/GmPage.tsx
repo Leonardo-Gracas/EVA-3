@@ -13,6 +13,7 @@ import { downloadTable } from '../store/persistence';
 import { deriveStats } from '../rules/derive';
 import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
 import Modal from '../components/common/Modal';
+import Avatar from '../components/common/Avatar';
 import RoomInvite from '../components/room/RoomInvite';
 import CharacterSheet, { StatusBadge } from '../components/sheet/CharacterSheet';
 import RequestsPanel from '../components/gm/RequestsPanel';
@@ -241,18 +242,21 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
 function CharRow({ c, active, onClick }: { c: Character; active: boolean; onClick: () => void }) {
   const d = deriveStats(c);
   return (
-    <button className={`card card-hover${active ? ' card-selected' : ''}`} style={{ padding: '8px 10px', textAlign: 'left' }} onClick={onClick}>
-      <div className="row">
-        <strong className="grow">{c.name}</strong>
-        {c.kind === 'npc' && c.visible && <Eye size={13} className="muted" />}
-        <StatusBadge status={c.status} />
-      </div>
-      <div className="row tiny muted">
-        <span className="gold">{d.title}</span> · Nv {d.level}
-        <span className="spacer" />
-        <span style={{ color: 'var(--pv)' }}>{c.current.pv}/{d.pvMax}</span>
-        <span style={{ color: 'var(--pe)' }}>{c.current.pe}/{d.peMax}</span>
-        <span style={{ color: 'var(--clareza)' }} title="Clareza">{c.current.clareza}/{d.clarezaMax}</span>
+    <button className={`card card-hover row${active ? ' card-selected' : ''}`} style={{ padding: '8px 10px', textAlign: 'left' }} onClick={onClick}>
+      <Avatar config={c.avatar} size={32} />
+      <div className="grow" style={{ minWidth: 0 }}>
+        <div className="row">
+          <strong className="grow">{c.name}</strong>
+          {c.kind === 'npc' && c.visible && <Eye size={13} className="muted" />}
+          <StatusBadge status={c.status} />
+        </div>
+        <div className="row tiny muted">
+          <span className="gold">{d.title}</span> · Nv {d.level}
+          <span className="spacer" />
+          <span style={{ color: 'var(--pv)' }}>{c.current.pv}/{d.pvMax}</span>
+          <span style={{ color: 'var(--pe)' }}>{c.current.pe}/{d.peMax}</span>
+          <span style={{ color: 'var(--clareza)' }} title="Clareza">{c.current.clareza}/{d.clarezaMax}</span>
+        </div>
       </div>
     </button>
   );

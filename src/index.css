@@ -392,6 +392,70 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .stepper .val { width: 34px; text-align: center; font-weight: 700; font-size: 18px; }
 .points-left { font-size: 28px; font-weight: 700; color: var(--gold); }
 
+/* ── Avatar ──────────────────────────────────────────────── */
+.avatar { display: block; flex-shrink: 0; clip-path: circle(50%); }
+.av-edit {
+  position: relative; display: inline-flex; flex-shrink: 0; border-radius: 50%; box-shadow: 0 0 0 2px var(--border-light);
+  -webkit-tap-highlight-color: transparent;
+}
+.av-edit .avatar { transition: filter var(--transition); }
+.av-edit:hover .avatar { filter: brightness(1.08); }
+.av-edit:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.av-edit-badge {
+  position: absolute; right: 0; bottom: 0; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--bg-elevated); border: 1px solid var(--border-light); color: var(--gold-soft);
+  transition: background var(--transition), border-color var(--transition);
+}
+.av-edit:hover .av-edit-badge { background: var(--gold-dim); border-color: var(--gold); }
+
+.av-editor { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 18px; align-items: start; }
+.av-stage {
+  position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px;
+  border-radius: var(--radius-lg); background: var(--bg-elevated); border: 1px solid var(--border);
+}
+.av-random { width: 100%; justify-content: center; min-height: 36px; }
+.av-stage .avatar { width: 160px; height: 160px; }
+.av-panel { display: flex; flex-direction: column; min-width: 0; }
+.av-tabs { padding: 0; margin-bottom: 14px; }
+.av-tabs .tab { min-height: 40px; }
+.av-options { display: flex; flex-direction: column; gap: 16px; min-height: 236px; }
+.av-group { display: flex; flex-direction: column; gap: 8px; }
+.av-group-head { display: flex; align-items: baseline; gap: 8px; }
+.av-group-head .label { margin: 0; }
+.av-swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px; }
+.av-swatch {
+  width: 44px; height: 44px; border-radius: 50%; background: var(--c); border: 1px solid rgba(0, 0, 0, 0.25);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.av-swatch:hover { transform: scale(1.06); }
+.av-swatch.on { box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--gold); }
+.av-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.av-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px 8px; border-radius: var(--radius);
+  background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-secondary);
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
+}
+.av-tile:hover { border-color: var(--border-light); color: var(--text-primary); }
+.av-tile.on { border-color: var(--gold); background: var(--gold-dim); color: var(--gold-soft); box-shadow: 0 0 0 1px var(--gold) inset; }
+.av-tile-label { font-size: 12px; font-weight: 500; }
+.av-swatch:focus-visible, .av-tile:focus-visible { outline: 2px solid var(--gold-soft); outline-offset: 2px; }
+.av-inline { display: flex; align-items: center; gap: 14px; }
+@media (max-width: 560px) {
+  .av-editor { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  /* Celular: prévia e botão lado a lado, para sobrar altura às opções. */
+  .av-stage { position: static; padding: 8px; flex-direction: row; justify-content: center; gap: 16px; }
+  .av-random { width: auto; min-height: 44px; }
+  .av-stage .avatar { width: 96px; height: 96px; }
+  /* As seis abas cabem inteiras: nenhuma parte fica escondida atrás da rolagem. */
+  .av-tabs { gap: 0; }
+  .av-tabs .tab { flex: 1; justify-content: center; padding: 9px 2px; }
+  .av-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .av-tile { padding: 8px 2px 6px; }
+  .av-tile .avatar { width: 48px; height: 48px; }
+  .av-options { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .av-swatch:hover { transform: none; } }
+
 /* ── Registro / dados ────────────────────────────────────── */
 .log { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; padding-right: 4px; }
 .log-entry { padding: 8px 10px; border-radius: var(--radius); background: var(--bg-elevated); border: 1px solid var(--border); font-size: 13px; }

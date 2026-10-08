@@ -2,6 +2,7 @@
 import type { LogEntry, PlayerCombat, PlayerCombatant, PlayerView, TableState } from '../model/types';
 import { effectivePermissions } from '../model/permissions';
 import { caseShown, publishedCase } from '../model/cases';
+import { avatarFor } from '../model/avatar';
 import { titleOf } from '../rules/derive';
 import { naturalD20 } from '../rules/dice';
 import { combatantInfo, conditionRemaining, currentCombatant } from './combat';
@@ -29,6 +30,7 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
         level: c.levels.length,
         title: titleOf(c.levels),
         status: c.status,
+        ...(c.avatar ? { avatar: c.avatar } : {}),
       })),
     threats: Object.values(s.threats ?? {})
       .filter((t) => t.visible)
@@ -74,6 +76,7 @@ function buildPlayerCombat(s: TableState, playerId: string): PlayerCombat | null
     order.push({
       id: cb.id,
       name: info.name,
+      ...(info.character ? { avatar: avatarFor(info.character) } : {}),
       side: info.side,
       mine,
       ...(mine ? { characterId: info.character!.id } : {}),

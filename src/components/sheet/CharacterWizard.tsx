@@ -10,6 +10,8 @@ import {
   abilityOptions, classesAvailable, LIMITS, resizeLevels, sanitizeLevels, validateDraft, validateLevelPick,
 } from '../../rules/validate';
 import AbilityCard from './AbilityCard';
+import Avatar from '../common/Avatar';
+import { EditableAvatar } from '../common/AvatarEditor';
 
 // Páginas: 0 Conceito, 1 Atributos, 2 Classe (nível 1), 3 Habilidade (nível 1),
 // depois uma página por nível acima do 1 e, por fim, a Revisão.
@@ -100,9 +102,13 @@ export default function CharacterWizard({
 
       {page === 0 && (
         <div className="col gap-lg">
-          <div className="field">
-            <label className="label">Nome do personagem</label>
-            <input className="input" autoFocus value={draft.name} maxLength={LIMITS.name} onChange={(e) => up({ name: e.target.value })} />
+          <div className="av-inline">
+            <EditableAvatar config={draft.avatar} name={draft.name.trim() || 'personagem'} onSave={(avatar) => up({ avatar })} />
+            <div className="field grow">
+              <label className="label" htmlFor="wiz-name">Nome do personagem</label>
+              <input id="wiz-name" className="input" autoFocus value={draft.name} maxLength={LIMITS.name} onChange={(e) => up({ name: e.target.value })} />
+              <span className="tiny muted">Toque no retrato para montar a aparência.</span>
+            </div>
           </div>
           <div className="field">
             <label className="label">Conceito (uma linha)</label>
@@ -204,10 +210,13 @@ export default function CharacterWizard({
 
       {page === reviewPage && (
         <div className="col gap-lg">
-          <div>
-            <div className="sheet-title">{preview.title} · Nível {total}</div>
-            <h2 className="sheet-name">{draft.name}</h2>
-            {draft.concept && <div className="secondary">{draft.concept}</div>}
+          <div className="av-inline">
+            <Avatar config={draft.avatar} size={56} />
+            <div>
+              <div className="sheet-title">{preview.title} · Nível {total}</div>
+              <h2 className="sheet-name">{draft.name}</h2>
+              {draft.concept && <div className="secondary">{draft.concept}</div>}
+            </div>
           </div>
           <div className="stats">
             <div className="stat"><span className="stat-val" style={{ color: 'var(--pv)' }}>{preview.pvMax}</span><span className="stat-lbl">PV</span></div>

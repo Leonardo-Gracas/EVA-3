@@ -6,6 +6,7 @@ import type { PlayerCombat, PlayerCombatant, PlayerView } from '../../model/type
 import { deriveStats } from '../../rules/derive';
 import { useAct } from '../act';
 import { dismissTag, notify } from '../common/toast';
+import Avatar from '../common/Avatar';
 import Vitals from '../sheet/Vitals';
 import AbilitiesPanel from '../sheet/AbilitiesPanel';
 import { AttributesCard } from '../sheet/CharacterSheet';
@@ -139,6 +140,7 @@ export default function CombatView({ view }: { view: PlayerView }) {
                   <div className="cbt-main">
                     <div className="row cbt-head">
                       {isTurn && <Play size={12} className="gold cbt-play" fill="currentColor" />}
+                      {x.avatar && <Avatar config={x.avatar} size={24} />}
                       <strong className="cbt-name">{x.name}</strong>
                       {x.mine && <span className="cbt-tag cbt-tag-you">você</span>}
                       {x.id === upNext?.id && started && <span className="cbt-tag">a seguir</span>}

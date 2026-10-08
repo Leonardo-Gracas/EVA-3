@@ -7,6 +7,7 @@ import { PERMISSION_LABELS } from '../model/permissions';
 import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
 import CharacterSheet, { DeleteCharacterButton } from '../components/sheet/CharacterSheet';
 import CharacterWizard from '../components/sheet/CharacterWizard';
+import Avatar from '../components/common/Avatar';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { RequestStatus } from '../components/gm/RequestsPanel';
@@ -111,7 +112,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
 }
 
 function toDraft(c: Character): CharacterDraft {
-  return { name: c.name, concept: c.concept, notes: c.notes, attributes: c.attributes, levels: c.levels };
+  return { name: c.name, concept: c.concept, notes: c.notes, attributes: c.attributes, levels: c.levels, avatar: c.avatar };
 }
 
 function MySheets({ view }: { view: PlayerView }) {
@@ -175,7 +176,7 @@ function MySheets({ view }: { view: PlayerView }) {
       <div className="row-wrap">
         {chars.map((c) => (
           <button key={c.id} className={`btn btn-sm${c.id === current.id ? ' btn-primary' : ''}`} onClick={() => setSelected(c.id)}>
-            {c.name}{c.status !== 'approved' && ' •'}
+            <Avatar config={c.avatar} size={20} />{c.name}{c.status !== 'approved' && ' •'}
           </button>
         ))}
         <button className="btn btn-sm btn-ghost" onClick={() => setCreating(true)}><Plus size={14} /> Nova ficha</button>
@@ -214,12 +215,20 @@ function TableInfo({ view }: { view: PlayerView }) {
         <div className="col">
           {view.myCharacters.filter((c) => c.status === 'approved').map((c) => {
             const d = deriveStats(c);
-            return <div key={c.id} className="row"><strong>{c.name}</strong> <span className="gold small">{d.title} · Nv {d.level}</span><span className="tiny muted">você</span></div>;
+            return (
+              <div key={c.id} className="row">
+                <Avatar config={c.avatar} size={32} />
+                <strong>{c.name}</strong> <span className="gold small">{d.title} · Nv {d.level}</span><span className="tiny muted">você</span>
+              </div>
+            );
           })}
           {view.others.map((c) => (
-            <div key={c.id}>
-              <div className="row"><strong>{c.name}</strong> <span className="gold small">{c.title} · Nv {c.level}</span><span className="tiny muted">{c.ownerName}</span></div>
-              {c.concept && <div className="tiny muted">{c.concept}</div>}
+            <div key={c.id} className="row">
+              <Avatar config={c.avatar} size={32} />
+              <div className="grow">
+                <div className="row"><strong>{c.name}</strong> <span className="gold small">{c.title} · Nv {c.level}</span><span className="tiny muted">{c.ownerName}</span></div>
+                {c.concept && <div className="tiny muted">{c.concept}</div>}
+              </div>
             </div>
           ))}
         </div>
