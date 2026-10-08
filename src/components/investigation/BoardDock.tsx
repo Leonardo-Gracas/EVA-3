@@ -1,6 +1,6 @@
 // Paleta flutuante do mural: arrastar Evidência/Fato para o quadro, desfazer, zoom e atalhos.
 import type { PointerEvent as RPointerEvent } from 'react';
-import { CheckCircle2, Keyboard, Maximize, Minus, Plus, Redo2, Send, Undo2 } from 'lucide-react';
+import { CheckCircle2, Keyboard, Maximize2, Minimize2, Minus, Plus, Redo2, Scan, Send, Undo2 } from 'lucide-react';
 import { CLUE_KINDS, type ClueKind } from '../../model/types';
 import type { PublishControl } from './ClueBoard';
 import { CLUE_ICONS } from './clues';
@@ -9,7 +9,7 @@ import type { UndoApi } from './useUndo';
 const KEYS: Record<ClueKind, string> = { evidencia: 'E', fato: 'F' };
 const NEW_LABEL: Record<ClueKind, string> = { evidencia: 'Nova evidência', fato: 'Novo fato' };
 
-export default function BoardDock({ editable, zoom, undo, publish, onChipDown, onZoom, onZoomReset, onFit, onHelp }: {
+export default function BoardDock({ editable, zoom, undo, publish, onChipDown, onZoom, onZoomReset, onFit, onHelp, full, onFullscreen }: {
   editable: boolean;
   zoom: number;
   undo?: UndoApi;
@@ -20,6 +20,8 @@ export default function BoardDock({ editable, zoom, undo, publish, onChipDown, o
   onZoomReset: () => void;
   onFit: () => void;
   onHelp: () => void;
+  full: boolean;
+  onFullscreen: () => void;
 }) {
   return (
     <div className="clue-dock" role="toolbar" aria-label="Ferramentas do mural">
@@ -52,7 +54,11 @@ export default function BoardDock({ editable, zoom, undo, publish, onChipDown, o
         <button type="button" className="btn btn-sm btn-ghost btn-icon" onClick={() => onZoom(1 / 1.2)} title="Afastar (−)" aria-label="Afastar"><Minus size={14} /></button>
         <button type="button" className="clue-dock-zoom mono" onClick={onZoomReset} title="Voltar a 100% (0)">{Math.round(zoom * 100)}%</button>
         <button type="button" className="btn btn-sm btn-ghost btn-icon" onClick={() => onZoom(1.2)} title="Aproximar (+)" aria-label="Aproximar"><Plus size={14} /></button>
-        <button type="button" className="btn btn-sm btn-ghost btn-icon" onClick={onFit} title="Enquadrar tudo (1)" aria-label="Enquadrar tudo"><Maximize size={14} /></button>
+        <button type="button" className="btn btn-sm btn-ghost btn-icon" onClick={onFit} title="Enquadrar tudo (1)" aria-label="Enquadrar tudo"><Scan size={14} /></button>
+        <button type="button" className="btn btn-sm btn-ghost btn-icon" onClick={onFullscreen}
+          title={full ? 'Sair da tela cheia (Esc)' : 'Tela cheia'} aria-label={full ? 'Sair da tela cheia' : 'Tela cheia'} aria-pressed={full}>
+          {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
       </div>
       {editable && (
         <>

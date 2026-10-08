@@ -41,6 +41,10 @@ interface ConnInfo {
 let peer: Peer | null = null;
 let stopped = true;
 let idTakenRetries = 0;
+let signalTimer: ReturnType<typeof setTimeout> | null = null;
+let signalRetries = 0;
+const SIGNAL_RETRY_BASE = 1500;
+const SIGNAL_RETRY_MAX = 15000;
 const conns = new Map<DataConnection, ConnInfo>();
 
 // ── Estado + persistência ────────────────────────────────────────────────────
@@ -227,26 +231,68 @@ function attach(conn: DataConnection) {
 
 // ── Sala ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Reconecta só ao servidor de salas (sinalização). Os canais com os jogadores são P2P e
+ * continuam vivos sem ele: recriar o Peer aqui derrubaria a mesa inteira a cada oscilação.
+ */
+function retrySignal(p: Peer) {
+  if (signalTimer) return;
+  const delay = Math.min(SIGNAL_RETRY_MAX, SIGNAL_RETRY_BASE * 2 ** signalRetries);
+  signalRetries += 1;
+  signalTimer = setTimeout(() => {
+    signalTimer = null;
+    if (stopped || peer !== p) return;
+    if (p.destroyed) openPeer();
+    else if (p.disconnected) p.reconnect();
+  }, delay);
+}
+
+function signalLost() {
+  const players = onlineIds().size;
+  hostStore.patch({
+    status: 'reconnecting',
+    message: players ? 'Reconectando ao servidor de salas... (quem já está na mesa continua conectado)' : 'Reconectando ao servidor de salas...',
+  });
+}
+
 function openPeer() {
+  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
   peer?.destroy();
   const code = table().roomCode;
   const p = new Peer(peerIdFor(code), peerOptions());
   peer = p;
+  /** Já registrou o código no servidor: dali em diante o PeerJS só desconecta, não destrói. */
+  let opened = false;
 
   p.on('open', () => {
     if (peer !== p) return;
+    opened = true;
     idTakenRetries = 0;
+    signalRetries = 0;
     hostStore.patch({ status: 'online', message: 'Sala aberta' });
   });
   p.on('connection', attach);
   p.on('disconnected', () => {
-    if (peer !== p || stopped) return;
-    hostStore.patch({ status: 'reconnecting', message: 'Reconectando ao servidor de salas...' });
-    setTimeout(() => { if (!p.destroyed && peer === p) p.reconnect(); }, 1500);
+    // Antes de abrir, quem cuida é o handler de erro (recria o Peer).
+    if (peer !== p || stopped || !opened) return;
+    signalLost();
+    retrySignal(p);
   });
   p.on('error', (err: { type?: string }) => {
     if (peer !== p || stopped) return;
     const type = err?.type;
+    if (type === 'peer-unavailable') return;
+    if (type === 'browser-incompatible') {
+      hostStore.patch({ status: 'error', message: 'Este navegador não suporta WebRTC.' });
+      return;
+    }
+    // Sala já aberta e só a sinalização caiu: reconecta sem tocar nos jogadores.
+    // Inclui `unavailable-id` ao reconectar, enquanto o servidor ainda segura o socket antigo.
+    if (opened && !p.destroyed) {
+      signalLost();
+      retrySignal(p);
+      return;
+    }
     if (type === 'unavailable-id') {
       // Após um F5 o servidor ainda segura o código antigo por alguns segundos.
       if (idTakenRetries < 4) {
@@ -260,11 +306,6 @@ function openPeer() {
         hostStore.patch({ status: 'opening', message: 'Código ocupado. Gerando outro...' });
         openPeer();
       }
-      return;
-    }
-    if (type === 'peer-unavailable') return;
-    if (type === 'browser-incompatible') {
-      hostStore.patch({ status: 'error', message: 'Este navegador não suporta WebRTC.' });
       return;
     }
     hostStore.patch({ status: 'reconnecting', message: 'Sem conexão com o servidor de salas. Tentando de novo...' });
@@ -296,6 +337,8 @@ export function stopHost(): void {
   stopped = true;
   void flush();
   window.removeEventListener('beforeunload', beforeUnload);
+  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
+  signalRetries = 0;
   for (const c of conns.keys()) c.close();
   conns.clear();
   peer?.destroy();

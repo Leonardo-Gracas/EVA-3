@@ -1038,11 +1038,15 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   --string: #b3262d;
   --string-hot: #ef5a5f;
 }
+/* Sem barras de rolagem (apareciam como linhas claras nas margens ao rolar ou mudar o zoom):
+   navega-se arrastando o fundo, com a roda ou com os dedos. Pinça só aqui, não na página. */
 .clue-wrap {
   position: relative; overflow: auto; height: min(68vh, 760px);
   border: 1px solid var(--border-light); border-radius: var(--radius-lg); background: var(--cork);
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.55);
+  scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x pan-y;
 }
+.clue-wrap::-webkit-scrollbar { display: none; }
 .clue-board {
   position: absolute; left: 0; top: 0; transform-origin: 0 0;
   background-color: var(--cork);
@@ -1178,6 +1182,18 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 }
 
 .clue-detail { border-color: var(--border-gold); }
+
+/* Tela cheia: o mural cobre a janela (abaixo de modais e avisos); o detalhe flutua embaixo. */
+.clue-full {
+  position: fixed; inset: 0; z-index: 900; gap: 0; height: 100vh; height: 100dvh; background: var(--cork);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.clue-full .clue-stage { flex: 1; min-height: 0; }
+.clue-full .clue-wrap { height: 100%; border: 0; border-radius: 0; }
+.clue-full .clue-detail {
+  position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30;
+  max-width: 560px; max-height: 40%; margin: 0 auto; overflow-y: auto; box-shadow: var(--shadow-lg);
+}
 
 /* Publicação: rascunho do mestre × versão dos jogadores. */
 .clue-dock-count {

@@ -26,7 +26,8 @@ export interface BoardView {
   trackPointer: (cx: number, cy: number) => void;
 }
 
-export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string, measure: () => Rect | null): BoardView {
+/** `onPinchStart`: dois dedos tocaram o quadro (o arraste de um dedo em curso deve parar). */
+export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string, measure: () => Rect | null, onPinchStart?: () => void): BoardView {
   const [zoom, setZoom] = useState(() => (window.innerWidth < 640 ? 0.6 : 1));
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -34,6 +35,8 @@ export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string,
   const auto = useRef<{ raf: number } | null>(null);
   const measureRef = useRef(measure);
   measureRef.current = measure;
+  const pinchStartRef = useRef(onPinchStart);
+  pinchStartRef.current = onPinchStart;
 
   /** Viewport em px de tela relativo ao conteúdo rolável. */
   const local = (w: HTMLDivElement, cx: number, cy: number): Point => {
@@ -112,6 +115,79 @@ export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string,
     w.addEventListener('wheel', onWheel, { passive: false });
     return () => w.removeEventListener('wheel', onWheel);
   }, [wrapRef, zoomTo]);
+
+  // Pinça: zoom só no quadro, nunca na página. O ponto do quadro entre os dedos acompanha os
+  // dedos (zoom e arraste juntos). O CSS (`touch-action`) e o `preventDefault` tiram o gesto do
+  // navegador; o Safari do iOS ainda precisa dos eventos `gesture*` cancelados.
+  useEffect(() => {
+    const w = wrapRef.current;
+    if (!w) return;
+    let pinch: { d0: number; z0: number; at: Point } | null = null;
+    const two = (t: TouchList) => {
+      const [a, b] = [t[0], t[1]];
+      return { mid: { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 }, d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
+    };
+    const begin = (t: TouchList) => {
+      const { mid, d } = two(t);
+      const m = local(w, mid.x, mid.y);
+      const z = zoomRef.current;
+      pinch = { d0: Math.max(d, 1), z0: z, at: { x: (w.scrollLeft + m.x) / z, y: (w.scrollTop + m.y) / z } };
+      pinchStartRef.current?.();
+    };
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length < 2) return;
+      if (e.cancelable) e.preventDefault();
+      begin(e.touches);
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length < 2) return;
+      if (e.cancelable) e.preventDefault();
+      if (!pinch) { begin(e.touches); return; }
+      const { mid, d } = two(e.touches);
+      const next = clamp(pinch.z0 * (d / pinch.d0), ZOOM_MIN, ZOOM_MAX);
+      if (next !== zoomRef.current) {
+        flushSync(() => setZoom(next));
+        zoomRef.current = next;
+      }
+      const m = local(w, mid.x, mid.y);
+      w.scrollLeft = pinch.at.x * next - m.x;
+      w.scrollTop = pinch.at.y * next - m.y;
+    };
+    const onEnd = (e: TouchEvent) => { if (e.touches.length < 2) pinch = null; };
+    const block = (e: Event) => e.preventDefault();
+    w.addEventListener('touchstart', onStart, { passive: false });
+    w.addEventListener('touchmove', onMove, { passive: false });
+    w.addEventListener('touchend', onEnd);
+    w.addEventListener('touchcancel', onEnd);
+    w.addEventListener('gesturestart', block);
+    w.addEventListener('gesturechange', block);
+    return () => {
+      w.removeEventListener('touchstart', onStart);
+      w.removeEventListener('touchmove', onMove);
+      w.removeEventListener('touchend', onEnd);
+      w.removeEventListener('touchcancel', onEnd);
+      w.removeEventListener('gesturestart', block);
+      w.removeEventListener('gesturechange', block);
+    };
+  }, [wrapRef]);
+
+  // A área visível mudou de tamanho (tela cheia, girar o celular): o mesmo ponto fica no centro.
+  useEffect(() => {
+    const w = wrapRef.current;
+    if (!w || typeof ResizeObserver === 'undefined') return;
+    let size = { w: w.clientWidth, h: w.clientHeight };
+    const ro = new ResizeObserver(() => {
+      const next = { w: w.clientWidth, h: w.clientHeight };
+      if (next.w === size.w && next.h === size.h) return;
+      const cx = w.scrollLeft + size.w / 2;
+      const cy = w.scrollTop + size.h / 2;
+      size = next;
+      w.scrollLeft = cx - next.w / 2;
+      w.scrollTop = cy - next.h / 2;
+    });
+    ro.observe(w);
+    return () => ro.disconnect();
+  }, [wrapRef]);
 
   const trackPointer = useCallback((cx: number, cy: number) => { pointer.current = { x: cx, y: cy }; }, []);
 

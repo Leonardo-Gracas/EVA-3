@@ -15,6 +15,7 @@ import ShortcutsHelp from './ShortcutsHelp';
 import { CLUE_ICONS, OPPOSITE, clampX, clampY, intersects, pinOf, rectFrom, stringPath, type Point, type Rect } from './clues';
 import { useBoardShortcuts } from './useBoardShortcuts';
 import { useBoardView } from './useBoardView';
+import { useFullscreen } from './useFullscreen';
 import { useUndo, type UndoEntry } from './useUndo';
 
 /** Movimento mínimo (px de tela) para um toque virar arraste. */
@@ -85,7 +86,11 @@ export default function ClueBoard({ kase, editable = false, publish }: { kase: I
     return { x, y, w: Math.max(...rs.map((r) => r.x + r.w)) - x, h: Math.max(...rs.map((r) => r.y + r.h)) - y };
   };
 
-  const view = useBoardView(wrapRef, caseId, () => boxOf(Object.keys(kaseRef.current.cards)));
+  // Pinça com dois dedos: o arraste que o primeiro dedo começou é cancelado.
+  const view = useBoardView(wrapRef, caseId, () => boxOf(Object.keys(kaseRef.current.cards)), () => {
+    if (gRef.current) { const p = lastClient.current; endGesture(p?.x ?? 0, p?.y ?? 0, true); }
+  });
+  const fullscreen = useFullscreen();
   const run = useCallback((a: GameAction) => act(a), [act]);
   const history = useUndo(caseId, run);
   // Desfazer ou refazer por qualquer caminho tira da tela o aviso "Desfazer", que deixaria de valer.
@@ -478,6 +483,7 @@ export default function ClueBoard({ kase, editable = false, publish }: { kase: I
       if (k === 'Escape') {
         if (gRef.current) { const p = lastClient.current; endGesture(p?.x ?? 0, p?.y ?? 0, true); return true; }
         if (selRef.current.length) { setSel([]); return true; }
+        if (fullscreen.full) { fullscreen.exit(); return true; }
         return false;
       }
     }
@@ -550,7 +556,7 @@ export default function ClueBoard({ kase, editable = false, publish }: { kase: I
   const GhostIcon = ghost ? CLUE_ICONS[ghost.clue] : null;
 
   return (
-    <div className="col">
+    <div className={`col${fullscreen.full ? ' clue-full' : ''}`}>
       <div className={`clue-stage${gesture?.kind === 'pan' ? ' clue-panning' : ''}`}
         onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageCancel}
         onPointerLeave={() => { if (!gRef.current) lastClient.current = null; }}>
@@ -641,7 +647,8 @@ export default function ClueBoard({ kase, editable = false, publish }: { kase: I
         </div>
 
         <BoardDock editable={editable} zoom={zoom} undo={editable ? undo : undefined} publish={editable ? publish : undefined} onChipDown={onChipDown}
-          onZoom={view.zoomBy} onZoomReset={() => view.zoomTo(1)} onFit={view.fit} onHelp={() => setHelp(true)} />
+          onZoom={view.zoomBy} onZoomReset={() => view.zoomTo(1)} onFit={view.fit} onHelp={() => setHelp(true)}
+          full={fullscreen.full} onFullscreen={fullscreen.toggle} />
 
         {!cards.length && !draft && (
           <div className="clue-empty">
