@@ -42,7 +42,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('fichas'); };
 
   // Rolagens de todos (inclusive as ocultas) como aviso, exceto quando o registro já está aberto.
-  useRollToasts(table?.log ?? [], () => tab !== 'registro');
+  useRollToasts(table?.log ?? null,() => tab !== 'registro');
 
   useEffect(() => {
     if (table && Object.keys(table.players).length === 0) setInvite(true);

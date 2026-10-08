@@ -25,7 +25,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
 
   // As próprias rolagens aparecem como aviso, exceto com o registro aberto.
   // As abertas do mestre (livres ou por uma entidade) rodam a animação; das ocultas, só um 20 ou 1 natural.
-  useRollToasts(view?.log ?? [], (e) => tab !== 'registro' && e.playerId === view?.me.id, (e) => !!e.secret || !e.playerId);
+  useRollToasts(view?.log ?? null,(e) => tab !== 'registro' && e.playerId === view?.me.id, (e) => !!e.secret || !e.playerId);
   useCombatAlerts(view, tab === 'combate', () => { window.scrollTo({ top: 0 }); setTab('combate'); });
 
   // Combate encerrado com a aba aberta: volta para a ficha.

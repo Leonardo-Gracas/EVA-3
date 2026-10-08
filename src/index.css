@@ -52,6 +52,10 @@
 }
 
 html, body, #root { min-height: 100%; width: 100%; }
+/* Sem zoom da página no celular (pinça e toque duplo): o zoom revelava uma faixa clara na
+   margem. O quadro de investigação continua com o próprio zoom. Nada vaza para os lados. */
+html { background-color: var(--bg-base); touch-action: pan-x pan-y; overflow-x: clip; }
+body { overflow-x: clip; }
 
 body {
   font-family: var(--font-body);

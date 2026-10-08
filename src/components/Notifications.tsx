@@ -8,12 +8,17 @@ import { useAct } from './act';
 import { dismissTag, notify } from './common/toast';
 import { claimRollEntry, playRollFx } from './RollFx';
 
-/** Chama `onNew` para itens que surgirem depois da primeira renderização. */
-function useNewItems<T>(items: T[], key: (t: T) => string, onNew: (t: T) => void) {
+/**
+ * Chama `onNew` para itens que surgirem depois da primeira lista carregada. `null`
+ * (estado ainda não chegou, ex.: ao recarregar a página) não conta como carregada;
+ * senão tudo que já existia viraria aviso.
+ */
+function useNewItems<T>(items: T[] | null, key: (t: T) => string, onNew: (t: T) => void) {
   const seen = useRef<Set<string> | null>(null);
   const cb = useRef(onNew);
   cb.current = onNew;
   useEffect(() => {
+    if (!items) return;
     if (!seen.current) { seen.current = new Set(items.map(key)); return; }
     for (const it of items) {
       const k = key(it);
@@ -70,7 +75,7 @@ function RollBody({ e }: { e: LogEntry }) {
  * animação está esperando vai para ela, sem aviso repetido; as que passarem em
  * `animate` ganham a animação inteira (ou o aviso, se o dado estiver ocupado).
  */
-export function useRollToasts(log: LogEntry[], show: (e: LogEntry) => boolean, animate?: (e: LogEntry) => boolean) {
+export function useRollToasts(log: LogEntry[] | null, show: (e: LogEntry) => boolean, animate?: (e: LogEntry) => boolean) {
   useNewItems(log, (e) => e.id, (e) => {
     if (claimRollEntry(e)) return;
     if (e.kind !== 'roll' || !e.roll) return;
