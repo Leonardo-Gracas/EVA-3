@@ -1,6 +1,7 @@
 // O que cada jogador recebe: só a própria ficha completa e dados públicos.
 import type { LogEntry, PlayerCombat, PlayerCombatant, PlayerView, TableState } from '../model/types';
 import { effectivePermissions } from '../model/permissions';
+import { caseShown, publishedCase } from '../model/cases';
 import { titleOf } from '../rules/derive';
 import { naturalD20 } from '../rules/dice';
 import { combatantInfo, conditionRemaining, currentCombatant } from './combat';
@@ -37,6 +38,11 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
     permissions: effectivePermissions(s.permissions, playerId),
     log: s.log.flatMap((e) => entryFor(e, playerId)).slice(-LOG_FOR_PLAYERS),
     combat: buildPlayerCombat(s, playerId),
+    // Só a versão publicada: o rascunho do mestre nunca sai do navegador dele.
+    cases: Object.values(s.cases ?? {})
+      .filter(caseShown)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map(publishedCase),
   };
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Swords, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Search, Swords, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { ActProvider, type ActApi, useAct } from '../components/act';
 import type { Character, CharacterDraft, PlayerView } from '../model/types';
@@ -13,8 +13,9 @@ import { RequestStatus } from '../components/gm/RequestsPanel';
 import { deriveStats } from '../rules/derive';
 import { PlayerNotifications, useRollToasts } from '../components/Notifications';
 import CombatView, { myTurnIn, useCombatAlerts } from '../components/combat/CombatView';
+import CasesView from '../components/investigation/CasesView';
 
-type Tab = 'ficha' | 'combate' | 'mesa' | 'pedidos' | 'registro' | 'regras';
+type Tab = 'ficha' | 'combate' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
 
 export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
@@ -68,6 +69,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
             ...(inCombat ? [{ id: 'combate' as const, label: myTurn ? 'Combate · sua vez' : 'Combate', short: myTurn ? 'Sua vez' : 'Combate', icon: <Swords size={14} /> }] : []),
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
+            { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
             { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
           ]}
@@ -97,6 +99,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
         <main className="page">
           {tab === 'ficha' && <MySheets view={view} />}
           {tab === 'combate' && view.combat && <CombatView view={view} />}
+          {tab === 'investigacao' && <CasesView view={view} />}
           {tab === 'mesa' && <TableInfo view={view} />}
           {tab === 'pedidos' && <MyRequests view={view} />}
           {tab === 'registro' && <LogPanel log={view.log} characters={view.myCharacters} />}

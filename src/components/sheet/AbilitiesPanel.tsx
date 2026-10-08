@@ -138,6 +138,7 @@ export function LevelUpModal({ ch, onClose }: { ch: Character; onClose: () => vo
         <div className="row-wrap small secondary">
           <span>PV máx. {now.pvMax} → <strong>{preview.pvMax}</strong></span>
           <span>· PE máx. {now.peMax} → <strong>{preview.peMax}</strong></span>
+          {preview.clarezaMax !== now.clarezaMax && <span>· Clareza {now.clarezaMax} → <strong>{preview.clarezaMax}</strong></span>}
           <span>· DEF {now.def} → <strong>{preview.def}</strong></span>
           <span>· Título: <strong className="gold">{preview.title}</strong></span>
         </div>

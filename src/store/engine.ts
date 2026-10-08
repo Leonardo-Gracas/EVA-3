@@ -2,10 +2,11 @@
 // Jogador nunca altera estado direto — manda uma GameAction, o motor confere
 // dono da ficha, regra e permissão (livre / solicitar / bloqueada) e aplica.
 import type {
-  Actor, Character, CharacterDraft, CharacterKind, Combat, Combatant, CombatThreat, GameAction, InventoryItem, ItemData, ItemType, LogEntry,
-  PendingRequest, TableState, Threat, ThreatData,
+  Actor, Character, CharacterDraft, CharacterKind, ClueCard, ClueKind, Combat, Combatant, CombatThreat, GameAction, InventoryItem,
+  InvestigationCase, ItemData, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
-import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, GM_OWNER, ITEM_TYPES } from '../model/types';
+import { caseChanges, snapshotOf } from '../model/cases';
+import { BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, GM_OWNER, ITEM_TYPES } from '../model/types';
 import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
 } from '../model/permissions';
@@ -34,7 +35,8 @@ export const defaultCtx: EngineCtx = {
 };
 
 export type DispatchResult =
-  | { ok: true; state: TableState; requested?: boolean; message?: string }
+  /** id: o que a ação criou (cartão, fio…), quando cria algo. */
+  | { ok: true; state: TableState; requested?: boolean; message?: string; id?: string }
   | { ok: false; state: TableState; error: string };
 
 const MAX_LOG = 400;
@@ -49,6 +51,10 @@ const MAX_GOLD = 9_999_999;
 const MAX_COMBATANTS = 60;
 const MAX_CONDITIONS = 12;
 const MAX_SPAWN = 20;
+const MAX_CASES = 30;
+const MAX_CLUES = 150;
+const MAX_LINKS = 400;
+const { w: CLUE_W, h: CLUE_H } = CLUE_SIZE;
 
 // ── Criação ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +73,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     characters: {},
     threats: {},
     itemLibrary: {},
+    cases: {},
     permissions: { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} },
     requests: [],
     log: [],
@@ -139,6 +146,22 @@ function getChar(s: TableState, id: unknown): Character {
   return c ?? fail('Ficha não encontrada.');
 }
 
+function getCase(s: TableState, id: unknown): InvestigationCase {
+  const c = typeof id === 'string' ? s.cases[id] : undefined;
+  return c ?? fail('Caso não encontrado.');
+}
+
+function getClue(k: InvestigationCase, id: unknown): ClueCard {
+  const c = typeof id === 'string' ? k.cards[id] : undefined;
+  return c ?? fail('Cartão não encontrado.');
+}
+
+/** Posição de cartão dentro do quadro (arredonda e prende nas bordas). */
+function boardPos(v: unknown, max: number, field: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fail(`${field} inválido.`);
+  return Math.max(0, Math.min(max, Math.round(v)));
+}
+
 function getThreat(s: TableState, id: unknown): Threat {
   const t = typeof id === 'string' ? s.threats[id] : undefined;
   return t ?? fail('Ameaça não encontrada.');
@@ -155,7 +178,7 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
     concept: draft.concept,
     attributes: draft.attributes,
     levels: draft.levels,
-    current: { pv: 0, pe: 0 },
+    current: { pv: 0, pe: 0, clareza: 0 },
     permanentLoss: { pv: 0, pe: 0 },
     rdBonus: { physical: 0, magic: 0 },
     movement: DEFAULT_MOVEMENT,
@@ -166,9 +189,14 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
     createdAt: now,
     updatedAt: now,
   };
-  const d = deriveStats(c);
-  c.current = { pv: d.pvMax, pe: d.peMax };
+  fillResources(c);
   return c;
+}
+
+/** PV, PE e Clareza no máximo. */
+function fillResources(c: Character) {
+  const d = deriveStats(c);
+  c.current = { pv: d.pvMax, pe: d.peMax, clareza: d.clarezaMax };
 }
 
 const THREAT_ATTR_MIN = -10;
@@ -225,6 +253,7 @@ function clampCurrent(c: Character) {
   const d = deriveStats(c);
   c.current.pv = Math.max(d.deathAt, Math.min(d.pvMax, c.current.pv));
   c.current.pe = Math.max(0, Math.min(d.peMax, c.current.pe));
+  c.current.clareza = Math.max(0, Math.min(d.clarezaMax, c.current.clareza));
 }
 
 /** Cópia de uma ameaça com PV/PE cheios e o próximo número livre no nome. */
@@ -378,6 +407,49 @@ function dropCharacterFromCombat(s: TableState, ctx: EngineCtx, characterId: str
   removeCombatants(s, ctx, (x) => x.ref.kind === 'character' && x.ref.id === characterId);
 }
 
+/** "A", "A e B", "A, B e C". */
+function joinNames(names: string[]): string {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+}
+
+/** Aviso da publicação: o registro é público, então só fala do que os jogadores passam a ver. */
+function publishText(k: InvestigationCase, first: boolean, added: ClueCard[]): string {
+  const news = added.length
+    ? `${added.length > 1 ? 'novas pistas' : added[0].kind === 'fato' ? 'novo fato' : 'nova evidência'}: ${joinNames(added.map((c) => c.title))}`
+    : '';
+  if (first) return `abriu o caso ${k.title} no mural${news ? `, com ${news}` : ''}.`;
+  return `atualizou o mural do caso ${k.title}${news ? `: ${news}` : ''}.`;
+}
+
+/** Lista de ids de cartões do caso, sem repetição. */
+function clueIds(k: InvestigationCase, v: unknown): string[] {
+  if (!Array.isArray(v) || !v.length) return fail('Escolha ao menos um cartão.');
+  if (v.length > MAX_CLUES) fail('Cartões demais de uma vez.');
+  return [...new Set(v.map((id) => getClue(k, id).id))];
+}
+
+/** Cartão vindo de fora (desfazer): mesmas regras do upsert, id preservado. */
+function cleanClue(raw: unknown, now: number): ClueCard {
+  if (!raw || typeof raw !== 'object') return fail('Cartão inválido.');
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === 'string' && /^[\w-]{1,40}$/.test(r.id) ? r.id : fail('Cartão inválido.');
+  const kind: ClueKind = typeof r.kind === 'string' && r.kind in CLUE_KINDS ? r.kind as ClueKind : fail('Tipo de cartão inválido.');
+  return {
+    id, kind,
+    title: str(r.title, LIMITS.clueTitle, 'Título', true),
+    text: str(r.text ?? '', LIMITS.clueText, 'Texto'),
+    x: boardPos(r.x, BOARD_SIZE.w - CLUE_W, 'Posição'),
+    y: boardPos(r.y, BOARD_SIZE.h - CLUE_H, 'Posição'),
+    hidden: !!r.hidden,
+    createdAt: typeof r.createdAt === 'number' ? r.createdAt : now,
+    updatedAt: now,
+  };
+}
+
+function linked(k: InvestigationCase, a: string, b: string): boolean {
+  return k.links.some((l) => (l.from === a && l.to === b) || (l.from === b && l.to === a));
+}
+
 function itemLabel(it: ItemData, qty?: number) {
   return `${it.name}${qty && qty > 1 ? ` ×${qty}` : ''}`;
 }
@@ -392,6 +464,9 @@ const GM_ONLY = new Set<GameAction['type']>([
   'combat/create', 'combat/end', 'combat/add', 'combat/remove', 'combat/move', 'combat/start', 'combat/next', 'combat/prev',
   'combat/setTurn', 'combat/hidden', 'combat/conditionAdd', 'combat/conditionRemove', 'combat/groupDamage', 'combat/resource',
   'permissions/global', 'permissions/player', 'request/resolve', 'table/rename', 'table/startLevel', 'log/clear',
+  'rest',
+  'case/upsert', 'case/delete', 'case/publish', 'case/unpublish', 'case/archive',
+  'clue/upsert', 'clue/move', 'clue/hidden', 'clue/delete', 'clue/restore', 'clue/link', 'clue/unlink',
 ]);
 
 function authorize(s: TableState, actor: Actor, a: GameAction) {
@@ -499,8 +574,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
         levels: draft.levels,
         status: 'pending', rejectReason: undefined, updatedAt: now,
       });
-      const d = deriveStats(c);
-      c.current = { pv: d.pvMax, pe: d.peMax };
+      fillResources(c);
       log(s, ctx, { kind: 'system', actorName: who, characterName: c.name, text: `reenviou a ficha de ${c.name}.` });
       return;
     }
@@ -510,8 +584,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       if (c.status === 'approved') return;
       c.status = 'approved';
       c.rejectReason = undefined;
-      const d = deriveStats(c);
-      c.current = { pv: d.pvMax, pe: d.peMax };
+      fillResources(c);
       c.updatedAt = now;
       log(s, ctx, { kind: 'system', actorName: who, characterName: c.name, text: `aprovou a ficha de ${c.name}.` });
       return;
@@ -551,12 +624,14 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const d = deriveStats(c);
       const pv = int(a.pv, d.deathAt - 999, d.pvMax, 'PV');
       const pe = int(a.pe, 0, d.peMax, 'PE');
+      const clareza = a.clareza == null ? c.current.clareza : int(a.clareza, 0, d.clarezaMax, 'Clareza');
       const before = { ...c.current };
-      c.current = { pv: Math.max(d.deathAt, pv), pe };
+      c.current = { pv: Math.max(d.deathAt, pv), pe, clareza };
       c.updatedAt = now;
       const parts: string[] = [];
       if (before.pv !== c.current.pv) parts.push(`PV ${before.pv} → ${c.current.pv}`);
       if (before.pe !== c.current.pe) parts.push(`PE ${before.pe} → ${c.current.pe}`);
+      if (before.clareza !== c.current.clareza) parts.push(`Clareza ${before.clareza} → ${c.current.clareza}`);
       if (!parts.length) return;
       const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
       log(s, ctx, { kind: 'resource', actorName: who, characterName: c.name, text: `${c.name}: ${parts.join(', ')}${reason ? ` (${reason})` : ''}.` });
@@ -606,6 +681,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const after = deriveStats(c);
       c.current.pv += after.pvMax - before.pvMax;
       c.current.pe += after.peMax - before.peMax;
+      c.current.clareza += after.clarezaMax - before.clarezaMax;
       clampCurrent(c);
       c.updatedAt = now;
       const ab = pick.abilityId ? getAbility(pick.abilityId) : null;
@@ -1037,6 +1113,174 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       return;
     }
 
+    case 'rest': {
+      if (!Array.isArray(a.characterIds) || !a.characterIds.length) fail('Escolha quem descansa.');
+      const shown: string[] = [];
+      const hiddenNames: string[] = [];
+      for (const id of new Set(a.characterIds)) {
+        const c = getChar(s, id);
+        if (c.status !== 'approved') continue;
+        if (c.current.pv <= deriveStats(c).deathAt) continue;
+        fillResources(c);
+        c.updatedAt = now;
+        (c.kind === 'npc' && !c.visible ? hiddenNames : shown).push(c.name);
+      }
+      if (!shown.length && !hiddenNames.length) fail('Nenhuma ficha pode descansar.');
+      const text = (names: string[]) =>
+        `Descanso: ${joinNames(names)} ${names.length > 1 ? 'recuperaram' : 'recuperou'} PV, PE e Clareza.`;
+      if (shown.length) log(s, ctx, { kind: 'resource', actorName: who, text: text(shown) });
+      if (hiddenNames.length) log(s, ctx, { kind: 'resource', actorName: who, text: text(hiddenNames), hidden: true });
+      return;
+    }
+
+    case 'case/upsert': {
+      const title = str(a.title, LIMITS.caseTitle, 'Título do caso', true);
+      const description = str(a.description ?? '', LIMITS.caseText, 'Descrição do caso');
+      if (a.caseId) {
+        const k = getCase(s, a.caseId);
+        Object.assign(k, { title, description, updatedAt: now });
+        return k.id;
+      }
+      if (Object.keys(s.cases).length >= MAX_CASES) fail('Limite de casos atingido.');
+      const k: InvestigationCase = {
+        id: ctx.newId(), title, description, visible: false, archived: false, cards: {}, links: [], published: null, createdAt: now, updatedAt: now,
+      };
+      s.cases[k.id] = k;
+      return k.id;
+    }
+
+    case 'case/delete': {
+      const k = getCase(s, a.caseId);
+      delete s.cases[k.id];
+      return;
+    }
+
+    case 'case/publish': {
+      const k = getCase(s, a.caseId);
+      if (k.archived) fail('Reabra o caso antes de publicar.');
+      const first = !k.visible;
+      const changes = caseChanges(k);
+      if (!first && !changes.total) fail('Nada novo para publicar.');
+      k.published = snapshotOf(k, now);
+      k.visible = true;
+      log(s, ctx, { kind: 'system', actorName: who, text: publishText(k, first, changes.added) });
+      return;
+    }
+
+    case 'case/unpublish': {
+      const k = getCase(s, a.caseId);
+      if (!k.visible) return;
+      k.visible = false;
+      return;
+    }
+
+    case 'case/archive': {
+      const k = getCase(s, a.caseId);
+      k.archived = !!a.archived;
+      k.updatedAt = now;
+      return;
+    }
+
+    case 'clue/upsert': {
+      const k = getCase(s, a.caseId);
+      const kind: ClueKind = typeof a.kind === 'string' && a.kind in CLUE_KINDS ? a.kind : fail('Tipo de cartão inválido.');
+      const title = str(a.title, LIMITS.clueTitle, 'Título', true);
+      const text = str(a.text ?? '', LIMITS.clueText, 'Texto');
+      if (a.cardId) {
+        const card = getClue(k, a.cardId);
+        Object.assign(card, { kind, title, text, updatedAt: now });
+        if (a.hidden != null) card.hidden = !!a.hidden;
+        if (a.x != null) card.x = boardPos(a.x, BOARD_SIZE.w - CLUE_W, 'Posição');
+        if (a.y != null) card.y = boardPos(a.y, BOARD_SIZE.h - CLUE_H, 'Posição');
+        k.updatedAt = now;
+        return card.id;
+      }
+      const n = Object.keys(k.cards).length;
+      if (n >= MAX_CLUES) fail('Limite de cartões neste caso.');
+      // Sem posição: perto do centro, em escada para não empilhar.
+      const step = (n % 6) * 40;
+      const card: ClueCard = {
+        id: ctx.newId(), kind, title, text, hidden: !!a.hidden,
+        x: boardPos(a.x ?? BOARD_SIZE.w / 2 - CLUE_W / 2 + step, BOARD_SIZE.w - CLUE_W, 'Posição'),
+        y: boardPos(a.y ?? BOARD_SIZE.h / 2 - CLUE_H / 2 + step, BOARD_SIZE.h - CLUE_H, 'Posição'),
+        createdAt: now, updatedAt: now,
+      };
+      k.cards[card.id] = card;
+      k.updatedAt = now;
+      return card.id;
+    }
+
+    case 'clue/move': {
+      const k = getCase(s, a.caseId);
+      if (!Array.isArray(a.moves) || !a.moves.length) fail('Nada para mover.');
+      if (a.moves.length > MAX_CLUES) fail('Cartões demais de uma vez.');
+      for (const m of a.moves) {
+        const card = getClue(k, m?.cardId);
+        card.x = boardPos(m.x, BOARD_SIZE.w - CLUE_W, 'Posição');
+        card.y = boardPos(m.y, BOARD_SIZE.h - CLUE_H, 'Posição');
+      }
+      return;
+    }
+
+    case 'clue/hidden': {
+      const k = getCase(s, a.caseId);
+      for (const id of clueIds(k, a.cardIds)) {
+        k.cards[id].hidden = !!a.hidden;
+        k.cards[id].updatedAt = now;
+      }
+      k.updatedAt = now;
+      return;
+    }
+
+    case 'clue/delete': {
+      const k = getCase(s, a.caseId);
+      const ids = new Set(clueIds(k, a.cardIds));
+      for (const id of ids) delete k.cards[id];
+      k.links = k.links.filter((l) => !ids.has(l.from) && !ids.has(l.to));
+      k.updatedAt = now;
+      return;
+    }
+
+    case 'clue/restore': {
+      const k = getCase(s, a.caseId);
+      const cards = Array.isArray(a.cards) ? a.cards.map((c) => cleanClue(c, now)) : [];
+      const links = Array.isArray(a.links) ? a.links : [];
+      if (!cards.length && !links.length) fail('Nada para restaurar.');
+      if (cards.some((c) => k.cards[c.id])) fail('Esse cartão já está no mural.');
+      if (Object.keys(k.cards).length + cards.length > MAX_CLUES) fail('Limite de cartões neste caso.');
+      for (const c of cards) k.cards[c.id] = c;
+      for (const l of links) {
+        const ok = l && typeof l.id === 'string' && /^[\w-]{1,40}$/.test(l.id) && k.cards[l.from] && k.cards[l.to] && l.from !== l.to;
+        if (!ok || linked(k, l.from, l.to) || k.links.some((x) => x.id === l.id)) continue;
+        if (k.links.length >= MAX_LINKS) break;
+        k.links.push({ id: l.id, from: l.from, to: l.to });
+      }
+      k.updatedAt = now;
+      return;
+    }
+
+    case 'clue/link': {
+      const k = getCase(s, a.caseId);
+      const from = getClue(k, a.from);
+      const to = getClue(k, a.to);
+      if (from.id === to.id) fail('Escolha dois cartões diferentes.');
+      if (linked(k, from.id, to.id)) fail('Esses cartões já estão ligados.');
+      if (k.links.length >= MAX_LINKS) fail('Limite de ligações neste caso.');
+      const id = ctx.newId();
+      k.links.push({ id, from: from.id, to: to.id });
+      k.updatedAt = now;
+      return id;
+    }
+
+    case 'clue/unlink': {
+      const k = getCase(s, a.caseId);
+      const before = k.links.length;
+      k.links = k.links.filter((l) => l.id !== a.linkId);
+      if (k.links.length === before) fail('Ligação não encontrada.');
+      k.updatedAt = now;
+      return;
+    }
+
     case 'table/rename': {
       s.name = str(a.name, LIMITS.tableName, 'Nome da mesa', true);
       return;
@@ -1067,6 +1311,7 @@ export function describeAction(s: TableState, a: GameAction): string {
       const parts: string[] = [];
       if (c && c.current.pv !== a.pv) parts.push(`PV ${c.current.pv} → ${a.pv}`);
       if (c && c.current.pe !== a.pe) parts.push(`PE ${c.current.pe} → ${a.pe}`);
+      if (c && a.clareza != null && c.current.clareza !== a.clareza) parts.push(`Clareza ${c.current.clareza} → ${a.clareza}`);
       return `${n}: ${parts.join(', ') || 'sem mudança'}${a.reason ? ` (${a.reason})` : ''}`;
     }
     case 'ability/use': {
@@ -1147,9 +1392,9 @@ export function dispatch(state: TableState, actor: Actor, action: GameAction, ct
       }
     }
 
-    apply(draft, actor, action, ctx);
+    const id = apply(draft, actor, action, ctx);
     draft.updatedAt = ctx.now();
-    return { ok: true, state: draft };
+    return { ok: true, state: draft, ...(id ? { id } : {}) };
   } catch (e) {
     if (e instanceof Fail) return { ok: false, state, error: e.message };
     console.error(e);

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { ArrowLeft, BookOpen, ClipboardList, Dices, Download, Eye, Inbox, LogOut, Package, Plus, Shield, Skull, Swords, UserPlus, VenetianMask } from 'lucide-react';
+import {
+  ArrowLeft, BookOpen, ClipboardList, Dices, Download, Eye, Inbox, LogOut, Moon, Package, Plus, Search, Shield, Skull, Swords, UserPlus, VenetianMask,
+} from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
 import CharacterWizard from '../components/sheet/CharacterWizard';
@@ -14,17 +16,19 @@ import Modal from '../components/common/Modal';
 import RoomInvite from '../components/room/RoomInvite';
 import CharacterSheet, { StatusBadge } from '../components/sheet/CharacterSheet';
 import RequestsPanel from '../components/gm/RequestsPanel';
+import RestModal from '../components/gm/RestModal';
+import CasesPanel from '../components/investigation/CasesPanel';
 import ItemLibrary from '../components/gm/ItemLibrary';
 import PermissionsPanel from '../components/gm/PermissionsPanel';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
-type Tab = 'fichas' | 'combate' | 'ameacas' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
+type Tab = 'fichas' | 'combate' | 'ameacas' | 'investigacao' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
 const send: ActApi['send'] = async (a) => {
   const r = gmDispatch(a);
-  return r.ok ? { ok: true } : { ok: false, error: r.error };
+  return r.ok ? { ok: true, id: r.id } : { ok: false, error: r.error };
 };
 
 export default function GmPage({ onLeave }: { onLeave: () => void }) {
@@ -82,6 +86,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
+            { id: 'investigacao', label: 'Investigação', icon: <Search size={14} /> },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
@@ -117,6 +122,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'combate' && <CombatPanel table={table} />}
           {tab === 'ameacas' && <ThreatsPanel table={table} />}
+          {tab === 'investigacao' && <CasesPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
           {tab === 'permissoes' && <PermissionsPanel table={table} />}
@@ -137,7 +143,8 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
 }) {
   const { act } = useAct();
   const [creatingNpc, setCreatingNpc] = useState(false);
-  const players = useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
+  const [resting, setResting] = useState(false);
+  const players =useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
   const all = Object.values(table.characters);
   const byOwner = (id: string) => all.filter((c) => c.ownerId === id).sort((a, b) => a.createdAt - b.createdAt);
   const npcs = all.filter((c) => c.kind === 'npc').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -161,6 +168,13 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
   return (
     <div className={`split split-master${sheetOpen || creatingNpc ? ' split-detail-open' : ''}`}>
       <div className="col split-list">
+        {all.some((c) => c.status === 'approved') && (
+          <div className="row">
+            <span className="spacer" />
+            <button className="btn btn-sm" onClick={() => setResting(true)} title="Restaurar PV, PE e Clareza"><Moon size={14} /> Descanso</button>
+          </div>
+        )}
+        {resting && <RestModal table={table} onClose={() => setResting(false)} />}
         {players.length === 0 && (
           <div className="empty col" style={{ alignItems: 'center' }}>
             <p>Nenhum jogador entrou ainda.</p>
@@ -238,6 +252,7 @@ function CharRow({ c, active, onClick }: { c: Character; active: boolean; onClic
         <span className="spacer" />
         <span style={{ color: 'var(--pv)' }}>{c.current.pv}/{d.pvMax}</span>
         <span style={{ color: 'var(--pe)' }}>{c.current.pe}/{d.peMax}</span>
+        <span style={{ color: 'var(--clareza)' }} title="Clareza">{c.current.clareza}/{d.clarezaMax}</span>
       </div>
     </button>
   );

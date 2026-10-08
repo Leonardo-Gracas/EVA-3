@@ -34,6 +34,8 @@ const RATE_BURST = 40;
 interface ConnInfo {
   playerId: string | null;
   allow: () => boolean;
+  /** Última visão enviada (JSON), para não reenviar a mesma coisa. */
+  lastView?: string;
 }
 
 let peer: Peer | null = null;
@@ -93,7 +95,13 @@ function broadcastNow() {
   if (!t) return;
   const online = onlineIds();
   for (const [conn, info] of conns) {
-    if (info.playerId) send(conn, { t: 'view', view: buildPlayerView(t, info.playerId, online) });
+    if (!info.playerId) continue;
+    // Só envia se a visão deste jogador mudou: mexer no rascunho do mural, por exemplo, não gera tráfego.
+    const view = buildPlayerView(t, info.playerId, online);
+    const key = JSON.stringify(view);
+    if (key === info.lastView) continue;
+    info.lastView = key;
+    send(conn, { t: 'view', view });
   }
 }
 
@@ -165,6 +173,8 @@ async function handleHello(conn: DataConnection, info: ConnInfo, msg: Extract<Gu
     next.log = [...t.log, { id: defaultCtx.newId(), at: now, kind: 'system', actorName: name, text: 'entrou na mesa pela primeira vez.' }];
   }
   info.playerId = clientId;
+  // Novo hello: o cliente começa do zero e precisa da visão completa.
+  info.lastView = undefined;
   commit(next);
   broadcastNow();
   send(conn, { t: 'welcome', playerId: clientId });

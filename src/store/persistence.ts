@@ -2,6 +2,8 @@
 import type { ItemData, TableState } from '../model/types';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, NO_EFFECTS } from '../model/types';
 import { DEFAULT_PERMISSIONS } from '../model/permissions';
+import { deriveStats } from '../rules/derive';
+import { snapshotOf } from '../model/cases';
 
 const DB_NAME = 'eva3';
 const STORE = 'tables';
@@ -133,6 +135,9 @@ export function migrate(t: TableState): TableState {
   t.characters ??= {};
   t.threats ??= {};
   t.itemLibrary ??= {};
+  t.cases ??= {};
+  // Casos de antes da publicação: o que já estava visível vira a primeira versão publicada.
+  for (const k of Object.values(t.cases)) k.published ??= k.visible ? snapshotOf(k, k.updatedAt) : null;
   t.requests ??= [];
   t.log ??= [];
   t.combat ??= null;
@@ -150,6 +155,7 @@ export function migrate(t: TableState): TableState {
     c.gold ??= 0;
     for (const it of c.inventory) migrateItem(it, true);
     c.visible ??= false;
+    c.current.clareza ??= deriveStats(c).clarezaMax;
   }
   for (const it of Object.values(t.itemLibrary)) migrateItem(it, false);
   for (const th of Object.values(t.threats)) {

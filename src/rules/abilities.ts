@@ -15,6 +15,7 @@ export interface Scaled {
 export interface AbilityEffect {
   pvMax?: Scaled;
   peMax?: Scaled;
+  clarezaMax?: Scaled;
   def?: Scaled;
   /** Redução de dano contra dano mágico. */
   rdMagic?: number;
@@ -142,7 +143,7 @@ const A: Ability[] = [
   {
     id: 'lampejos', classId: 'vidente', name: 'Lampejos', minClassLevel: 1, passive: true,
     text: 'Receba sua PRE como CLAREZA total.',
-    effect: { peMax: { base: 0, attr: 'PRE' } },
+    effect: { clarezaMax: { base: 0, attr: 'PRE' } },
   },
   {
     id: 'sexto-sentido', classId: 'vidente', name: 'Sexto Sentido', minClassLevel: 1, passive: true,

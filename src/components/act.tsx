@@ -4,7 +4,8 @@ import { createContext, useContext, useCallback, type ReactNode } from 'react';
 import type { ActionPermission, GameAction, LibraryItem, Permissions, PermissionKey } from '../model/types';
 import { toast } from './common/toast';
 
-export interface Ack { ok: boolean; error?: string; requested?: boolean; message?: string }
+/** id: o que a ação criou (só no mestre, que aplica direto). */
+export interface Ack { ok: boolean; error?: string; requested?: boolean; message?: string; id?: string }
 
 export interface ActApi {
   role: 'gm' | 'player';

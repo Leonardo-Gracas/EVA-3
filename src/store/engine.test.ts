@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dispatch, newTable, type EngineCtx } from './engine';
 import { buildPlayerView } from './views';
 import { migrate } from './persistence';
+import { caseChanges } from '../model/cases';
 import { deriveStats } from '../rules/derive';
 import type { Actor, CharacterDraft, TableState } from '../model/types';
 import { emptyAttributes } from '../rules/attributes';
@@ -120,7 +121,7 @@ describe('motor', () => {
     expect(r.ok).toBe(true);
     const c = Object.values(r.state.characters).find((x) => x.levels.length === 3)!;
     const d = deriveStats(c);
-    expect(c.current).toEqual({ pv: d.pvMax, pe: d.peMax });
+    expect(c.current).toEqual({ pv: d.pvMax, pe: d.peMax, clareza: d.clarezaMax });
     expect(d.abilities.map((a) => a.id)).toEqual(['fortificado', 'clareza', 'oracao']);
   });
 
@@ -228,7 +229,9 @@ describe('motor', () => {
       { id: 'y', name: 'Terço', type: 'catalisador', description: '', damage: '', defBonus: 1, qty: 1, equipped: true },
     ];
     delete old.characters[cid].rdBonus;
-    old.threats = { t1: { id: 't1', name: 'Velho', rd: 4, attributes: {}, attacks: [], abilities: [], current: { pv: 1, pe: 0 } } };
+    delete old.characters[cid].current.clareza;
+    delete old.cases;
+    old.threats ={ t1: { id: 't1', name: 'Velho', rd: 4, attributes: {}, attacks: [], abilities: [], current: { pv: 1, pe: 0 } } };
     const m = migrate(old);
     expect(m.characters[cid].inventory[0]).toMatchObject({ value: 0, pv: 10, durability: { pv: 10, rd: 5, def: 12 } });
     expect(m.characters[cid].inventory[1]).toMatchObject({ type: 'catalisador_sagrado', effects: { def: 1, rdPhysical: 0, rdMagic: 0 } });
@@ -236,6 +239,8 @@ describe('motor', () => {
     expect(m.threats.t1).toMatchObject({ rdPhysical: 4, rdMagic: 0 });
     expect(m.characters[cid].rdBonus).toEqual({ physical: 0, magic: 0 });
     expect(m.characters[cid]).toMatchObject({ movement: 9, gold: 0 });
+    expect(m.characters[cid].current.clareza).toBe(6);
+    expect(m.cases).toEqual({});
   });
 
   it('item da biblioteca e item novo que vai para a biblioteca', () => {
@@ -277,5 +282,157 @@ describe('motor', () => {
     expect(dispatch(s, p1, { type: 'character/movement', characterId: cid, movement: 30 }, ctx).ok).toBe(false);
     r = dispatch(s, gm, { type: 'character/movement', characterId: cid, movement: 12 }, ctx);
     expect(r.ok && r.state.characters[cid].movement).toBe(12);
+  });
+
+  it('Clareza: nasce cheia, ajusta junto com PV/PE e acompanha o nível', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    // 6 + INT 0
+    expect(s.characters[cid].current.clareza).toBe(6);
+    let r = dispatch(s, p1, { type: 'resource/set', characterId: cid, pv: 17, pe: 2, clareza: 3, reason: 'Apuração' }, ctx);
+    expect(r.ok && r.state.characters[cid].current.clareza).toBe(3);
+    expect(r.state.log[r.state.log.length - 1].text).toContain('Clareza 6 → 3');
+    s = r.state;
+    // Sem clareza (ou null, como chega pelo PeerJS): não muda.
+    r = dispatch(s, p1, { type: 'resource/set', characterId: cid, pv: 10, pe: 2, clareza: null as unknown as undefined }, ctx);
+    expect(r.ok && r.state.characters[cid].current).toEqual({ pv: 10, pe: 2, clareza: 3 });
+    s = r.state;
+    expect(dispatch(s, p1, { type: 'resource/set', characterId: cid, pv: 10, pe: 2, clareza: 7 }, ctx).ok).toBe(false);
+    // Lampejos: + PRE 2 de Clareza total, somado também ao atual.
+    s = dispatch(s, gm, { type: 'level/up', characterId: cid, classId: 'vidente', abilityId: 'lampejos' }, ctx).state;
+    expect(deriveStats(s.characters[cid]).clarezaMax).toBe(8);
+    expect(s.characters[cid].current.clareza).toBe(5);
+  });
+
+  it('descanso: só o mestre, só os escolhidos, mortos não descansam', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    s = dispatch(s, gm, { type: 'npc/create', draft: { ...draft, name: 'Morto' } }, ctx).state;
+    s = dispatch(s, gm, { type: 'npc/create', draft: { ...draft, name: 'Vivo' } }, ctx).state;
+    const byName = (name: string) => Object.values(s.characters).find((c) => c.name === name)!.id;
+    const [dead, alive] = [byName('Morto'), byName('Vivo')];
+    s = dispatch(s, gm, { type: 'resource/set', characterId: cid, pv: 1, pe: 0, clareza: 0 }, ctx).state;
+    s = dispatch(s, gm, { type: 'resource/set', characterId: dead, pv: -10, pe: 0, clareza: 0 }, ctx).state;
+    s = dispatch(s, gm, { type: 'resource/set', characterId: alive, pv: 1, pe: 0, clareza: 0 }, ctx).state;
+    expect(dispatch(s, p1, { type: 'rest', characterIds: [cid] }, ctx)).toMatchObject({ ok: false, error: /mestre/ });
+    s = dispatch(s, gm, { type: 'rest', characterIds: [cid, dead] }, ctx).state;
+    expect(s.characters[cid].current).toEqual({ pv: 17, pe: 2, clareza: 6 });
+    expect(s.characters[dead].current.pv).toBe(-10);
+    expect(s.characters[alive].current.pv).toBe(1);
+    expect(s.log[s.log.length - 1].text).toBe('Descanso: Mizael recuperou PV, PE e Clareza.');
+    expect(dispatch(s, gm, { type: 'rest', characterIds: [dead] }, ctx).ok).toBe(false);
+  });
+
+  it('mural: o jogador só vê a versão publicada, nunca o rascunho', () => {
+    const { s: s0 } = setup();
+    expect(dispatch(s0, p1, { type: 'case/upsert', title: 'Mansão', description: '' }, ctx)).toMatchObject({ ok: false });
+    let s = dispatch(s0, gm, { type: 'case/upsert', title: 'Mansão', description: 'Quem matou o barão?' }, ctx).state;
+    const caseId = Object.keys(s.cases)[0];
+    const view = () => buildPlayerView(s, 'p1', new Set()).cases;
+    const logs = () => s.log.length;
+    expect(view()).toHaveLength(0);
+
+    // Montar o rascunho não vaza nada: nem o caso, nem avisos no registro.
+    const before = logs();
+    s = dispatch(s, gm, { type: 'clue/upsert', caseId, kind: 'evidencia', title: 'Faca', text: 'Ensanguentada' }, ctx).state;
+    s = dispatch(s, gm, { type: 'clue/upsert', caseId, kind: 'fato', title: 'A faca é da cozinha', text: '', hidden: true }, ctx).state;
+    const [faca, fato] = Object.values(s.cases[caseId].cards).map((c) => c.id);
+    expect(dispatch(s, p1, { type: 'clue/link', caseId, from: faca, to: fato }, ctx).ok).toBe(false);
+    s = dispatch(s, gm, { type: 'clue/link', caseId, from: faca, to: fato }, ctx).state;
+    expect(dispatch(s, gm, { type: 'clue/link', caseId, from: fato, to: faca }, ctx)).toMatchObject({ ok: false, error: /já estão/ });
+    expect(dispatch(s, gm, { type: 'clue/link', caseId, from: faca, to: faca }, ctx).ok).toBe(false);
+    expect(logs()).toBe(before);
+    expect(view()).toHaveLength(0);
+    expect(caseChanges(s.cases[caseId])).toMatchObject({ total: 1, added: [{ id: faca }] });
+
+    // Primeira publicação: só o que não está oculto.
+    expect(dispatch(s, p1, { type: 'case/publish', caseId }, ctx).ok).toBe(false);
+    s = dispatch(s, gm, { type: 'case/publish', caseId }, ctx).state;
+    expect(s.log[s.log.length - 1].text).toBe('abriu o caso Mansão no mural, com nova evidência: Faca.');
+    expect(Object.keys(view()[0].cards)).toEqual([faca]);
+    expect(view()[0].links).toHaveLength(0);
+    expect(caseChanges(s.cases[caseId]).total).toBe(0);
+    expect(dispatch(s, gm, { type: 'case/publish', caseId }, ctx)).toMatchObject({ ok: false, error: /Nada novo/ });
+
+    // Depois de publicado, mexer no rascunho também não chega ao jogador.
+    const published = view();
+    s = dispatch(s, gm, { type: 'clue/hidden', caseId, cardIds: [fato], hidden: false }, ctx).state;
+    s = dispatch(s, gm, { type: 'clue/move', caseId, moves: [{ cardId: faca, x: 99999, y: -5 }] }, ctx).state;
+    s = dispatch(s, gm, { type: 'case/upsert', caseId, title: 'Mansão Albuquerque', description: '' }, ctx).state;
+    expect(s.cases[caseId].cards[faca]).toMatchObject({ x: 2200, y: 0 });
+    expect(view()).toEqual(published);
+    expect(caseChanges(s.cases[caseId])).toMatchObject({ added: [{ id: fato }], changed: 1, links: 1, info: true, total: 4 });
+
+    s = dispatch(s, gm, { type: 'case/publish', caseId }, ctx).state;
+    expect(s.log[s.log.length - 1].text).toBe('atualizou o mural do caso Mansão Albuquerque: novo fato: A faca é da cozinha.');
+    expect(view()[0]).toMatchObject({ title: 'Mansão Albuquerque', links: [{ from: faca, to: fato }] });
+    expect(view()[0].cards[faca]).toMatchObject({ x: 2200, y: 0 });
+
+    // Retirar e arquivar escondem; o rascunho continua com o mestre.
+    s = dispatch(s, gm, { type: 'case/unpublish', caseId }, ctx).state;
+    expect(view()).toHaveLength(0);
+    s = dispatch(s, gm, { type: 'case/publish', caseId }, ctx).state;
+    expect(view()).toHaveLength(1);
+    s = dispatch(s, gm, { type: 'case/archive', caseId, archived: true }, ctx).state;
+    expect(view()).toHaveLength(0);
+    expect(dispatch(s, gm, { type: 'case/publish', caseId }, ctx)).toMatchObject({ ok: false, error: /Reabra/ });
+    s = dispatch(s, gm, { type: 'clue/delete', caseId, cardIds: [fato] }, ctx).state;
+    expect(s.cases[caseId].links).toHaveLength(0);
+  });
+
+  it('mural: caso antigo já visível vira a primeira versão publicada', () => {
+    const { s: s0 } = setup();
+    const old = structuredClone(s0) as any;
+    const card = (id: string, hidden: boolean) => ({ id, kind: 'evidencia', title: id, text: '', x: 0, y: 0, hidden, createdAt: 1, updatedAt: 1 });
+    old.cases = {
+      k1: { id: 'k1', title: 'Aberto', description: '', visible: true, archived: false, cards: { c1: card('c1', false), c2: card('c2', true) }, links: [], createdAt: 1, updatedAt: 5 },
+      k2: { id: 'k2', title: 'Rascunho', description: '', visible: false, archived: false, cards: {}, links: [], createdAt: 2, updatedAt: 5 },
+    };
+    const m = migrate(old);
+    expect(Object.keys(m.cases.k1.published!.cards)).toEqual(['c1']);
+    expect(m.cases.k2.published).toBeNull();
+    expect(buildPlayerView(m, 'p1', new Set()).cases.map((k) => k.id)).toEqual(['k1']);
+  });
+
+  it('mural: lotes, id do que foi criado e restauração para desfazer', () => {
+    const { s: s0 } = setup();
+    let s = dispatch(s0, gm, { type: 'case/upsert', title: 'Mansão', description: '' }, ctx).state;
+    const caseId = Object.keys(s.cases)[0];
+    const add = (title: string) => {
+      const r = dispatch(s, gm, { type: 'clue/upsert', caseId, kind: 'evidencia', title, text: '', hidden: true }, ctx);
+      s = r.state;
+      return (r as { id: string }).id;
+    };
+    const [a, b, c] = [add('Faca'), add('Bilhete'), add('Pegadas')];
+    expect(Object.keys(s.cases[caseId].cards)).toEqual([a, b, c]);
+    const linked = dispatch(s, gm, { type: 'clue/link', caseId, from: a, to: b }, ctx);
+    s = linked.state;
+    const linkId = (linked as { id: string }).id;
+    expect(s.cases[caseId].links[0].id).toBe(linkId);
+
+    // Revelar vários (com repetição) e publicar: um aviso só, com todas as pistas novas.
+    s = dispatch(s, gm, { type: 'clue/hidden', caseId, cardIds: [a, b, a], hidden: false }, ctx).state;
+    const logs = s.log.length;
+    s = dispatch(s, gm, { type: 'case/publish', caseId }, ctx).state;
+    expect(s.log.length).toBe(logs + 1);
+    expect(s.log[s.log.length - 1].text).toBe('abriu o caso Mansão no mural, com novas pistas: Faca e Bilhete.');
+    expect(dispatch(s, gm, { type: 'clue/hidden', caseId, cardIds: [], hidden: true }, ctx).ok).toBe(false);
+    expect(dispatch(s, gm, { type: 'clue/hidden', caseId, cardIds: ['nao-existe'], hidden: true }, ctx).ok).toBe(false);
+
+    s = dispatch(s, gm, { type: 'clue/move', caseId, moves: [{ cardId: a, x: 10, y: 20 }, { cardId: b, x: 30, y: 40 }] }, ctx).state;
+    expect([s.cases[caseId].cards[a].x, s.cases[caseId].cards[b].y]).toEqual([10, 40]);
+
+    // Excluir e restaurar: mesmos ids, fio de volta.
+    const snapshot = { cards: [s.cases[caseId].cards[a], s.cases[caseId].cards[b]], links: s.cases[caseId].links };
+    s = dispatch(s, gm, { type: 'clue/delete', caseId, cardIds: [a, b] }, ctx).state;
+    expect(Object.keys(s.cases[caseId].cards)).toEqual([c]);
+    expect(dispatch(s, p1, { type: 'clue/restore', caseId, ...snapshot }, ctx).ok).toBe(false);
+    s = dispatch(s, gm, { type: 'clue/restore', caseId, ...snapshot }, ctx).state;
+    expect(Object.keys(s.cases[caseId].cards).sort()).toEqual([a, b, c].sort());
+    expect(s.cases[caseId].links).toEqual([{ id: linkId, from: a, to: b }]);
+    expect(dispatch(s, gm, { type: 'clue/restore', caseId, ...snapshot }, ctx)).toMatchObject({ ok: false, error: /já está/ });
+    // Fio órfão (ponta que não existe) é ignorado.
+    s = dispatch(s, gm, { type: 'clue/restore', caseId, cards: [], links: [{ id: 'x1', from: a, to: 'sumiu' }] }, ctx).state;
+    expect(s.cases[caseId].links).toHaveLength(1);
   });
 });

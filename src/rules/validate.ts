@@ -15,6 +15,10 @@ export const LIMITS = {
   itemDamage: 40,
   tableName: 60,
   userName: 32,
+  caseTitle: 80,
+  caseText: 1000,
+  clueTitle: 80,
+  clueText: 1000,
 };
 
 export function isClassId(v: unknown): v is ClassId {

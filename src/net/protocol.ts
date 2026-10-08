@@ -1,6 +1,6 @@
 import type { GameAction, PlayerView } from '../model/types';
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export type GuestMsg =
   | { t: 'hello'; v: number; clientId: string; secret: string; name: string }

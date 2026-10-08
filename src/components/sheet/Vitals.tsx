@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Heart, Zap, Minus, Plus, SlidersHorizontal } from 'lucide-react';
+import { Heart, Zap, Lightbulb, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import type { Character } from '../../model/types';
 import type { Derived } from '../../rules/derive';
 import { conditionOf } from '../../rules/derive';
 import { useAct } from '../act';
 import ActButton from '../common/ActButton';
-import ResourceAdjustModal, { peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
+import ResourceAdjustModal, { clarezaOps, peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
 
 function pct(v: number, max: number) {
   return `${Math.max(0, Math.min(100, (v / Math.max(1, max)) * 100))}%`;
@@ -23,8 +23,14 @@ export default function Vitals({ ch, d, readOnly }: { ch: Character; d: Derived;
   const cond = CONDITION_TEXT[conditionOf(ch, d)];
   const canOpen = !readOnly && perm('resource_change') !== 'blocked';
 
-  const set = async (pv: number, pe: number, reason?: string) =>
-    (await act({ type: 'resource/set', characterId: ch.id, pv: Math.max(d.deathAt, Math.min(d.pvMax, pv)), pe: Math.max(0, Math.min(d.peMax, pe)), reason })).ok;
+  const set = async (pv: number, pe: number, clareza: number, reason?: string) =>
+    (await act({
+      type: 'resource/set', characterId: ch.id,
+      pv: Math.max(d.deathAt, Math.min(d.pvMax, pv)),
+      pe: Math.max(0, Math.min(d.peMax, pe)),
+      clareza: Math.max(0, Math.min(d.clarezaMax, clareza)),
+      reason,
+    })).ok;
 
   const tracks: AdjustTrack[] = [
     {
@@ -41,13 +47,23 @@ export default function Vitals({ ch, d, readOnly }: { ch: Character; d: Derived;
       ops: peOps(),
       status: (v) => (v <= 0 ? 'Sem PE: não pode conjurar nem usar habilidades.' : undefined),
     },
+    {
+      key: 'clareza', label: 'Clareza', icon: <Lightbulb size={16} color="var(--clareza)" />, color: 'var(--clareza)', barClass: 'bar-clareza',
+      current: ch.current.clareza, max: d.clarezaMax, min: 0,
+      ops: clarezaOps(),
+      status: (v) => (v <= 0 ? 'Sem Clareza: não pode apurar nem abrir inquéritos.' : undefined),
+    },
   ];
 
-  const step = (k: 'pv' | 'pe', delta: number) => {
-    const pv = k === 'pv' ? ch.current.pv + delta : ch.current.pv;
-    const pe = k === 'pe' ? ch.current.pe + delta : ch.current.pe;
-    void set(pv, pe, `${delta > 0 ? '+' : ''}${delta} ${k.toUpperCase()}`);
+  /** Valores atuais com um dos recursos trocado. */
+  const withValue = (k: string, v: number) => ({ ...ch.current, [k]: v } as Character['current']);
+  const apply = (k: string, v: number, reason?: string) => {
+    const c = withValue(k, v);
+    return set(c.pv, c.pe, c.clareza, reason);
   };
+
+  const step = (t: AdjustTrack, delta: number) =>
+    void apply(t.key, t.current + delta, `${delta > 0 ? '+' : ''}${delta} ${t.label}`);
 
   const vital = (t: AdjustTrack, foot: string, footTitle: string, down: string, downOp: string, up: string, upOp: string) => (
     <div className="vital">
@@ -66,9 +82,9 @@ export default function Vitals({ ch, d, readOnly }: { ch: Character; d: Derived;
       {!readOnly && (
         <div className="vital-actions">
           <ActButton perm="resource_change" className="btn btn-sm btn-icon" title={`−1 ${t.label}`} aria-label={`−1 ${t.label}`}
-            disabled={t.current <= (t.min ?? -Infinity)} onClick={() => step(t.key as 'pv', -1)}><Minus size={13} /></ActButton>
+            disabled={t.current <= (t.min ?? -Infinity)} onClick={() => step(t, -1)}><Minus size={13} /></ActButton>
           <ActButton perm="resource_change" className="btn btn-sm btn-icon" title={`+1 ${t.label}`} aria-label={`+1 ${t.label}`}
-            disabled={t.current >= t.max!} onClick={() => step(t.key as 'pv', 1)}><Plus size={13} /></ActButton>
+            disabled={t.current >= t.max!} onClick={() => step(t, 1)}><Plus size={13} /></ActButton>
           <ActButton perm="resource_change" onClick={() => setAdjust({ track: t.key, op: downOp })}>{down}</ActButton>
           <ActButton perm="resource_change" onClick={() => setAdjust({ track: t.key, op: upOp })}>{up}</ActButton>
         </div>
@@ -88,14 +104,15 @@ export default function Vitals({ ch, d, readOnly }: { ch: Character; d: Derived;
           </ActButton>
         )}
       </div>
-      <div className="grid-2">
+      <div className="grid-3">
         {vital(tracks[0], `Morre em ${d.deathAt}${d.unconsciousAtZero ? '' : ' · Inabalável'}`, d.breakdown.pv.join('\n'), 'Dano', 'phys', 'Curar', 'heal')}
         {vital(tracks[1], 'Zerado: sem conjurações e habilidades', d.breakdown.pe.join('\n'), 'Gastar', 'spend', 'Recuperar', 'recover')}
+        {vital(tracks[2], 'Apurações e inquéritos · renova no descanso', d.breakdown.clareza.join('\n'), 'Gastar', 'spend', 'Recuperar', 'recover')}
       </div>
       {adjust && (
         <ResourceAdjustModal title={`Ajustar ${ch.name}`} tracks={tracks} start={adjust} perm="resource_change"
-          onApply={(k, v, reason) => (k === 'pv' ? set(v, ch.current.pe, reason) : set(ch.current.pv, v, reason))}
-          onRestoreAll={{ label: 'Restaurar tudo', run: () => set(d.pvMax, d.peMax, 'Recuperação total') }}
+          onApply={(k, v, reason) => apply(k, v, reason)}
+          onRestoreAll={{ label: 'Restaurar tudo', run: () => set(d.pvMax, d.peMax, d.clarezaMax, 'Recuperação total') }}
           onClose={() => setAdjust(null)} />
       )}
     </div>

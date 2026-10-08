@@ -68,6 +68,17 @@ describe('habilidades passivas', () => {
     expect(d.def).toBe(13);
     expect(d.title).toBe('Peregrino');
   });
+  it('Clareza: 6 + INT, e Lampejos soma PRE sem mexer no PE', () => {
+    const attrs = { ...emptyAttributes(), INT: 2, PRE: 3 };
+    const sem = deriveStats({ attributes: attrs, levels: [{ classId: 'vidente', abilityId: 'sexto-sentido' }], permanentLoss: noLoss });
+    const com = deriveStats({ attributes: attrs, levels: [{ classId: 'vidente', abilityId: 'lampejos' }], permanentLoss: noLoss });
+    expect(sem.clarezaMax).toBe(8);
+    expect(com.clarezaMax).toBe(11);
+    expect(com.peMax).toBe(sem.peMax);
+    expect(com.breakdown.clareza).toEqual(['Base: 6 + INT = 8', 'Lampejos: PRE = 3']);
+    const burro = deriveStats({ attributes: { ...emptyAttributes(), INT: -1 }, levels: [{ classId: 'combatente', abilityId: null }], permanentLoss: noLoss });
+    expect(burro.clarezaMax).toBe(5);
+  });
 });
 
 describe('morte e títulos', () => {

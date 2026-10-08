@@ -250,6 +250,14 @@ export function peOps(): AdjustOp[] {
   ];
 }
 
+/** Operações de Clareza: gasto (apuração, inquérito) e recuperação. */
+export function clarezaOps(): AdjustOp[] {
+  return [
+    { key: 'spend', label: 'Gastar', tone: 'down', compute: (c, n) => c - n, reason: (n) => `Gasto de ${n} Clareza` },
+    { key: 'recover', label: 'Recuperar', tone: 'up', compute: (c, n) => c + n, reason: (n) => `Recuperou ${n} Clareza` },
+  ];
+}
+
 /** Operações de ouro: ganho e gasto. */
 export function goldOps(): AdjustOp[] {
   return [

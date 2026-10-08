@@ -32,7 +32,7 @@ export interface Character {
   attributes: Attributes;
   /** levels[0] é o nível 1. O nível do personagem é levels.length. */
   levels: LevelPick[];
-  current: { pv: number; pe: number };
+  current: { pv: number; pe: number; clareza: number };
   /** Perdas permanentes de PV/PE máximos (ex.: Pacto). Só o mestre altera. */
   permanentLoss: { pv: number; pe: number };
   /** RD extra concedida pelo mestre (bênçãos, maldições, condições). */
@@ -229,6 +229,67 @@ export type CombatSide = 'pc' | 'npc' | 'threat';
 export type CombatHealth = 'ileso' | 'ferido' | 'muito-ferido' | 'abatido' | 'inconsciente' | 'morto';
 export type GroupDamageOp = 'phys' | 'mag' | 'direct' | 'heal';
 
+// ── Investigação ─────────────────────────────────────────────────────────────
+// Mural de cada caso: cartões de evidência e fato soltos num quadro, ligados por fios.
+
+export type ClueKind = 'evidencia' | 'fato';
+
+export const CLUE_KINDS: Record<ClueKind, string> = {
+  evidencia: 'Evidência',
+  fato: 'Fato',
+};
+
+/** Tamanho do quadro do mural, em pixels (coordenadas dos cartões). */
+export const BOARD_SIZE = { w: 2400, h: 1600 };
+/** Largura do cartão e altura usada para mantê-lo dentro do quadro. */
+export const CLUE_SIZE = { w: 200, h: 120 };
+
+export interface ClueCard {
+  id: string;
+  kind: ClueKind;
+  title: string;
+  text: string;
+  /** Canto superior esquerdo do cartão no quadro. */
+  x: number;
+  y: number;
+  /** Oculto dos jogadores (ainda não descoberto). */
+  hidden: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Fio entre dois cartões do mesmo caso. */
+export interface ClueLink {
+  id: string;
+  from: string;
+  to: string;
+}
+
+/** O que os jogadores veem de um caso: uma cópia congelada, trocada só quando o mestre publica. */
+export interface CaseSnapshot {
+  title: string;
+  description: string;
+  /** Só os cartões não ocultos, como estavam ao publicar. */
+  cards: Record<string, ClueCard>;
+  links: ClueLink[];
+  publishedAt: number;
+}
+
+export interface InvestigationCase {
+  id: string;
+  title: string;
+  description: string;
+  /** Publicado: os jogadores veem `published` (nunca o rascunho ao vivo). */
+  visible: boolean;
+  archived: boolean;
+  /** Rascunho do mestre: tudo o que ele edita fica aqui até publicar. */
+  cards: Record<string, ClueCard>;
+  links: ClueLink[];
+  published: CaseSnapshot | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ── Mesa ─────────────────────────────────────────────────────────────────────
 
 export interface PlayerRecord {
@@ -320,6 +381,7 @@ export interface TableState {
   characters: Record<string, Character>;
   threats: Record<string, Threat>;
   itemLibrary: Record<string, LibraryItem>;
+  cases: Record<string, InvestigationCase>;
   permissions: PermissionState;
   requests: PendingRequest[];
   log: LogEntry[];
@@ -342,7 +404,10 @@ export type GameAction =
   | { type: 'threat/delete'; threatId: string }
   | { type: 'threat/resource'; threatId: string; pv: number; pe: number; reason?: string }
   | { type: 'threat/visibility'; threatId: string; visible: boolean }
-  | { type: 'resource/set'; characterId: string; pv: number; pe: number; reason?: string }
+  /** clareza ausente: não muda. */
+  | { type: 'resource/set'; characterId: string; pv: number; pe: number; clareza?: number; reason?: string }
+  /** Mestre: PV, PE e Clareza das fichas escolhidas voltam ao máximo. */
+  | { type: 'rest'; characterIds: string[] }
   | { type: 'ability/use'; characterId: string; abilityId: string; pe: number; pv: number; note?: string }
   | { type: 'level/up'; characterId: string; classId: ClassId; abilityId: string | null }
   /** libraryId: copia o item da biblioteca. toLibrary: também cria o item na biblioteca. */
@@ -380,6 +445,22 @@ export type GameAction =
   /** Jogador encerra o turno do próprio personagem. */
   | { type: 'combat/endTurn'; combatantId: string }
   | { type: 'combat/groupDamage'; combatantIds: string[]; op: GroupDamageOp; amount: number; reason?: string }
+  | { type: 'case/upsert'; caseId?: string; title: string; description: string }
+  | { type: 'case/delete'; caseId: string }
+  /** Congela o rascunho como a versão dos jogadores (e mostra o caso a eles). */
+  | { type: 'case/publish'; caseId: string }
+  /** Tira o caso dos jogadores; o rascunho continua com o mestre. */
+  | { type: 'case/unpublish'; caseId: string }
+  | { type: 'case/archive'; caseId: string; archived: boolean }
+  /** Sem x/y: o cartão nasce perto do centro do quadro. */
+  | { type: 'clue/upsert'; caseId: string; cardId?: string; kind: ClueKind; title: string; text: string; hidden?: boolean; x?: number; y?: number }
+  | { type: 'clue/move'; caseId: string; moves: Array<{ cardId: string; x: number; y: number }> }
+  | { type: 'clue/hidden'; caseId: string; cardIds: string[]; hidden: boolean }
+  | { type: 'clue/delete'; caseId: string; cardIds: string[] }
+  /** Desfazer/refazer: devolve cartões e fios com os mesmos ids. */
+  | { type: 'clue/restore'; caseId: string; cards: ClueCard[]; links: ClueLink[] }
+  | { type: 'clue/link'; caseId: string; from: string; to: string }
+  | { type: 'clue/unlink'; caseId: string; linkId: string }
   | { type: 'table/rename'; name: string }
   | { type: 'table/startLevel'; level: number }
   | { type: 'log/clear' };
@@ -431,4 +512,6 @@ export interface PlayerView {
   permissions: Permissions;
   log: LogEntry[];
   combat: PlayerCombat | null;
+  /** Casos publicados e não arquivados, na versão que o mestre publicou por último. */
+  cases: InvestigationCase[];
 }

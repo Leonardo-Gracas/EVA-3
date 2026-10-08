@@ -212,6 +212,7 @@ export default function CharacterWizard({
           <div className="stats">
             <div className="stat"><span className="stat-val" style={{ color: 'var(--pv)' }}>{preview.pvMax}</span><span className="stat-lbl">PV</span></div>
             <div className="stat"><span className="stat-val" style={{ color: 'var(--pe)' }}>{preview.peMax}</span><span className="stat-lbl">PE</span></div>
+            <div className="stat"><span className="stat-val" style={{ color: 'var(--clareza)' }}>{preview.clarezaMax}</span><span className="stat-lbl">Clareza</span></div>
             <div className="stat"><span className="stat-val">{preview.def}</span><span className="stat-lbl">Defesa</span></div>
             <div className="stat"><span className="stat-val">{preview.von}</span><span className="stat-lbl">Vontade</span></div>
           </div>

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, BookOpen, Calculator, Dices, Heart, Lightbulb, ListChecks, Minus, Package, Plus, RotateCcw,
-  Shield, Sparkles, Swords, Users,
+  Search, Shield, Sparkles, Swords, Users,
 } from 'lucide-react';
 import {
   ATTR_COST, ATTR_KEYS, ATTR_MAX, ATTR_MIN, ATTRIBUTES, POINT_BUDGET, emptyAttributes, fmtMod, pointsLeft,
@@ -12,7 +12,7 @@ import {
 } from '../rules/attributes';
 import { CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, titleFor, type ClassId } from '../rules/classes';
 import { abilitiesOf } from '../rules/abilities';
-import { deathThreshold } from '../rules/derive';
+import { CLAREZA_BASE, deathThreshold } from '../rules/derive';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, type ItemType } from '../model/types';
 import AbilityCard from './sheet/AbilityCard';
 
@@ -24,6 +24,7 @@ const SECTIONS = [
   { id: 'classes', label: 'Classes e níveis', icon: <Users size={14} /> },
   { id: 'vida', label: 'PV, PE e morte', icon: <Heart size={14} /> },
   { id: 'dano', label: 'Dano e RD', icon: <Shield size={14} /> },
+  { id: 'investigacao', label: 'Investigação', icon: <Search size={14} /> },
   { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
   { id: 'habilidades', label: 'Habilidades', icon: <Swords size={14} /> },
   { id: 'glossario', label: 'Glossário', icon: <BookOpen size={14} /> },
@@ -117,6 +118,7 @@ export default function Reference() {
         <ClassesSec go={go} />
         <VidaSec />
         <DanoSec />
+        <InvestigacaoSec go={go} />
         <ItensSec />
         <HabilidadesSec />
         <GlossarioSec />
@@ -171,6 +173,7 @@ function Comecando({ go }: { go: (id: SectionId) => void }) {
         <div><strong>Defesas:</strong> DEF = 10 + DES contra ataques; VON = 10 + FÉ contra efeitos sobrenaturais. <Link to="testes" go={go}>Ver defesas</Link></div>
         <div><strong>PV em 0:</strong> inconsciente. Morre em −10 ou menos (ou −metade do PV máximo). <Link to="vida" go={go}>Ver PV e PE</Link></div>
         <div><strong>PE em 0:</strong> sem conjurar e sem habilidades ativas. <Link to="vida" go={go}>Ver PV e PE</Link></div>
+        <div><strong>Clareza:</strong> {CLAREZA_BASE} + INT. Paga apurações e inquéritos; volta no descanso. <Link to="investigacao" go={go}>Ver investigação</Link></div>
       </div>
 
       <Sub>Criando um personagem</Sub>
@@ -206,8 +209,8 @@ const ATTR_USES: Record<AttrKey, ReactNode> = {
   CON: <>PV ganho a cada nível (soma CON).</>,
   DES: <>Sua DEF (10 + DES).</>,
   FE: <>Sua VON (10 + FÉ) e o PE por nível do Acólito.</>,
-  INT: <>O PE por nível do Ocultista.</>,
-  PRE: <>O PE por nível do Vidente.</>,
+  INT: <>Sua Clareza ({CLAREZA_BASE} + INT) e o PE por nível do Ocultista.</>,
+  PRE: <>O PE por nível do Vidente (e a Clareza, com Lampejos).</>,
 };
 
 function AtributosSec() {
@@ -494,9 +497,16 @@ function VidaSec() {
             <tr><td><strong className="pv">PV em 0 ou menos</strong></td><td>Inconsciente. (Quem tem <em>Inabalável</em> continua de pé.)</td></tr>
             <tr><td><strong className="pv">PV no limite de morte</strong></td><td>Morte. O limite é −10 ou −metade do PV máximo, o que for mais negativo.</td></tr>
             <tr><td><strong className="pe">PE em 0</strong></td><td>Não pode conjurar nem usar habilidades. Passivas continuam valendo.</td></tr>
+            <tr><td><strong className="clareza">Clareza em 0</strong></td><td>Não pode apurar hipóteses nem abrir inquéritos até descansar.</td></tr>
           </tbody>
         </table>
       </div>
+
+      <Sub>Descanso</Sub>
+      <p className="small secondary">
+        Quando o mestre concede um descanso, os personagens escolhidos por ele recuperam <strong className="pv">PV</strong>,{' '}
+        <strong className="pe">PE</strong> e <strong className="clareza">Clareza</strong> até o máximo. Personagens mortos não descansam.
+      </p>
 
       <Sub>Limite de morte</Sub>
       <div className="ref-table-wrap">
@@ -531,6 +541,65 @@ function DanoSec() {
       <Callout kind="example">
         Um golpe de 8 de dano físico atinge alguém com RD física 3: perde <strong>5 PV</strong>. Se o mesmo 8 fosse dano mágico e a RD mágica fosse 0, perderia os 8.
       </Callout>
+    </Section>
+  );
+}
+
+function InvestigacaoSec({ go }: { go: (id: SectionId) => void }) {
+  return (
+    <Section id="investigacao" title="Investigação" lead="Mistérios se resolvem com Clareza: a capacidade do personagem de enxergar o que está diante dele. Ela paga apurações e inquéritos.">
+      <div className="ref-formula" aria-label="Fórmula da Clareza">
+        <span className="term">{CLAREZA_BASE}</span><span className="op">+</span><span className="term">INT</span><span className="op">=</span><span className="term clareza">Clareza total</span>
+      </div>
+      <ul className="ref-list">
+        <li>A habilidade <strong>Lampejos</strong> (Vidente) soma sua {A('PRE')} à Clareza total.</li>
+        <li>A Clareza só volta no <Link to="vida" go={go}>descanso</Link>. Gaste com cuidado.</li>
+        <li>O gasto é registrado na ficha (Clareza → Gastar), por você ou pelo mestre.</li>
+      </ul>
+
+      <Sub>Evidências e fatos</Sub>
+      <div className="ref-table-wrap">
+        <table className="ref-table">
+          <tbody>
+            <tr><td className="nowrap"><strong>Evidência</strong></td><td>Objeto ou registro da cena: a faca, um bilhete, pegadas na lama. Precisa ser estudada para dizer alguma coisa.</td></tr>
+            <tr><td className="nowrap"><strong>Fato</strong></td><td>O que as evidências provam. Só se chega a um fato por apuração.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <Sub>Apuração</Sub>
+      <ol className="ref-steps">
+        <li><strong>Hipótese.</strong> Escolha uma ou mais evidências e diga o que você acha que elas mostram.</li>
+        <li><strong>Custo.</strong> O mestre cobra em Clareza. Quanto mais difícil de provar, mais caro.</li>
+        <li><strong>Pagar ou não.</strong> Se pagar, o mestre revela o fato e o registra no mural. Se desistir, nada é gasto.</li>
+      </ol>
+      <Callout kind="example">
+        Sobre a evidência <em>Faca ensanguentada</em>, você levanta a hipótese: “a faca veio da cozinha da mansão”.
+        O mestre cobra 2 de Clareza. Você paga e recebe o fato, que vai para o mural ligado à faca.
+      </Callout>
+
+      <Sub>Inquérito</Sub>
+      <p className="small secondary">
+        Faltou evidência para fechar o caso, ou você quer uma em particular? Abra um inquérito: descreva o <strong>motor da busca</strong>,
+        ou seja, onde e como você procura. O mestre cobra em Clareza conforme a dificuldade. Se pagar, o resultado entra no mural como evidência.
+      </p>
+      <div className="ref-table-wrap">
+        <table className="ref-table">
+          <thead><tr><th>Busca</th><th>Custo</th></tr></thead>
+          <tbody>
+            <tr><td>Encontrar os dados de uma pessoa pelo CPF</td><td>Baixo</td></tr>
+            <tr><td>Achar um livro específico numa biblioteca bagunçada</td><td>Alto</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <Sub>O mural</Sub>
+      <p className="small secondary">
+        Cada caso tem um mural na aba <strong>Investigação</strong>, mantido pelo mestre: as evidências, os fatos e os fios que ligam o que se relaciona.
+        Toque num cartão para ler o texto completo e ver o que está ligado a ele. O mestre prepara as mudanças à parte e publica de uma vez;
+        cada publicação aparece no registro.
+      </p>
+      <Callout kind="tip">Antes de pagar, olhe o mural: às vezes duas evidências juntas provam mais barato do que uma sozinha.</Callout>
     </Section>
   );
 }
@@ -596,6 +665,13 @@ function HabilidadesSec() {
 const GLOSSARY: Array<[string, ReactNode]> = [
   ['PV', 'Pontos de Vida. Chegou a 0, você cai.'],
   ['PE', 'Pontos de Energia. Pagam habilidades ativas e magia.'],
+  ['Clareza', `Recurso de investigação: ${CLAREZA_BASE} + INT. Paga apurações e inquéritos; volta no descanso.`],
+  ['Descanso', 'Concedido pelo mestre: recupera PV, PE e Clareza até o máximo.'],
+  ['Evidência', 'Objeto ou registro de uma cena, estudado para extrair fatos.'],
+  ['Fato', 'Conclusão provada por uma apuração.'],
+  ['Hipótese', 'O que você acha que uma ou mais evidências mostram.'],
+  ['Apuração', 'Pagar Clareza para provar uma hipótese e receber o fato.'],
+  ['Inquérito', 'Pagar Clareza para buscar uma evidência nova.'],
   ['DEF', 'Defesa: 10 + DES. Alvo dos ataques contra você.'],
   ['VON', 'Vontade: 10 + FÉ. Alvo de efeitos sobrenaturais contra você.'],
   ['RD', 'Redução de Dano. Física ou mágica; descontada de cada golpe.'],
