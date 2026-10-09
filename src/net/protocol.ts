@@ -2,6 +2,9 @@ import type { GameAction, PlayerView } from '../model/types';
 
 export const PROTOCOL_VERSION = 4;
 
+/** Mensagens maiores que isso (em JSON) o mestre descarta sem responder. */
+export const MAX_MESSAGE_CHARS = 200_000;
+
 export type GuestMsg =
   | { t: 'hello'; v: number; clientId: string; secret: string; name: string }
   | { t: 'action'; id: number; action: GameAction }

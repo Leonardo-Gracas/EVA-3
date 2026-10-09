@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch, newTable, type EngineCtx } from './engine';
 import { buildPlayerView } from './views';
-import { migrate } from './persistence';
+import { migrate, toExport } from './persistence';
 import { caseChanges } from '../model/cases';
 import { deriveStats } from '../rules/derive';
-import type { Actor, CharacterDraft, TableState } from '../model/types';
+import type { Actor, CharacterDraft, ItemSlot, ItemType, TableState } from '../model/types';
+import { GM_OWNER } from '../model/types';
 import { emptyAttributes } from '../rules/attributes';
 import { DEFAULT_AVATAR } from '../model/avatar';
 
@@ -68,7 +69,7 @@ describe('motor', () => {
     s = r.state;
     // bloqueada
     s = dispatch(s, gm, { type: 'permissions/global', key: 'item_add', value: 'blocked' }, ctx).state;
-    r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador_sagrado', description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 5, durability: { pv: 5, rd: 2, def: 13 } } }, ctx);
+    r = dispatch(s, p1, { type: 'item/add', characterId: cid, qty: 1, item: { name: 'Terço', type: 'catalisador_sagrado', slot: 'uma_mao', description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 5, durability: { pv: 5, rd: 2, def: 13 }, pack: 1 } }, ctx);
     expect(r).toMatchObject({ ok: false, error: /bloqueou/ });
   });
 
@@ -250,7 +251,7 @@ describe('motor', () => {
   it('itens: durabilidade, quebrado não protege, RD extra', () => {
     const { s: s0, cid } = setup();
     let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
-    const shield = { name: 'Escudo', type: 'escudo' as const, description: '', damage: '', effects: { def: 2, rdPhysical: 1, rdMagic: 0 }, value: 30, durability: { pv: 15, rd: 8, def: 10 } };
+    const shield = { name: 'Escudo', type: 'escudo' as const, slot: 'uma_mao' as const, description: '', damage: '', effects: { def: 2, rdPhysical: 1, rdMagic: 0 }, value: 30, durability: { pv: 15, rd: 8, def: 10 }, pack: 1 };
     s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: shield, qty: 1 }, ctx).state;
     const it = s.characters[cid].inventory[0];
     expect(it.pv).toBe(15);
@@ -274,6 +275,65 @@ describe('motor', () => {
     expect(dispatch(s, p1, { type: 'character/rdBonus', characterId: cid, physical: 9, magic: 9 }, ctx).ok).toBe(false);
   });
 
+  it('itens equipados: duas mãos, uma proteção, vestes à vontade', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    const base = { description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 0, durability: { pv: 10, rd: 0, def: 10 }, pack: 1 };
+    const add = (name: string, type: ItemType, slot: ItemSlot) => {
+      s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: { ...base, name, type, slot }, qty: 1 }, ctx).state;
+      const inv = s.characters[cid].inventory;
+      return inv[inv.length - 1].id;
+    };
+    const equip = (itemId: string, equipped = true) => dispatch(s, p1, { type: 'item/equip', characterId: cid, itemId, equipped }, ctx);
+    const espada = add('Espada', 'arma', 'uma_mao');
+    const escudo = add('Escudo', 'escudo', 'uma_mao');
+    const machado = add('Machado', 'arma', 'duas_maos');
+    const colete = add('Colete', 'protecao', 'uma_mao');
+    const manto = add('Manto', 'protecao', 'veste');
+    const colar = add('Colar', 'outro', 'veste');
+    const oculos = add('Óculos', 'equipamento', 'veste');
+    // Proteção é sempre veste, mesmo que o cliente mande outra coisa.
+    expect(s.characters[cid].inventory.find((i) => i.id === colete)!.slot).toBe('veste');
+
+    s = equip(espada).state;
+    s = equip(escudo).state;
+    const r = equip(machado);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/Mãos ocupadas/);
+    s = equip(escudo, false).state;
+    expect(equip(machado).ok).toBe(false);
+    s = equip(espada, false).state;
+    s = equip(machado).state;
+    expect(equip(espada).ok).toBe(false);
+
+    s = equip(colete).state;
+    expect(equip(manto).ok).toBe(false);
+    s = equip(colar).state;
+    s = equip(oculos).state;
+    expect(s.characters[cid].inventory.filter((i) => i.equipped).map((i) => i.name)).toEqual(['Machado', 'Colete', 'Colar', 'Óculos']);
+
+    // Editar o colar para duas mãos com as mãos cheias: ele sai do corpo.
+    const colarIt = s.characters[cid].inventory.find((i) => i.id === colar)!;
+    s = dispatch(s, gm, { type: 'item/update', characterId: cid, itemId: colar, item: { ...colarIt, slot: 'duas_maos' }, qty: 1 }, ctx).state;
+    expect(s.characters[cid].inventory.find((i) => i.id === colar)!.equipped).toBe(false);
+  });
+
+  it('migração: classifica a empunhadura e desequipa o que passa do limite', () => {
+    const { s: s0, cid } = setup();
+    const old = structuredClone(s0) as any;
+    const legacy = { description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 0, durability: { pv: 10, rd: 0, def: 10 }, pack: 1, pv: 10, qty: 1 };
+    old.characters[cid].inventory = [
+      { ...legacy, id: 'a', name: 'Marreta', type: 'arma', description: 'Duas mãos; lenta.', equipped: true },
+      { ...legacy, id: 'b', name: 'Faca', type: 'arma', equipped: true },
+      { ...legacy, id: 'c', name: 'Couro', type: 'protecao', equipped: true },
+      { ...legacy, id: 'd', name: 'Malha', type: 'protecao', equipped: true },
+      { ...legacy, id: 'e', name: 'Mochila', type: 'equipamento', equipped: true },
+    ];
+    const inv = migrate(old).characters[cid].inventory;
+    expect(inv.map((i) => i.slot)).toEqual(['duas_maos', 'uma_mao', 'veste', 'veste', 'veste']);
+    expect(inv.map((i) => i.equipped)).toEqual([true, false, true, false, true]);
+  });
+
   it('migra itens e ameaças antigos', () => {
     const { s: s0, cid } = setup();
     const old = structuredClone(s0) as any;
@@ -286,7 +346,7 @@ describe('motor', () => {
     delete old.cases;
     old.threats ={ t1: { id: 't1', name: 'Velho', rd: 4, attributes: {}, attacks: [], abilities: [], current: { pv: 1, pe: 0 } } };
     const m = migrate(old);
-    expect(m.characters[cid].inventory[0]).toMatchObject({ value: 0, pv: 10, durability: { pv: 10, rd: 5, def: 12 } });
+    expect(m.characters[cid].inventory[0]).toMatchObject({ value: 0, pv: 10, durability: { pv: 10, rd: 5, def: 12 }, pack: 1 });
     expect(m.characters[cid].inventory[1]).toMatchObject({ type: 'catalisador_sagrado', effects: { def: 1, rdPhysical: 0, rdMagic: 0 } });
     expect(m.characters[cid].inventory[1]).not.toHaveProperty('defBonus');
     expect(m.threats.t1).toMatchObject({ rdPhysical: 4, rdMagic: 0 });
@@ -300,7 +360,7 @@ describe('motor', () => {
     const { s: s0, cid } = setup();
     let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
     s = dispatch(s, gm, { type: 'permissions/global', key: 'item_add', value: 'free' }, ctx).state;
-    const espada = { name: 'Espada', type: 'arma' as const, description: '', damage: '1d8', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 10, durability: { pv: 10, rd: 5, def: 12 } };
+    const espada = { name: 'Espada', type: 'arma' as const, slot: 'uma_mao' as const, description: '', damage: '1d8', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 10, durability: { pv: 10, rd: 5, def: 12 }, pack: 1 };
     s = dispatch(s, gm, { type: 'library/upsert', item: espada }, ctx).state;
     const libId = Object.keys(s.itemLibrary)[0];
     expect(buildPlayerView(s, 'p1', new Set()).library.map((i) => i.name)).toEqual(['Espada']);
@@ -316,6 +376,56 @@ describe('motor', () => {
     expect(adaga).toBeDefined();
     expect(s.characters[cid].inventory[1]).toMatchObject({ name: 'Adaga', libraryId: adaga!.id });
     expect(dispatch(s, p1, { type: 'item/add', characterId: cid, item: espada, qty: 1, libraryId: 'nao-existe' }, ctx).ok).toBe(false);
+  });
+
+  it('munição: pacote cheio soma na pilha, gasta de um em um e esgota sem sumir', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    const balas = { name: 'Balas .38', type: 'municao' as const, slot: 'veste' as const, description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 20, durability: { pv: 1, rd: 1, def: 15 }, pack: 50 };
+    s = dispatch(s, gm, { type: 'library/upsert', item: balas }, ctx).state;
+    const libId = Object.keys(s.itemLibrary)[0];
+    s = dispatch(s, gm, { type: 'library/give', itemId: libId, characterId: cid, qty: 50 }, ctx).state;
+    const itemId = s.characters[cid].inventory[0].id;
+    // Jogador gasta livremente (padrão), por diferença: dois toques seguidos não se perdem.
+    s = dispatch(s, p1, { type: 'item/use', characterId: cid, itemId, amount: 1 }, ctx).state;
+    s = dispatch(s, p1, { type: 'item/use', characterId: cid, itemId, amount: 1 }, ctx).state;
+    expect(s.characters[cid].inventory[0].qty).toBe(48);
+    expect(s.log[s.log.length - 1].text).toContain('49 → 48');
+    // Outra caixa soma na mesma pilha em vez de criar outro item.
+    s = dispatch(s, gm, { type: 'library/give', itemId: libId, characterId: cid, qty: 20 }, ctx).state;
+    expect(s.characters[cid].inventory).toHaveLength(1);
+    expect(s.characters[cid].inventory[0].qty).toBe(68);
+    expect(s.log[s.log.length - 1].text).toContain('(agora 68)');
+    // Repor é como editar a quantidade: pede aprovação por padrão.
+    const r = dispatch(s, p1, { type: 'item/use', characterId: cid, itemId, amount: -5 }, ctx);
+    expect(r.ok && r.requested).toBe(true);
+    // Não gasta mais do que tem; zerado continua no inventário.
+    expect(dispatch(s, p1, { type: 'item/use', characterId: cid, itemId, amount: 69 }, ctx).ok).toBe(false);
+    s = dispatch(s, p1, { type: 'item/use', characterId: cid, itemId, amount: 68 }, ctx).state;
+    expect(s.characters[cid].inventory[0].qty).toBe(0);
+    expect(s.log[s.log.length - 1].text).toContain('(esgotado)');
+    s = dispatch(s, gm, { type: 'item/update', characterId: cid, itemId, item: { ...balas, name: 'Balas .38 especiais' }, qty: 0 }, ctx).state;
+    expect(s.characters[cid].inventory[0]).toMatchObject({ name: 'Balas .38 especiais', qty: 0 });
+    // Item comum não se gasta.
+    s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: { ...balas, type: 'arma', pack: 1 }, qty: 1 }, ctx).state;
+    expect(dispatch(s, gm, { type: 'item/use', characterId: cid, itemId: s.characters[cid].inventory[1].id, amount: 1 }, ctx).ok).toBe(false);
+    s = dispatch(s, gm, { type: 'permissions/global', key: 'item_use', value: 'blocked' }, ctx).state;
+    s = dispatch(s, gm, { type: 'item/use', characterId: cid, itemId, amount: -3 }, ctx).state;
+    expect(dispatch(s, p1, { type: 'item/use', characterId: cid, itemId, amount: 1 }, ctx).ok).toBe(false);
+  });
+
+  it('migra pacote que vinha no nome da munição', () => {
+    const { s: s0, cid } = setup();
+    const old = structuredClone(s0) as any;
+    const legacy = { name: 'Balas .38 (50)', type: 'municao', description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 20, durability: { pv: 1, rd: 1, def: 15 } };
+    old.itemLibrary = { l1: { ...legacy, id: 'l1', createdAt: 0, updatedAt: 0 }, l2: { ...legacy, name: 'Corda (15)', type: 'equipamento', id: 'l2', createdAt: 0, updatedAt: 0 } };
+    old.characters[cid].inventory = [{ ...legacy, id: 'x', qty: 2, equipped: false, pv: 1, libraryId: 'l1' }];
+    const m = migrate(old);
+    expect(m.itemLibrary.l1).toMatchObject({ name: 'Balas .38', pack: 50 });
+    expect(m.itemLibrary.l2).toMatchObject({ name: 'Corda (15)', pack: 1 });
+    expect(m.characters[cid].inventory[0]).toMatchObject({ name: 'Balas .38', pack: 50, qty: 100 });
+    // Já migrado: não mexe de novo.
+    expect(migrate(structuredClone(m)).characters[cid].inventory[0].qty).toBe(100);
   });
 
   it('ouro tem permissão própria e deslocamento é do mestre', () => {
@@ -487,5 +597,109 @@ describe('motor', () => {
     // Fio órfão (ponta que não existe) é ignorado.
     s = dispatch(s, gm, { type: 'clue/restore', caseId, cards: [], links: [{ id: 'x1', from: a, to: 'sumiu' }] }, ctx).state;
     expect(s.cases[caseId].links).toHaveLength(1);
+  });
+
+  describe('exportar e importar fichas', () => {
+    const base = { description: '', damage: '', effects: { def: 0, rdPhysical: 0, rdMagic: 0 }, value: 0, durability: { pv: 10, rd: 0, def: 10 }, pack: 1 };
+
+    /** Ficha aprovada de p1, ferida, com ouro, ajustes e itens (um avariado e equipado). */
+    function exported() {
+      const { s: s0, cid } = setup();
+      let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+      s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: { ...base, name: 'Machado', type: 'arma', slot: 'duas_maos' }, qty: 1 }, ctx).state;
+      s = dispatch(s, gm, { type: 'item/add', characterId: cid, item: { ...base, name: 'Balas', type: 'municao', slot: 'veste', pack: 50 }, qty: 30 }, ctx).state;
+      const [machado] = s.characters[cid].inventory;
+      s = dispatch(s, p1, { type: 'item/equip', characterId: cid, itemId: machado.id, equipped: true }, ctx).state;
+      s = dispatch(s, p1, { type: 'item/durability', characterId: cid, itemId: machado.id, pv: 4 }, ctx).state;
+      s = dispatch(s, p1, { type: 'resource/set', characterId: cid, pv: 6, pe: 1 }, ctx).state;
+      s = dispatch(s, gm, { type: 'gold/set', characterId: cid, gold: 42 }, ctx).state;
+      s = dispatch(s, gm, { type: 'character/movement', characterId: cid, movement: 12 }, ctx).state;
+      return { s, cid, file: toExport(s.characters[cid]) };
+    }
+
+    it('o arquivo leva o personagem, sem o que é da mesa', () => {
+      const { s, cid, file } = exported();
+      expect(file).not.toHaveProperty('id');
+      expect(file).not.toHaveProperty('ownerId');
+      expect(file).not.toHaveProperty('status');
+      expect(file.name).toBe('Mizael');
+      expect(file.inventory).toHaveLength(2);
+      // Cópia: mexer no arquivo não mexe na mesa.
+      file.inventory[0].name = 'Outro';
+      expect(s.characters[cid].inventory[0].name).toBe('Machado');
+    });
+
+    it('mestre importa como NPC: tudo preservado, ids novos, sem registro', () => {
+      const { s: s0, file } = exported();
+      const logs = s0.log.length;
+      const r = dispatch(s0, gm, { type: 'character/import', characters: [file], as: 'npc' }, ctx);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const npc = r.state.characters[r.id!];
+      expect(npc).toMatchObject({ kind: 'npc', ownerId: GM_OWNER, status: 'approved', visible: false, gold: 42, movement: 12 });
+      expect(npc.current).toMatchObject({ pv: 6, pe: 1 });
+      const [machado, balas] = npc.inventory;
+      expect(machado).toMatchObject({ name: 'Machado', equipped: true, pv: 4 });
+      expect(balas).toMatchObject({ name: 'Balas', qty: 30, pack: 50 });
+      expect(file.inventory.map((i) => i.id)).not.toContain(machado.id);
+      expect(r.state.log.length).toBe(logs);
+    });
+
+    it('mestre importa para um jogador: já aprovada e no registro', () => {
+      const { s: s0, file } = exported();
+      const r = dispatch(s0, gm, { type: 'character/import', characters: [file, { ...file, name: 'Gêmeo' }], as: 'pc', ownerId: 'p2' }, ctx);
+      expect(r.ok).toBe(true);
+      const mine = Object.values(r.state.characters).filter((c) => c.ownerId === 'p2');
+      expect(mine.map((c) => [c.name, c.kind, c.status])).toEqual([['Mizael', 'pc', 'approved'], ['Gêmeo', 'pc', 'approved']]);
+      expect(r.state.log[r.state.log.length - 1].text).toBe('importou as fichas de Mizael e Gêmeo para Beto.');
+      expect(dispatch(s0, gm, { type: 'character/import', characters: [file], as: 'pc', ownerId: 'ninguem' }, ctx)).toMatchObject({ ok: false, error: /Jogador/ });
+    });
+
+    it('jogador importa: ficha dele, pendente; a aprovação mantém o estado do arquivo', () => {
+      const { s: s0, file } = exported();
+      // O nível inicial da mesa não se aplica: o mestre confere ao aprovar.
+      let s = dispatch(s0, gm, { type: 'table/startLevel', level: 3 }, ctx).state;
+      // Jogador não cria NPC nem escolhe o dono.
+      const r = dispatch(s, p2, { type: 'character/import', characters: [file], as: 'npc', ownerId: 'p1' }, ctx);
+      expect(r.ok).toBe(true);
+      s = r.state;
+      const c = Object.values(s.characters).find((x) => x.ownerId === 'p2')!;
+      expect(c).toMatchObject({ kind: 'pc', status: 'pending', gold: 42 });
+      expect(s.log[s.log.length - 1].text).toBe('importou a ficha de Mizael para aprovação.');
+      s = dispatch(s, gm, { type: 'character/approve', characterId: c.id }, ctx).state;
+      expect(s.characters[c.id].current).toMatchObject({ pv: 6, pe: 1 });
+    });
+
+    it('arquivo inválido ou adulterado é recusado por inteiro', () => {
+      const { s, file } = exported();
+      const count = Object.keys(s.characters).length;
+      expect(dispatch(s, gm, { type: 'character/import', characters: [], as: 'npc' }, ctx)).toMatchObject({ ok: false });
+      const cheat = { ...file, name: 'Trapaça', attributes: { ...file.attributes, FOR: 9 } };
+      const r = dispatch(s, gm, { type: 'character/import', characters: [file, cheat], as: 'npc' }, ctx);
+      expect(r).toMatchObject({ ok: false, error: /^Trapaça: .*atributos/ });
+      expect(Object.keys(r.state.characters)).toHaveLength(count);
+      const rich = { ...file, gold: -5 };
+      expect(dispatch(s, gm, { type: 'character/import', characters: [rich], as: 'npc' }, ctx)).toMatchObject({ ok: false, error: /Ouro/ });
+    });
+
+    it('PV acima do máximo, item sem biblioteca e mãos de sobra são acertados', () => {
+      const { s, file } = exported();
+      const espada = { ...file.inventory[0], name: 'Espada', slot: 'uma_mao' as const, equipped: true, libraryId: 'nao-existe' };
+      const odd = { ...file, current: { pv: 999, pe: 0, clareza: 0 }, inventory: [...file.inventory, espada] };
+      const r = dispatch(s, gm, { type: 'character/import', characters: [odd], as: 'npc' }, ctx);
+      expect(r.ok).toBe(true);
+      const npc = r.state.characters[(r as { id: string }).id];
+      expect(npc.current.pv).toBe(deriveStats(npc).pvMax);
+      const e = npc.inventory.find((i) => i.name === 'Espada')!;
+      // O machado de duas mãos já ocupa as mãos.
+      expect(e.equipped).toBe(false);
+      expect(e).not.toHaveProperty('libraryId');
+    });
+
+    it('limite de fichas do jogador conta as importadas', () => {
+      const { s, file } = exported();
+      const many = Array.from({ length: 10 }, (_, i) => ({ ...file, name: `Cópia ${i}` }));
+      expect(dispatch(s, p1, { type: 'character/import', characters: many, as: 'pc' }, ctx)).toMatchObject({ ok: false, error: /Limite/ });
+    });
   });
 });

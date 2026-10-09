@@ -16,7 +16,7 @@ A mesa fica salva no IndexedDB do navegador do mestre (salvamento automático) e
 Ficha, classes e habilidades são estáticas, em `src/rules/`:
 
 - `attributes.ts`: FOR, CON, DES, FÉ, INT, PRE; compra de 10 pontos (−1 a +4).
-- `classes.ts`: Combatente, Acólito, Ocultista, Vidente; PV/PE por classe; títulos das duplas (General, Paladino, Bruxo…).
+- `classes.ts`: Combatente, Acólito, Ocultista, Vidente; PV/PE por classe; títulos das duplas (Veterano, Paladino, Bruxo…).
 - `abilities.ts`: todas as habilidades, com requisito de nível de classe, custo e efeitos passivos.
 - `derive.ts`: PV/PE máximos, DEF (10 + DES), VON (10 + FÉ), bônus de teste em nível par, limiar de morte (o mais negativo entre −10 e −PV/2).
 - `validate.ts`: até 2 classes, 1 habilidade por nível, pré-requisitos.

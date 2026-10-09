@@ -52,6 +52,9 @@ export interface Character {
   updatedAt: number;
 }
 
+/** Ficha num arquivo exportado: o personagem sem o que é da mesa (id, dono, aprovação). */
+export type CharacterExport = Omit<Character, 'id' | 'ownerId' | 'visible' | 'status' | 'rejectReason' | 'createdAt' | 'updatedAt'>;
+
 /** O que o jogador envia ao criar a ficha. */
 export interface CharacterDraft {
   name: string;
@@ -113,18 +116,53 @@ export const DEFAULT_DURABILITY: Record<ItemType, Durability> = {
   outro: { pv: 5, rd: 0, def: 10 },
 };
 
+/** Como o item é usado: ocupa uma mão, as duas, ou é vestido (colar, óculos, proteção...). */
+export type ItemSlot = 'uma_mao' | 'duas_maos' | 'veste';
+
+export const ITEM_SLOTS: Record<ItemSlot, string> = {
+  uma_mao: '1 mão',
+  duas_maos: '2 mãos',
+  veste: 'Veste',
+};
+
+/** Mãos que o item ocupa quando equipado. */
+export const SLOT_HANDS: Record<ItemSlot, number> = { uma_mao: 1, duas_maos: 2, veste: 0 };
+
+/** Empunhadura sugerida ao criar um item de cada tipo. Armas que variam ficam com uma mão. */
+export const DEFAULT_SLOT: Record<ItemType, ItemSlot> = {
+  arma: 'uma_mao',
+  protecao: 'veste',
+  escudo: 'uma_mao',
+  catalisador_sagrado: 'uma_mao',
+  catalisador_profano: 'uma_mao',
+  catalisador_etereo: 'uma_mao',
+  consumivel: 'uma_mao',
+  municao: 'veste',
+  equipamento: 'veste',
+  outro: 'veste',
+};
+
 export interface ItemData {
   name: string;
   type: ItemType;
+  /** Proteção é sempre veste. */
+  slot: ItemSlot;
   description: string;
   /** Texto livre: "1d8", "2d6 + FOR"... */
   damage: string;
   /** Bônus para quem usa, aplicados só com o item equipado e inteiro. */
   effects: ItemEffects;
-  /** Valor em moedas. */
+  /** Valor em moedas (do pacote inteiro, quando `pack` > 1). */
   value: number;
   /** Durabilidade máxima do objeto. */
   durability: Durability;
+  /** Unidades num pacote (caixa com 50 balas = 50). 1 = item avulso. */
+  pack: number;
+}
+
+/** Munição, consumíveis e pacotes: a quantidade é contada em unidades e gasta aos poucos. */
+export function isStackable(it: Pick<ItemData, 'type' | 'pack'>): boolean {
+  return it.type === 'municao' || it.type === 'consumivel' || it.pack > 1;
 }
 
 export interface LibraryItem extends ItemData {
@@ -137,6 +175,7 @@ export interface InventoryItem extends ItemData {
   id: string;
   /** PV atual do objeto. 0 = quebrado. */
   pv: number;
+  /** Em unidades. Munição e consumíveis podem chegar a 0 (esgotado) sem sair do inventário. */
   qty: number;
   equipped: boolean;
   libraryId?: string;
@@ -316,6 +355,7 @@ export type PermissionKey =
   | 'item_remove'
   | 'item_equip'
   | 'item_durability'
+  | 'item_use'
   | 'gold_change'
   | 'notes_update';
 
@@ -403,6 +443,12 @@ export type GameAction =
   | { type: 'character/reject'; characterId: string; reason: string }
   | { type: 'character/delete'; characterId: string }
   | { type: 'character/permanentLoss'; characterId: string; pv: number; pe: number }
+  /**
+   * Fichas de um arquivo exportado, com inventário, ouro e PV/PE atuais.
+   * Jogador: viram fichas dele, pendentes. Mestre: NPCs (`as: 'npc'`) ou fichas
+   * já aprovadas do jogador `ownerId` (`as: 'pc'`).
+   */
+  | { type: 'character/import'; characters: CharacterExport[]; as: CharacterKind; ownerId?: string }
   | { type: 'npc/create'; draft: CharacterDraft }
   | { type: 'npc/visibility'; characterId: string; visible: boolean }
   | { type: 'threat/upsert'; threatId?: string; data: ThreatData }
@@ -422,6 +468,11 @@ export type GameAction =
   | { type: 'item/remove'; characterId: string; itemId: string }
   | { type: 'item/equip'; characterId: string; itemId: string; equipped: boolean }
   | { type: 'item/durability'; characterId: string; itemId: string; pv: number; reason?: string }
+  /**
+   * Gasta (amount > 0) ou repõe (amount < 0) unidades de munição e consumíveis.
+   * Por diferença, não valor final: toques rápidos seguidos não se sobrescrevem.
+   */
+  | { type: 'item/use'; characterId: string; itemId: string; amount: number; reason?: string }
   | { type: 'character/rdBonus'; characterId: string; physical: number; magic: number }
   | { type: 'character/movement'; characterId: string; movement: number }
   | { type: 'gold/set'; characterId: string; gold: number; reason?: string }

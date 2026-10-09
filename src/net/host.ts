@@ -9,7 +9,7 @@ import { saveTable, requestPersistentStorage } from '../store/persistence';
 import { newRoomCode, peerIdFor, peerOptions } from './config';
 import { sha256 } from './identity';
 import { Store } from './emitter';
-import { PROTOCOL_VERSION, type GuestMsg, type HostMsg } from './protocol';
+import { MAX_MESSAGE_CHARS, PROTOCOL_VERSION, type GuestMsg, type HostMsg } from './protocol';
 import { LIMITS } from '../rules/validate';
 
 export type HostStatus = 'idle' | 'opening' | 'online' | 'reconnecting' | 'error';
@@ -27,7 +27,6 @@ export const hostStore = new Store<HostSnapshot>({
   table: null, status: 'idle', message: '', online: [], lastSavedAt: null, saveError: null,
 });
 
-const MAX_MESSAGE_CHARS = 200_000;
 const RATE_PER_SEC = 10;
 const RATE_BURST = 40;
 

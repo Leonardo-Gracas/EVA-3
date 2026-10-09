@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Crown, Download, LogIn, Pencil, Play, Trash2, Upload, Users } from 'lucide-react';
+import { Crown, Download, FlaskConical, LogIn, Pencil, Play, Trash2, Upload, Users } from 'lucide-react';
 import { deleteTable, downloadTable, listTables, loadTable, pickFile, readBackup, saveTable, type TableSummary } from '../store/persistence';
 import { newTable } from '../store/engine';
+import { placeholderTable } from '../store/placeholder';
 import { isValidCode, newRoomCode, normalizeCode } from '../net/config';
 import { lastJoinCode } from '../net/identity';
 import { LIMITS } from '../rules/validate';
@@ -24,6 +25,12 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
 
   const create = async () => {
     const t = newTable(tableName || 'Nova mesa', userName, newRoomCode());
+    await saveTable(t);
+    onHost(t);
+  };
+
+  const createPlaceholder = async () => {
+    const t = placeholderTable(userName, newRoomCode());
     await saveTable(t);
     onHost(t);
   };
@@ -78,6 +85,12 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
             <input className="input" value={tableName} maxLength={LIMITS.tableName} placeholder="Ex.: O Nome Deles é Legião" onChange={(e) => setTableName(e.target.value)} />
           </div>
           <button className="btn btn-primary btn-lg">Criar e abrir sala</button>
+          {import.meta.env.DEV && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={createPlaceholder}
+              title="Mesa de desenvolvimento com a biblioteca de itens e as ameaças padrão preenchidas">
+              <FlaskConical size={14} /> Criar campanha de exemplo
+            </button>
+          )}
         </form>
 
         <form className="card col gap-lg" onSubmit={(e) => { e.preventDefault(); join(); }}>

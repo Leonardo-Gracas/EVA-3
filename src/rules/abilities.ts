@@ -17,6 +17,8 @@ export interface AbilityEffect {
   peMax?: Scaled;
   clarezaMax?: Scaled;
   def?: Scaled;
+  /** Bônus na Vontade (VON). */
+  von?: Scaled;
   /** Redução de dano contra dano mágico. */
   rdMagic?: number;
   /** Redução de dano contra dano físico. */
@@ -66,7 +68,7 @@ const A: Ability[] = [
   {
     id: 'oracao', classId: 'acolito', name: 'Oração', minClassLevel: 3, passive: false, peCost: 0,
     costNote: '1x por dia',
-    text: 'Uma vez por dia, pode realizar uma oração como ação de movimentação para recuperar 1d6 PE. Realize um teste de FÉ(20), se passar recupera mais 1d6.',
+    text: 'Uma vez por dia, pode realizar uma oração como ação de movimentação para recuperar 1d6 + o dobro da FÉ em PE.',
   },
   {
     id: 'repreensao', classId: 'acolito', name: 'Repreensão', minClassLevel: 3, passive: false, peCost: 2,
@@ -86,8 +88,8 @@ const A: Ability[] = [
   },
   {
     id: 'iluminacao', classId: 'acolito', name: 'Iluminação', minClassLevel: 6, passive: true,
-    text: 'Recebe 5 de RD contra dano mágico.',
-    effect: { rdMagic: 5 },
+    text: 'Recebe 5 de RD contra dano mágico e 4 + FÉ de Vontade.',
+    effect: { rdMagic: 5, von: { base: 4, attr: 'FE' } },
   },
   {
     id: 'cssml', classId: 'acolito', name: 'CSSML', minClassLevel: 9, passive: false,
@@ -97,28 +99,28 @@ const A: Ability[] = [
 
   // ── OCULTISTA ──────────────────────────────────────────────────────────────
   {
-    id: 'estudo', classId: 'ocultista', name: 'Estudo', minClassLevel: 1, passive: true,
+    id: 'estudo', classId: 'ocultista', name: 'Estudo', minClassLevel: 3, passive: true,
     text: '2 + INT de PE.',
     effect: { peMax: { base: 2, attr: 'INT' } },
   },
   {
-    id: 'sobriedade', classId: 'ocultista', name: 'Sobriedade', minClassLevel: 1, passive: true,
+    id: 'sobriedade', classId: 'ocultista', name: 'Sobriedade', minClassLevel: 3, passive: true,
     text: 'Todas as conjurações mágicas custam 1 PE a menos (mínimo 1).',
   },
   {
-    id: 'aplicacao', classId: 'ocultista', name: 'Aplicação', minClassLevel: 1, passive: true,
+    id: 'aplicacao', classId: 'ocultista', name: 'Aplicação', minClassLevel: 3, passive: true,
     text: '+2 em todos os testes de conjurações mágicas.',
   },
   {
-    id: 'combusto', classId: 'ocultista', name: 'Combusto', minClassLevel: 3, passive: false, peCost: 2,
-    text: 'Gaste 2 PE para causar uma explosão de chamas de 2d6 de dano ao alcance de toque.\n\nPode gastar mais 1 PE para aumentar o dano em mais 1d6.\n\nPode realizar um truque, removendo o custo, o dano e aumentando o alcance para curto. Essa pequena explosão pode acender velas ou itens altamente inflamáveis. O objeto deve estar visível ao conjurador.',
+    id: 'combusto', classId: 'ocultista', name: 'Combusto', minClassLevel: 1, passive: false, peCost: 2,
+    text: 'Gaste 2 PE para causar uma explosão de chamas de 2d6 de dano ao alcance de toque.\n\nPode gastar mais 1 PE para aumentar o dano em mais 1d6. Não cumulativo.\n\nPode realizar um truque, removendo o custo, o dano e aumentando o alcance para curto. Essa pequena explosão pode acender velas ou itens altamente inflamáveis. O objeto deve estar visível ao conjurador.',
   },
   {
-    id: 'figre', classId: 'ocultista', name: 'Figre', minClassLevel: 3, passive: false, peCost: 2,
+    id: 'figre', classId: 'ocultista', name: 'Figre', minClassLevel: 1, passive: false, peCost: 2,
     text: 'Gaste 2 PE para convocar raízes em alcance curto e controlá-las por um instante antes de se solidificarem. Caso acerte um alvo, o AFUGENTA FISICAMENTE.\n\nPode gastar mais 2 PE para realizar uma manobra de combate com as raízes somando seu INT ao teste.\n\nPode gastar mais 1 PE para aumentar o alcance para médio.\n\nPode realizar um truque, removendo custo mudando o alcance para alcance médio. Pode movimentar plantas levemente à sua vontade, podendo abrir caminho entre matas fechadas ou chamar atenção.',
   },
   {
-    id: 'cliostra', classId: 'ocultista', name: 'Cliostra', minClassLevel: 3, passive: false, peCost: 2,
+    id: 'cliostra', classId: 'ocultista', name: 'Cliostra', minClassLevel: 1, passive: false, peCost: 2,
     text: 'Gaste 2 PE para manipular um objeto metálico ao alcance médio. Se o objeto pertencer a uma criatura, ela pode realizar um teste oposto para resistir. Pode mover o objeto por 1.5m e mais 1.5m para cada 5 pontos acima da CD do teste. Objetos pesados têm CD maior. Objetos que não puderem se mover na direção ordenada sofrem 1d4 de dano para cada 1.5m aplicados.\n\nGaste 3 PE para potencializar, recebendo +5 no teste.\n\nGaste 2 PE para pressionar, aumentando o dano a objetos para 1d6.\n\nPode realizar um truque, removendo custos. Pode movimentar objetos em seu próprio eixo, sem deslocamento. Útil para fechar uma porta com trinco de ferro ou derrubar uma chave.',
   },
   {
@@ -126,8 +128,8 @@ const A: Ability[] = [
     text: 'Gaste 5 PE para alterar a temperatura de uma criatura ou objeto à alcance médio para mais ou menos. Causando 6 + 1d6 de dano de fogo ou frio mais 1d6 para cada 5 pontos além da CD estimada. FÉ(20) reduz à metade.\n\nGaste 5 PE para afetar todas as criaturas em alcance médio, exceto você.\n\nGaste 3 PE para potencializar, recebendo +5 no teste.',
   },
   {
-    id: 'dolonotre', classId: 'ocultista', name: 'Dolonotre', minClassLevel: 6, passive: false, peCost: 5, pvCost: 2,
-    text: 'Gaste 5 PE e 2 PV para praguejar contra uma criatura, fazendo com que sofra fortes dores e feridas de praga, causando 4d6 de dano profano. FÉ(25) reduz o dano à metade.\n\nGaste 5 PV para aumentar o dano para 6d6.',
+    id: 'dolonotre', classId: 'ocultista', name: 'Dolonotre', minClassLevel: 6, passive: false, peCost: 5, pvCost: 3,
+    text: 'Gaste 5 PE e 3 PV para praguejar contra uma criatura, fazendo com que sofra fortes dores e feridas de praga. O teste é feito contra a Vontade (VON) do alvo, não contra a Defesa. Caso acerte, causa 4d6 de dano profano, mais 1d6 para cada 5 pontos além da CD.',
   },
   {
     id: 'sacrificio', classId: 'ocultista', name: 'Sacrifício', minClassLevel: 6, passive: false, peCost: 0, pvCost: 3,
@@ -196,8 +198,8 @@ const A: Ability[] = [
   },
   {
     id: 'atencao', classId: 'combatente', name: 'Atenção', minClassLevel: 1, passive: true,
-    text: '+2 de Defesa.',
-    effect: { def: { base: 2 } },
+    text: '+3 de Defesa.',
+    effect: { def: { base: 3 } },
   },
   {
     id: 'vitalidade', classId: 'combatente', name: 'Vitalidade', minClassLevel: 1, passive: true,
@@ -213,8 +215,8 @@ const A: Ability[] = [
     text: 'Gaste 1 PE para assumir essa postura até seu próximo turno. Deve ser ativado como ação livre no início de seu turno. A postura concede -2 em todos os testes de ataque, +2 em todos os testes de manobra de combate e +5 de defesa.',
   },
   {
-    id: 'dominacao', classId: 'combatente', name: 'Dominação', minClassLevel: 3, passive: false, peCost: 1,
-    text: 'Gaste 1 PE para receber +5 em um teste de manobra de combate. Manobras que causam dano recebem +5 no dano.',
+    id: 'dominacao', classId: 'combatente', name: 'Brutalizar', minClassLevel: 3, passive: false, peCost: 1,
+    text: 'Gaste 1 PE para receber +3 no teste. Caso acerte, recebe +3 no dano.',
   },
   {
     id: 'bravura', classId: 'combatente', name: 'Bravura', minClassLevel: 6, passive: false,

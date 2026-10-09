@@ -295,16 +295,93 @@ button.stat-btn:hover:not(:disabled) { border-color: var(--gold); background: va
 button.stat-btn:disabled { cursor: default; }
 .stat-btn .req-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
 
-/* Seletor de itens da biblioteca (inventário) */
-.lib-pick { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
-.lib-pick-item {
-  display: flex; align-items: center; gap: 10px; text-align: left; width: 100%;
-  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px;
-  transition: all var(--transition); color: inherit;
+/* Seletor de itens da biblioteca (inventário): busca e tipos fixos no topo,
+   uma rolagem só (a do modal), linhas com alvo de toque grande e "+N" rápido. */
+.modal-body.lib-pick-body { padding: 0; }
+.lib-pick-head {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 18px 10px; background: var(--bg-surface); border-bottom: 1px solid var(--border);
 }
-.lib-pick-item:hover { border-color: var(--border-light); }
-.lib-pick-item.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
-.lib-pick-name { font-weight: 600; }
+.lib-pick-head .filter-search { flex: none; }
+.lib-pick-list { display: flex; flex-direction: column; gap: 6px; padding: 12px 18px 18px; }
+.lib-pick-detail { display: flex; flex-direction: column; gap: 16px; padding: 18px; }
+.lib-pick-row {
+  display: flex; align-items: stretch; min-width: 0; overflow: hidden;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+  transition: border-color var(--transition);
+}
+.lib-pick-row:hover { border-color: var(--border-light); }
+.lib-pick-row.added { border-color: var(--border-gold); }
+.lib-pick-main {
+  flex: 1; min-width: 0; min-height: 56px; display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 12px; text-align: left; color: inherit; transition: background var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.lib-pick-main:hover, .lib-pick-main:active { background: var(--bg-hover); }
+.lib-pick-name { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.lib-pick-sub { font-size: 12px; color: var(--text-muted); }
+.lib-pick-status { font-size: 11.5px; font-weight: 600; color: var(--success); margin-top: 1px; }
+.lib-pick-status.req { color: var(--warning); }
+.lib-pick-status.have { color: var(--text-secondary); font-weight: 500; }
+.lib-pick-quick {
+  position: relative; flex-shrink: 0; min-width: 60px; display: flex; align-items: center; justify-content: center; gap: 2px;
+  border-left: 1px solid var(--border); color: var(--gold-soft); font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: background var(--transition); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.lib-pick-quick:hover:not(:disabled), .lib-pick-quick:active:not(:disabled) { background: var(--gold-dim); }
+.lib-pick-quick:disabled { opacity: 0.45; cursor: not-allowed; }
+.lib-pick-quick .req-dot, .stock-btn .req-dot {
+  position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--warning);
+}
+
+/* Quantidade a entregar / adicionar */
+.qty-picker { display: flex; flex-direction: column; gap: 8px; }
+.qty-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; gap: 8px; }
+.qty-btn {
+  display: grid; place-items: center; height: 46px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-secondary);
+  transition: background var(--transition), color var(--transition); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.qty-btn:hover:not(:disabled), .qty-btn:active:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.qty-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.qty-have { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); }
+.qty-have strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+/* Entregar item (biblioteca do mestre) */
+.give-list { display: flex; flex-direction: column; gap: 6px; max-height: min(40vh, 320px); overflow-y: auto; }
+.give-row {
+  display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; text-align: left; color: inherit;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); transition: all var(--transition);
+}
+.give-row:hover { border-color: var(--border-light); }
+.give-row.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); background: var(--gold-dim); }
+.give-name { font-weight: 600; line-height: 1.3; }
+
+/* Munição e consumíveis: contador no rodapé do cartão. Mesma linguagem do
+   ajuste de PV (−/+ grandes), com a barra do pacote embaixo do número. */
+.stock {
+  display: flex; align-items: stretch; height: 44px; flex: 0 0 auto; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border); background: var(--bg-surface);
+}
+.stock-btn {
+  position: relative; width: 46px; display: grid; place-items: center; color: var(--text-secondary);
+  transition: background var(--transition), color var(--transition); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.stock-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.stock-down:hover:not(:disabled), .stock-down:active:not(:disabled) { background: var(--accent-dim); color: #f2a3a8; }
+.stock-up:hover:not(:disabled), .stock-up:active:not(:disabled) { background: rgba(90, 167, 124, 0.18); color: #9ad6b3; }
+.stock-count {
+  position: relative; min-width: 64px; padding: 0 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  line-height: 1.1; color: inherit; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
+.stock > .stock-count:only-child { border: none; }
+button.stock-count { transition: background var(--transition); }
+button.stock-count:hover { background: var(--bg-hover); }
+.stock-n { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stock-cap { font-size: 10px; letter-spacing: 0.04em; color: var(--text-muted); }
+.stock-fill { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); transition: width 250ms ease; }
+.item-empty .item-icon, .item-empty .item-name, .item-empty .item-desc, .item-empty .item-stats { opacity: 0.55; }
+.item-empty .stock-n { color: var(--error); }
 
 .attrs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .attr {
@@ -335,6 +412,8 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .item-card:hover { border-color: var(--border-light); }
 .item-equipped { border-color: var(--border-gold); box-shadow: inset 3px 0 0 var(--gold); }
 .item-equipped:hover { border-color: var(--gold); }
+/* Equipar barrado (mãos ocupadas ou já há proteção): clicável, só para explicar o porquê. */
+.equip-blocked { opacity: 0.55; }
 .item-broken .item-icon, .item-broken .item-name, .item-broken .item-desc, .item-broken .item-stats { opacity: 0.55; }
 .item-broken .item-name > span:first-child { text-decoration: line-through; text-decoration-color: var(--error); }
 
@@ -378,6 +457,86 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .item-dur-bar { height: 5px; }
 .item-broken .item-dur-top strong { color: var(--error); }
 .item-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+
+/* ── Busca e filtros (itens, NPCs, ameaças) ──────────────── */
+.filters {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px; margin-bottom: 14px;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.split-list .filters { margin-bottom: 0; }
+.filters-top { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.filter-search { position: relative; flex: 1 1 220px; min-width: 0; display: flex; align-items: center; }
+.filter-search > svg { position: absolute; left: 11px; pointer-events: none; }
+.filter-search .input { padding-left: 32px; padding-right: 32px; }
+.filter-clear-q { position: absolute; right: 6px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: var(--text-muted); }
+.filter-clear-q:hover { background: var(--bg-hover); color: var(--text-primary); }
+.filter-sort { display: flex; flex-direction: column; gap: 3px; flex: 0 1 170px; min-width: 130px; }
+.filter-sort .select { padding-top: 8px; padding-bottom: 8px; }
+.filter-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.filter-group { display: flex; align-items: baseline; gap: 10px; }
+.filter-group > .filter-label { flex-shrink: 0; width: 64px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-secondary); transition: all var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.chip:hover { border-color: var(--border-light); color: var(--text-primary); }
+.chip.on { background: var(--gold-dim); border-color: var(--gold); color: var(--gold-soft); }
+.chip-count { font-size: 10px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chip.on .chip-count { color: var(--gold); }
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.filters-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); padding-top: 8px; border-top: 1px solid var(--border); }
+/* Na coluna estreita da lista de NPCs, os rótulos ficam acima dos filtros. */
+.split-list .filter-group { flex-direction: column; gap: 5px; }
+.split-list .filter-group > .filter-label { width: auto; }
+.split-list .filter-sort { flex: 1 1 100%; }
+
+/* ── NPCs: PV, PE e Clareza atuais ───────────────────────── */
+.npc-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 7px; }
+.npc-bar { display: grid; grid-template-columns: 30px minmax(0, 1fr) 46px; align-items: center; gap: 6px; }
+.npc-bar .bar { height: 6px; }
+.npc-bar-lbl { font-family: var(--font-display); font-size: 10px; letter-spacing: 0.08em; }
+.npc-bar-num { font-size: 11px; color: var(--text-secondary); text-align: right; }
+
+/* ── Ameaças: cartões de consulta rápida ──────────────────── */
+.threat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+.threat-card {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; min-width: 0; cursor: pointer; text-align: left;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+  transition: border-color var(--transition), background var(--transition);
+}
+.threat-card:hover, .threat-card:focus-visible { border-color: var(--border-light); background: var(--bg-hover); outline: none; }
+.threat-card:focus-visible { border-color: var(--gold); }
+.threat-concept { margin-top: 2px; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.threat-stats {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface);
+}
+.threat-stats > div { display: flex; flex-direction: column; align-items: center; padding: 6px 2px; }
+.threat-stats > div + div { border-left: 1px solid var(--border); }
+.threat-stats dt { font-family: var(--font-display); font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); }
+.threat-stats dd { margin: 0; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.threat-attrs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.threat-attrs > span {
+  display: flex; flex-direction: column; align-items: center; padding: 3px 0; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-secondary); background: var(--bg-surface);
+}
+.threat-attrs b { font-family: var(--font-display); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--gold); }
+.threat-attrs .up { color: var(--text-primary); }
+.threat-attrs .down { color: #e88a90; }
+.threat-attacks { display: flex; flex-direction: column; gap: 3px; }
+.threat-attack { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.threat-attack .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.threat-attack .mono { font-weight: 700; flex-shrink: 0; }
+.threat-abilities { display: flex; flex-wrap: wrap; gap: 5px; }
+.threat-ability {
+  display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px;
+  background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-secondary);
+}
+.threat-ability em { font-style: normal; font-size: 10.5px; color: var(--gold); }
+.threat-detail { max-width: 900px; margin: 0 auto; }
+.threat-back { margin: -4px 0 10px -8px; }
 .item-actions .btn-icon { padding: 6px; }
 
 .class-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid; }
@@ -832,6 +991,15 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   /* 16px evita o zoom automático do iOS ao focar um campo. */
   .input, .select, .textarea { font-size: 16px; }
   .page:has(> .dice-panel) { padding-bottom: 0; }
+  /* Filtros no celular: rótulo acima, chips numa faixa que rola de lado. */
+  .filter-group { flex-direction: column; gap: 5px; }
+  .filter-group > .filter-label { width: auto; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px 2px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex-shrink: 0; min-height: 34px; }
+  .lib-pick-head .chips { margin: 0 -18px; padding: 0 18px 2px; }
+  .qty-presets { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+  .filter-sort { flex: 1 1 100%; }
   .dice-panel { min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 62px); }
   .dice-composer { margin: auto -12px 0; width: auto; padding: 12px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; border-bottom: none; }
 }

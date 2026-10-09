@@ -9,6 +9,7 @@ export const PERMISSION_KEYS: PermissionKey[] = [
   'item_remove',
   'item_equip',
   'item_durability',
+  'item_use',
   'gold_change',
   'notes_update',
 ];
@@ -22,6 +23,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, { label: string; hint: str
   item_remove: { label: 'Remover item', hint: 'Descartar item do inventário.' },
   item_equip: { label: 'Equipar / desequipar', hint: 'Itens equipados aplicam seus bônus de DEF e RD.' },
   item_durability: { label: 'Durabilidade de itens', hint: 'Dano e reparo no PV dos objetos do inventário.' },
+  item_use: { label: 'Gastar munição e consumíveis', hint: 'Descontar balas, usos de kits etc. Repor unidades segue "Editar item".' },
   gold_change: { label: 'Alterar ouro', hint: 'Ganhar, gastar ou definir o dinheiro carregado.' },
   notes_update: { label: 'Editar anotações', hint: 'Texto livre da ficha.' },
 };
@@ -41,6 +43,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   item_remove: 'request',
   item_equip: 'free',
   item_durability: 'free',
+  item_use: 'free',
   gold_change: 'request',
   notes_update: 'free',
 };
@@ -68,6 +71,8 @@ export function permissionFor(action: GameAction): PermissionKey | null {
     case 'item/remove': return 'item_remove';
     case 'item/equip': return 'item_equip';
     case 'item/durability': return 'item_durability';
+    // Gastar é rotina de jogo; ganhar unidades equivale a editar a quantidade.
+    case 'item/use': return action.amount > 0 ? 'item_use' : 'item_update';
     case 'gold/set': return 'gold_change';
     case 'notes/update': return 'notes_update';
     default: return null;

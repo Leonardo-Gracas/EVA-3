@@ -1,8 +1,9 @@
 // Mesas do mestre salvas no IndexedDB deste navegador + backup em arquivo .json.
-import type { ItemData, TableState } from '../model/types';
-import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, NO_EFFECTS } from '../model/types';
+import type { Character, CharacterExport, InventoryItem, ItemData, TableState } from '../model/types';
+import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, ITEM_SLOTS, ITEM_TYPES, NO_EFFECTS } from '../model/types';
 import { DEFAULT_PERMISSIONS } from '../model/permissions';
 import { deriveStats } from '../rules/derive';
+import { equipBlock } from '../rules/equipment';
 import { snapshotOf } from '../model/cases';
 
 const DB_NAME = 'eva3';
@@ -86,19 +87,27 @@ interface BackupFile {
   table: TableState;
 }
 
-export function downloadTable(t: TableState): void {
-  const data: BackupFile = { app: 'eva3', version: 1, exportedAt: new Date().toISOString(), table: t };
+/** Nome de arquivo sem acentos nem símbolos. */
+function slug(name: string, fallback: string): string {
+  return name.normalize('NFD').replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || fallback;
+}
+
+function downloadJson(data: unknown, filename: string): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  const safe = t.name.normalize('NFD').replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'mesa';
   const a = document.createElement('a');
   a.href = url;
-  a.download = `eva3-${safe}-${stamp}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+export function downloadTable(t: TableState): void {
+  const data: BackupFile = { app: 'eva3', version: 1, exportedAt: new Date().toISOString(), table: t };
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  downloadJson(data, `eva3-${slug(t.name, 'mesa')}-${stamp}.json`);
 }
 
 export function pickFile(accept: string): Promise<File | null> {
@@ -128,6 +137,50 @@ export async function readBackup(file: File): Promise<TableState> {
   return migrate(t);
 }
 
+// ── Fichas em arquivo ────────────────────────────────────────────────────────
+
+interface CharacterFile {
+  app: 'eva3';
+  type: 'characters';
+  version: 1;
+  exportedAt: string;
+  characters: CharacterExport[];
+}
+
+export function toExport(c: Character): CharacterExport {
+  const { id: _id, ownerId: _o, visible: _v, status: _s, rejectReason: _r, createdAt: _c, updatedAt: _u, ...data } = structuredClone(c);
+  return data;
+}
+
+/** Uma ficha vira "eva3-ficha-nome.json"; várias, "eva3-<nome>-data.json". */
+export function downloadCharacters(chars: Character[], name?: string): void {
+  if (!chars.length) return;
+  const data: CharacterFile = { app: 'eva3', type: 'characters', version: 1, exportedAt: new Date().toISOString(), characters: chars.map(toExport) };
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadJson(data, chars.length === 1 && !name
+    ? `eva3-ficha-${slug(chars[0].name, 'personagem')}.json`
+    : `eva3-${slug(name ?? 'fichas', 'fichas')}-${stamp}.json`);
+}
+
+/**
+ * Lê um arquivo de fichas exportado (ou uma ficha solta em JSON). A validação de
+ * verdade é a do motor, ao importar; aqui só se separa o que não é ficha.
+ */
+export async function readCharacterFile(file: File): Promise<CharacterExport[]> {
+  if (file.size > 5_000_000) throw new Error('Arquivo grande demais.');
+  let data: unknown;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    throw new Error('Arquivo inválido: não é um JSON.');
+  }
+  const d = (data ?? {}) as Partial<CharacterFile> & Partial<BackupFile> & Partial<CharacterExport>;
+  if (d.app === 'eva3' && d.type === 'characters' && Array.isArray(d.characters) && d.characters.length) return d.characters;
+  if (d.app === 'eva3' && d.table) throw new Error('Esse arquivo é o backup de uma mesa inteira. Exporte as fichas pela ficha ou pela aba NPCs.');
+  if (typeof d.name === 'string' && d.attributes && Array.isArray(d.levels)) return [d as CharacterExport];
+  throw new Error('Esse arquivo não é uma ficha do EVA 3.');
+}
+
 /** Garante campos que versões futuras possam adicionar. */
 export function migrate(t: TableState): TableState {
   t.startLevel ??= 1;
@@ -155,6 +208,13 @@ export function migrate(t: TableState): TableState {
     c.movement ??= DEFAULT_MOVEMENT;
     c.gold ??= 0;
     for (const it of c.inventory) migrateItem(it, true);
+    // Antes não havia limite: o que passar de duas mãos ou de uma proteção é desequipado.
+    const kept: InventoryItem[] = [];
+    for (const it of c.inventory) {
+      if (!it.equipped) continue;
+      if (equipBlock(kept, it)) it.equipped = false;
+      else kept.push(it);
+    }
     c.visible ??= false;
     c.current.clareza ??= deriveStats(c).clarezaMax;
   }
@@ -194,12 +254,27 @@ function migrateCombat(t: TableState) {
 }
 
 /** Itens de versões antigas ganham valor e durabilidade padrão do tipo. */
-function migrateItem(it: ItemData & { pv?: number; defBonus?: number }, inventory: boolean) {
+function migrateItem(it: ItemData & { pv?: number; defBonus?: number; qty?: number }, inventory: boolean) {
   if ((it.type as string) === 'catalisador') it.type = 'catalisador_sagrado';
   if (!(it.type in ITEM_TYPES)) it.type = 'outro';
   it.effects ??= { ...NO_EFFECTS, def: it.defBonus ?? 0 };
   delete it.defBonus;
   it.value ??= 0;
   it.durability ??= { ...DEFAULT_DURABILITY[it.type] };
+  if (it.type === 'protecao') it.slot = 'veste';
+  else if (!(it.slot in ITEM_SLOTS)) {
+    // A biblioteca de exemplo dizia "duas mãos" na descrição das armas que pedem as duas.
+    const twoHanded = (it.type === 'arma' || it.type === 'escudo') && /duas m[ãa]os/i.test(it.description);
+    it.slot = twoHanded ? 'duas_maos' : DEFAULT_SLOT[it.type];
+  }
   if (inventory && typeof it.pv !== 'number') it.pv = it.durability.pv;
+  if (typeof it.pack !== 'number') {
+    // Antes o pacote vinha no nome ("Balas .38 (50)") e o inventário contava caixas.
+    const m = it.type === 'municao' ? /^(.+?)\s*\((\d{1,3})\)$/.exec(it.name) : null;
+    it.pack = m ? Math.max(1, parseInt(m[2], 10)) : 1;
+    if (m) {
+      it.name = m[1];
+      if (inventory && typeof it.qty === 'number') it.qty = Math.min(999, it.qty * it.pack);
+    }
+  }
 }

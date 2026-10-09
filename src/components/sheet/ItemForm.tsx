@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { DEFAULT_DURABILITY, ITEM_TYPES, NO_EFFECTS, type ItemData, type ItemType } from '../../model/types';
+import {
+  DEFAULT_DURABILITY, DEFAULT_SLOT, ITEM_SLOTS, ITEM_TYPES, NO_EFFECTS, isStackable, type ItemData, type ItemSlot, type ItemType,
+} from '../../model/types';
 import { LIMITS } from '../../rules/validate';
 import Modal from '../common/Modal';
 
 export const EMPTY_ITEM: ItemData = {
-  name: '', type: 'equipamento', description: '', damage: '', effects: { ...NO_EFFECTS }, value: 0,
-  durability: { ...DEFAULT_DURABILITY.equipamento },
+  name: '', type: 'equipamento', slot: DEFAULT_SLOT.equipamento, description: '', damage: '', effects: { ...NO_EFFECTS }, value: 0,
+  durability: { ...DEFAULT_DURABILITY.equipamento }, pack: 1,
 };
 
 /** Campos numéricos como texto enquanto digita; converte ao salvar. */
@@ -42,15 +44,21 @@ export default function ItemFormModal({
   const [effRdP, setEffRdP] = useState(String(base.effects.rdPhysical));
   const [effRdM, setEffRdM] = useState(String(base.effects.rdMagic));
   const [value, setValue] = useState(String(base.value));
-  const [qty, setQty] = useState(String(initialQty ?? 1));
+  const [pack, setPack] = useState(String(base.pack ?? 1));
+  const [qty, setQty] = useState(String(initialQty ?? base.pack ?? 1));
+  // Item novo: a quantidade acompanha o pacote até ser digitada (caixa de 50 → 50).
+  const [qtyTouched, setQtyTouched] = useState(initialQty !== undefined);
   const [pv, setPv] = useState(String(base.durability.pv));
   const [rd, setRd] = useState(String(base.durability.rd));
   const [dDef, setDDef] = useState(String(base.durability.def));
   // Enquanto o mestre não mexer na durabilidade de um item novo, trocar o tipo troca o padrão.
   const [durTouched, setDurTouched] = useState(!!initial);
+  const [slot, setSlot] = useState<ItemSlot>(base.slot ?? DEFAULT_SLOT[base.type]);
+  const [slotTouched, setSlotTouched] = useState(!!initial);
 
   const changeType = (t: ItemType) => {
     setType(t);
+    if (!slotTouched) setSlot(DEFAULT_SLOT[t]);
     if (!durTouched) {
       const d = DEFAULT_DURABILITY[t];
       setPv(String(d.pv)); setRd(String(d.rd)); setDDef(String(d.def));
@@ -59,15 +67,28 @@ export default function ItemFormModal({
   const touch = (set: (v: string) => void) => (v: string) => { setDurTouched(true); set(v); };
 
   const isWeapon = type === 'arma' || type === 'municao';
+  const packN = Math.min(999, n(pack, 1));
+  const stackable = isStackable({ type, pack: packN });
+  // Pacote só aparece onde faz sentido (ou se o item já tiver um).
+  const showPack = type === 'municao' || type === 'consumivel' || (base.pack ?? 1) > 1;
+  // Munição e consumíveis já no inventário podem ficar zerados (esgotados).
+  const minQty = initialQty !== undefined && stackable ? 0 : 1;
+
+  const changePack = (v: string) => {
+    setPack(v);
+    if (!qtyTouched && v) setQty(String(Math.min(999, n(v, 1))));
+  };
 
   const submit = async () => {
     const item: ItemData = {
       name, type, description, damage,
+      slot: type === 'protecao' ? 'veste' : slot,
       effects: { def: parseInt(def, 10) || 0, rdPhysical: parseInt(effRdP, 10) || 0, rdMagic: parseInt(effRdM, 10) || 0 },
       value: n(value),
       durability: { pv: n(pv, 1), rd: n(rd), def: n(dDef) },
+      pack: showPack ? packN : 1,
     };
-    if (await onSubmit(item, Math.max(1, parseInt(qty, 10) || 1))) onClose();
+    if (await onSubmit(item, Math.min(999, Math.max(minQty, parseInt(qty, 10) || 0)))) onClose();
   };
 
   return (
@@ -79,24 +100,51 @@ export default function ItemFormModal({
           <label className="label">Nome</label>
           <input className="input" autoFocus value={name} maxLength={LIMITS.itemName} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div className="grid-3">
-          <div className="field">
-            <label className="label">Tipo</label>
-            <select className="select" value={type} onChange={(e) => changeType(e.target.value as ItemType)}>
-              {Object.entries(ITEM_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+        <div>
+          <div className="grid-2">
+            <div className="field">
+              <label className="label">Tipo</label>
+              <select className="select" value={type} onChange={(e) => changeType(e.target.value as ItemType)}>
+                {Object.entries(ITEM_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label className="label">Uso</label>
+              <select className="select" value={type === 'protecao' ? 'veste' : slot} disabled={type === 'protecao'}
+                onChange={(e) => { setSlotTouched(true); setSlot(e.target.value as ItemSlot); }}>
+                {Object.entries(ITEM_SLOTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
           </div>
+          <p className="tiny muted" style={{ marginTop: 6 }}>
+            {type === 'protecao'
+              ? 'Proteção é vestida, e só uma pode estar equipada por vez.'
+              : 'O personagem tem duas mãos. Vestes (colar, óculos...) não têm limite; o mestre decide se se anulam. Se o item puder variar, deixe 1 mão e resolva na mesa.'}
+          </p>
+        </div>
+        <div className={showPack ? 'grid-3' : withQty ? 'grid-2' : undefined}>
           <div className="field">
-            <label className="label">Valor</label>
+            <label className="label">{packN > 1 && showPack ? 'Valor do pacote' : 'Valor'}</label>
             <Num value={value} onChange={setValue} />
           </div>
+          {showPack && (
+            <div className="field">
+              <label className="label">Unidades por pacote</label>
+              <Num value={pack} onChange={changePack} />
+            </div>
+          )}
           {withQty && (
             <div className="field">
-              <label className="label">Quantidade</label>
-              <Num value={qty} onChange={setQty} />
+              <label className="label">{stackable ? 'Quantidade (unidades)' : 'Quantidade'}</label>
+              <Num value={qty} onChange={(v) => { setQtyTouched(true); setQty(v); }} />
             </div>
           )}
         </div>
+        {showPack && (
+          <p className="tiny muted" style={{ marginTop: -8 }}>
+            Ex.: caixa com 50 balas = 50; kit com cinco usos = 5. Ao entregar, vai um pacote cheio por padrão, e o personagem gasta de um em um.
+          </p>
+        )}
 
         <div className="field">
           <label className="label">Dano{!isWeapon && <span className="muted"> (se usado como arma)</span>}</label>

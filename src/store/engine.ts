@@ -3,11 +3,14 @@
 // dono da ficha, regra e permissão (livre / solicitar / bloqueada) e aplica.
 import type {
   Actor, Character, CharacterDraft, CharacterKind, ClueCard, ClueKind, Combat, Combatant, CombatThreat, GameAction, InventoryItem,
-  InvestigationCase, ItemData, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatData,
+  InvestigationCase, ItemData, ItemSlot, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatData,
 } from '../model/types';
 import { caseChanges, snapshotOf } from '../model/cases';
 import { sanitizeAvatar } from '../model/avatar';
-import { BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, GM_OWNER, ITEM_TYPES } from '../model/types';
+import {
+  BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, GM_OWNER, ITEM_SLOTS, ITEM_TYPES, isStackable,
+} from '../model/types';
+import { equipBlock } from '../rules/equipment';
 import {
   DEFAULT_PERMISSIONS, effectivePermissions, isPermissionKey, isPermissionValue, permissionFor, PERMISSION_LABELS,
 } from '../model/permissions';
@@ -45,6 +48,8 @@ const MAX_REQUESTS_KEPT = 200;
 const MAX_PENDING_PER_PLAYER = 20;
 const MAX_CHARACTERS_PER_PLAYER = 10;
 const MAX_ITEMS = 200;
+/** Unidades de um item no inventário (e num pacote). */
+const MAX_QTY = 999;
 const MAX_LIBRARY = 500;
 const MAX_NPCS = 200;
 const MAX_THREATS = 300;
@@ -108,9 +113,13 @@ function cleanItem(raw: unknown): ItemData {
   const r = raw as Record<string, unknown>;
   const type = (typeof r.type === 'string' && r.type in ITEM_TYPES ? r.type : 'outro') as ItemType;
   const dur = (r.durability && typeof r.durability === 'object' ? r.durability : DEFAULT_DURABILITY[type]) as Record<string, unknown>;
+  // Proteção é sempre vestida; nos demais, empunhadura desconhecida cai no padrão do tipo.
+  const slot: ItemSlot = type === 'protecao' ? 'veste'
+    : typeof r.slot === 'string' && r.slot in ITEM_SLOTS ? r.slot as ItemSlot : DEFAULT_SLOT[type];
   return {
     name: str(r.name, LIMITS.itemName, 'Nome do item', true),
     type,
+    slot,
     description: str(r.description ?? '', LIMITS.itemText, 'Descrição'),
     damage: str(r.damage ?? '', LIMITS.itemDamage, 'Dano'),
     effects: (() => {
@@ -127,7 +136,31 @@ function cleanItem(raw: unknown): ItemData {
       rd: int(dur.rd ?? 0, 0, 99, 'RD do item'),
       def: int(dur.def ?? 10, 0, 99, 'Defesa do item'),
     },
+    pack: int(r.pack ?? 1, 1, MAX_QTY, 'Unidades por pacote'),
   };
+}
+
+/**
+ * Põe `qty` unidades no inventário. Munição e consumíveis da biblioteca somam
+ * na pilha que já existe (a caixa nova completa a que está no bolso).
+ */
+function receiveItem(c: Character, item: ItemData, qty: number, libraryId: string | undefined, ctx: EngineCtx): InventoryItem {
+  const stack = libraryId && isStackable(item)
+    ? c.inventory.find((i) => i.libraryId === libraryId && isStackable(i))
+    : undefined;
+  if (stack) {
+    stack.qty = Math.min(MAX_QTY, stack.qty + qty);
+    return stack;
+  }
+  if (c.inventory.length >= MAX_ITEMS) fail('Inventário cheio.');
+  const inv: InventoryItem = { ...structuredClone(item), id: ctx.newId(), qty, equipped: false, pv: item.durability.pv, ...(libraryId ? { libraryId } : {}) };
+  c.inventory.push(inv);
+  return inv;
+}
+
+/** "Balas .38 ×50", e o total quando somou numa pilha. */
+function receivedLabel(item: ItemData, qty: number, inv: InventoryItem) {
+  return `${itemLabel(item, qty)}${inv.qty !== qty ? ` (agora ${inv.qty})` : ''}`;
 }
 
 function cleanDraft(raw: unknown, level?: number): CharacterDraft {
@@ -202,6 +235,62 @@ function buildCharacter(draft: CharacterDraft, ownerId: string, kind: CharacterK
 function fillResources(c: Character) {
   const d = deriveStats(c);
   c.current = { pv: d.pvMax, pe: d.peMax, clareza: d.clarezaMax };
+}
+
+const record = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? v as Record<string, unknown> : {});
+
+/**
+ * Ficha vinda de um arquivo exportado: mesmas regras da criação (sem exigir o
+ * nível inicial da mesa), com inventário, ouro, ajustes do mestre e PV/PE/Clareza
+ * atuais preservados. Ids são novos; o vínculo com a biblioteca só vale se o
+ * item existir na biblioteca desta mesa.
+ */
+function importCharacter(s: TableState, raw: unknown, ownerId: string, kind: CharacterKind, ctx: EngineCtx): Character {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('Ficha inválida no arquivo.');
+  const r = raw as Record<string, unknown>;
+  const label = typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, LIMITS.name) : 'Ficha sem nome';
+  try {
+    const draft = cleanDraft({
+      name: r.name, concept: r.concept ?? '', notes: r.notes ?? '', attributes: r.attributes, levels: r.levels, avatar: r.avatar,
+    });
+    const c = buildCharacter(draft, ownerId, kind, ctx);
+    const loss = record(r.permanentLoss);
+    c.permanentLoss = { pv: int(loss.pv ?? 0, 0, 999, 'Perda de PV'), pe: int(loss.pe ?? 0, 0, 999, 'Perda de PE') };
+    const rd = record(r.rdBonus);
+    c.rdBonus = { physical: int(rd.physical ?? 0, -99, 99, 'RD física'), magic: int(rd.magic ?? 0, -99, 99, 'RD mágica') };
+    c.movement = int(r.movement ?? DEFAULT_MOVEMENT, 0, 999, 'Deslocamento');
+    c.gold = int(r.gold ?? 0, 0, MAX_GOLD, 'Ouro');
+
+    const items = r.inventory ?? [];
+    if (!Array.isArray(items)) fail('Inventário inválido.');
+    if ((items as unknown[]).length > MAX_ITEMS) fail(`Máximo de ${MAX_ITEMS} itens no inventário.`);
+    for (const rawItem of items as unknown[]) {
+      const item = cleanItem(rawItem);
+      const ri = record(rawItem);
+      const qty = int(ri.qty ?? 1, isStackable(item) ? 0 : 1, MAX_QTY, `Quantidade de ${item.name}`);
+      const pv = Math.max(0, Math.min(item.durability.pv, int(ri.pv ?? item.durability.pv, -9999, 9999, `PV de ${item.name}`)));
+      const libraryId = typeof ri.libraryId === 'string' && s.itemLibrary[ri.libraryId] ? ri.libraryId : undefined;
+      const inv: InventoryItem = { ...item, id: ctx.newId(), qty, pv, equipped: false, ...(libraryId ? { libraryId } : {}) };
+      // O que não cabe mais (duas mãos, uma proteção) entra desequipado.
+      inv.equipped = ri.equipped === true && !equipBlock(c.inventory, inv);
+      c.inventory.push(inv);
+    }
+
+    // Recursos atuais depois do inventário e das perdas, que mudam os máximos. Ausentes: cheios.
+    fillResources(c);
+    const cur = record(r.current);
+    const keep = (v: unknown, max: number, field: string) => (v === undefined ? max : int(v, -99999, 99999, field));
+    c.current = {
+      pv: keep(cur.pv, c.current.pv, 'PV'),
+      pe: keep(cur.pe, c.current.pe, 'PE'),
+      clareza: keep(cur.clareza, c.current.clareza, 'Clareza'),
+    };
+    clampCurrent(c);
+    return c;
+  } catch (e) {
+    if (e instanceof Fail) fail(`${label}: ${e.message}`);
+    throw e;
+  }
 }
 
 const THREAT_ATTR_MIN = -10;
@@ -505,6 +594,33 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       return c.id;
     }
 
+    case 'character/import': {
+      if (!Array.isArray(a.characters) || !a.characters.length) fail('Nenhuma ficha no arquivo.');
+      const npc = actor.role === 'gm' && a.as === 'npc';
+      let ownerId: string = GM_OWNER;
+      if (actor.role === 'player') ownerId = actor.playerId;
+      else if (!npc) ownerId = (typeof a.ownerId === 'string' ? s.players[a.ownerId] : undefined)?.id ?? fail('Jogador não encontrado.');
+      const has = Object.values(s.characters).filter((c) => (npc ? c.kind === 'npc' : c.ownerId === ownerId)).length;
+      if (has + a.characters.length > (npc ? MAX_NPCS : MAX_CHARACTERS_PER_PLAYER)) {
+        fail(npc ? 'Limite de NPCs atingido.' : 'Limite de fichas atingido.');
+      }
+      const made = a.characters.map((raw) => importCharacter(s, raw, ownerId, npc ? 'npc' : 'pc', ctx));
+      for (const c of made) {
+        // Do jogador, passa pela aprovação como uma ficha nova; do mestre, já vale.
+        if (actor.role === 'gm') c.status = 'approved';
+        s.characters[c.id] = c;
+      }
+      const names = joinNames(made.map((c) => c.name));
+      const fichas = made.length > 1 ? 'as fichas' : 'a ficha';
+      // NPCs são do mestre: não aparecem no registro, como na criação.
+      if (actor.role === 'player') {
+        log(s, ctx, { kind: 'system', actorName: who, characterName: made[0].name, text: `importou ${fichas} de ${names} para aprovação.` });
+      } else if (!npc) {
+        log(s, ctx, { kind: 'system', actorName: who, characterName: made[0].name, text: `importou ${fichas} de ${names} para ${s.players[ownerId].name}.` });
+      }
+      return made[0].id;
+    }
+
     case 'npc/create': {
       const draft = cleanDraft(a.draft);
       const npcs = Object.values(s.characters).filter((c) => c.kind === 'npc');
@@ -589,7 +705,8 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       if (c.status === 'approved') return;
       c.status = 'approved';
       c.rejectReason = undefined;
-      fillResources(c);
+      // Fichas criadas ou refeitas já estão cheias; importadas mantêm o estado do arquivo.
+      clampCurrent(c);
       c.updatedAt = now;
       log(s, ctx, { kind: 'system', actorName: who, characterName: c.name, text: `aprovou a ficha de ${c.name}.` });
       return;
@@ -661,9 +778,10 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
         c.current.pv = Math.min(d.pvMax, c.current.pv + gain);
         extra = ` e converteu em ${gain} PV`;
       } else if (ab!.id === 'oracao') {
-        const r = rollExpr('1d6', 0, ctx.rng)!;
+        const bonus = 2 * c.attributes.FE;
+        const r = rollExpr('1d6', bonus, ctx.rng)!;
         c.current.pe = Math.min(d.peMax, c.current.pe + r.total);
-        extra = ` e recuperou ${r.total} PE (1d6)`;
+        extra = ` e recuperou ${r.total} PE (1d6 + ${bonus})`;
       }
       if (pv) c.current.pv = Math.max(d.deathAt, c.current.pv - pv);
       c.updatedAt = now;
@@ -699,8 +817,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
 
     case 'item/add': {
       const c = getChar(s, a.characterId);
-      if (c.inventory.length >= MAX_ITEMS) fail('Inventário cheio.');
-      const qty = int(a.qty ?? 1, 1, 999, 'Quantidade');
+      const qty = int(a.qty ?? 1, 1, MAX_QTY, 'Quantidade');
       let item: ItemData;
       let libraryId: string | undefined;
       if (a.libraryId) {
@@ -717,9 +834,9 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
           s.itemLibrary[libraryId] = { ...structuredClone(item), id: libraryId, createdAt: now, updatedAt: now };
         }
       }
-      c.inventory.push({ ...item, id: ctx.newId(), qty, equipped: false, pv: item.durability.pv, ...(libraryId ? { libraryId } : {}) });
+      const inv = receiveItem(c, item, qty, libraryId, ctx);
       c.updatedAt = now;
-      log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${itemLabel(item, qty)}.` });
+      log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${receivedLabel(item, qty, inv)}.` });
       return;
     }
 
@@ -727,12 +844,19 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const c = getChar(s, a.characterId);
       const it = c.inventory.find((i) => i.id === a.itemId) ?? fail('Item não encontrado.');
       const item = cleanItem(a.item);
-      const qty = int(a.qty ?? it.qty, 1, 999, 'Quantidade');
+      // Munição e consumíveis podem ficar esgotados (0) sem sair do inventário.
+      const qty = int(a.qty ?? it.qty, isStackable(item) ? 0 : 1, MAX_QTY, 'Quantidade');
       // Item inteiro continua inteiro se o máximo mudar; avariado mantém o dano.
       const pv = it.pv >= it.durability.pv ? item.durability.pv : Math.min(it.pv, item.durability.pv);
       Object.assign(it, item, { qty, pv });
+      // Mudou de empunhadura ou virou proteção e não cabe mais: sai do corpo.
+      const dropped = it.equipped && !!equipBlock(c.inventory, it);
+      if (dropped) it.equipped = false;
       c.updatedAt = now;
-      log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} editou ${itemLabel(item, qty)}.` });
+      log(s, ctx, {
+        kind: 'item', actorName: who, characterName: c.name,
+        text: `${c.name} editou ${itemLabel(item, qty)}${dropped ? ' (desequipado: não cabe mais com o que já está equipado)' : ''}.`,
+      });
       return;
     }
 
@@ -749,6 +873,10 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
     case 'item/equip': {
       const c = getChar(s, a.characterId);
       const it = c.inventory.find((i) => i.id === a.itemId) ?? fail('Item não encontrado.');
+      if (a.equipped && !it.equipped) {
+        const block = equipBlock(c.inventory, it);
+        if (block) fail(block);
+      }
       it.equipped = !!a.equipped;
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} ${it.equipped ? 'equipou' : 'desequipou'} ${it.name}.` });
@@ -767,6 +895,24 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       log(s, ctx, {
         kind: 'item', actorName: who, characterName: c.name,
         text: `${it.name} de ${c.name}: PV ${before} → ${pv}${pv === 0 ? ' (quebrado)' : ''}${reason ? ` (${reason})` : ''}.`,
+      });
+      return;
+    }
+
+    case 'item/use': {
+      const c = getChar(s, a.characterId);
+      const it = c.inventory.find((i) => i.id === a.itemId) ?? fail('Item não encontrado.');
+      if (!isStackable(it)) fail(`${it.name} não é munição nem consumível.`);
+      const amount = int(a.amount, -MAX_QTY, MAX_QTY, 'Quantidade');
+      if (amount > it.qty) fail(it.qty ? `Só restam ${it.qty} de ${it.name}.` : `${it.name} está esgotado.`);
+      const before = it.qty;
+      it.qty = Math.min(MAX_QTY, it.qty - amount);
+      if (it.qty === before) return;
+      c.updatedAt = now;
+      const reason = a.reason ? str(a.reason, 120, 'Motivo') : '';
+      log(s, ctx, {
+        kind: 'item', actorName: who, characterName: c.name,
+        text: `${it.name} de ${c.name}: ${before} → ${it.qty}${it.qty === 0 ? ' (esgotado)' : ''}${reason ? ` (${reason})` : ''}.`,
       });
       return;
     }
@@ -834,13 +980,11 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
     case 'library/give': {
       const lib = s.itemLibrary[a.itemId] ?? fail('Item não encontrado.');
       const c = getChar(s, a.characterId);
-      if (c.inventory.length >= MAX_ITEMS) fail('Inventário cheio.');
-      const qty = int(a.qty ?? 1, 1, 999, 'Quantidade');
+      const qty = int(a.qty ?? 1, 1, MAX_QTY, 'Quantidade');
       const { id: _id, createdAt: _c, updatedAt: _u, ...data } = lib;
-      const inv: InventoryItem = { ...structuredClone(data), id: ctx.newId(), qty, equipped: false, libraryId: lib.id, pv: data.durability.pv };
-      c.inventory.push(inv);
+      const inv = receiveItem(c, data, qty, lib.id, ctx);
       c.updatedAt = now;
-      log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${itemLabel(lib, qty)} do mestre.` });
+      log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${receivedLabel(lib, qty, inv)} do mestre.` });
       return;
     }
 
@@ -1374,6 +1518,10 @@ export function describeAction(s: TableState, a: GameAction): string {
     case 'item/durability': {
       const it = c?.inventory.find((i) => i.id === a.itemId);
       return `${n}: ${it?.name ?? 'item'} PV ${it?.pv ?? '?'} → ${a.pv}${a.reason ? ` (${a.reason})` : ''}`;
+    }
+    case 'item/use': {
+      const it = c?.inventory.find((i) => i.id === a.itemId);
+      return `${n}: ${a.amount > 0 ? 'gastar' : 'repor'} ${Math.abs(a.amount)} de ${it?.name ?? 'item'}${it ? ` (${it.qty} → ${it.qty - a.amount})` : ''}${a.reason ? ` (${a.reason})` : ''}`;
     }
     case 'notes/update': return `${n}: editar anotações`;
     case 'character/avatar': return `${n}: mudar aparência`;

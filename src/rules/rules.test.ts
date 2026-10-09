@@ -89,7 +89,10 @@ describe('morte e títulos', () => {
   });
   it('títulos', () => {
     expect(titleOf([{ classId: 'combatente', abilityId: null }])).toBe('Combatente');
-    expect(titleOf([{ classId: 'combatente', abilityId: null }, { classId: 'combatente', abilityId: null }])).toBe('General');
+    expect(titleOf([{ classId: 'combatente', abilityId: null }, { classId: 'combatente', abilityId: null }])).toBe('Combatente');
+    expect(titleOf(Array.from({ length: 8 }, () => ({ classId: 'combatente' as const, abilityId: null })))).toBe('Combatente');
+    expect(titleOf(Array.from({ length: 9 }, () => ({ classId: 'combatente' as const, abilityId: null })))).toBe('Veterano');
+    expect(titleOf(Array.from({ length: 9 }, () => ({ classId: 'vidente' as const, abilityId: null })))).toBe('Oráculo');
     expect(titleOf([{ classId: 'ocultista', abilityId: null }, { classId: 'combatente', abilityId: null }])).toBe('Bruxo');
   });
 });

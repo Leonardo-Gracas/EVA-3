@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Search, Swords, UserX, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Search, Swords, Upload, UserX, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { setRoom } from '../net/identity';
 import { ActProvider, type ActApi, useAct } from '../components/act';
@@ -9,6 +9,7 @@ import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
 import CharacterSheet, { DeleteCharacterButton } from '../components/sheet/CharacterSheet';
 import CharacterWizard from '../components/sheet/CharacterWizard';
 import Avatar from '../components/common/Avatar';
+import { useImportCharacters } from '../components/common/CharacterFile';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { RequestStatus } from '../components/gm/RequestsPanel';
@@ -132,15 +133,28 @@ function MySheets({ view }: { view: PlayerView }) {
   const [creating, setCreating] = useState(chars.length === 0);
   const [redoing, setRedoing] = useState<string | null>(null);
   const current = chars.find((c) => c.id === selected) ?? chars[0];
+  const importChars = useImportCharacters();
 
   useEffect(() => {
     if (!creating && chars.length === 0) setCreating(true);
   }, [chars.length, creating]);
 
+  const importFile = async () => {
+    const before = new Set(chars.map((c) => c.id));
+    if (!await importChars('pc')) return;
+    setCreating(false);
+    // Como ao criar: a visão nova chega antes do ack.
+    const fresh = guestStore.get().view?.myCharacters.find((c) => !before.has(c.id));
+    if (fresh) setSelected(fresh.id);
+  };
+
   if (creating) {
     return (
       <div className="page-narrow" style={{ margin: '0 auto' }}>
-        <h2 className="mb">Novo personagem</h2>
+        <div className="row mb">
+          <h2 className="grow">Novo personagem</h2>
+          <button className="btn btn-sm btn-ghost" onClick={importFile} title="Trazer uma ficha exportada (.json); o mestre aprova"><Upload size={14} /> Importar ficha</button>
+        </div>
         <CharacterWizard
           level={view.table.startLevel}
           onCancel={chars.length ? () => setCreating(false) : undefined}
@@ -190,6 +204,7 @@ function MySheets({ view }: { view: PlayerView }) {
           </button>
         ))}
         <button className="btn btn-sm btn-ghost" onClick={() => setCreating(true)}><Plus size={14} /> Nova ficha</button>
+        <button className="btn btn-sm btn-ghost" onClick={importFile} title="Trazer uma ficha exportada (.json); o mestre aprova"><Upload size={14} /> Importar</button>
       </div>
       {current.status !== 'approved' && (
         <div className="card row-wrap" style={{ borderColor: current.status === 'rejected' ? 'var(--accent)' : 'rgba(217,160,63,0.4)' }}>

@@ -8,11 +8,13 @@ interface Props {
   children: ReactNode;
   footer?: ReactNode;
   width?: number;
+  /** Classe extra do corpo (ex.: sem padding, para um cabeçalho fixo ao rolar). */
+  bodyClassName?: string;
 }
 
 // Adaptado do Modal do Mesa20: Esc fecha, trava o scroll do fundo e no
 // celular vira gaveta presa ao rodapé (ver index.css).
-export default function Modal({ open, onClose, title, children, footer, width = 520 }: Props) {
+export default function Modal({ open, onClose, title, children, footer, width = 520, bodyClassName }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -33,7 +35,7 @@ export default function Modal({ open, onClose, title, children, footer, width = 
           <h2 style={{ fontSize: 16 }}>{title}</h2>
           <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className={`modal-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>

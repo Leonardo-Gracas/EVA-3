@@ -8,6 +8,8 @@ export const CLASS_IDS: ClassId[] = ['acolito', 'ocultista', 'vidente', 'combate
 
 export const MAX_LEVEL = 12;
 export const MAX_CLASSES = 2;
+/** Nível na classe para quem fica em uma classe só ganhar o título (Veterano, Exorcista…). */
+export const PURE_TITLE_LEVEL = 9;
 
 export interface ClassInfo {
   id: ClassId;
@@ -83,7 +85,7 @@ export const CLASSES: Record<ClassId, ClassInfo> = {
 
 /** Título pela dupla de classes. A ordem não importa. */
 const TITLES: Record<string, string> = {
-  'combatente+combatente': 'General',
+  'combatente+combatente': 'Veterano',
   'acolito+combatente': 'Paladino',
   'combatente+ocultista': 'Bruxo',
   'combatente+vidente': 'Sentinela',

@@ -81,7 +81,7 @@ function UseAbilityModal({ ch, ability, onClose }: { ch: Character; ability: Abi
             </div>
           )}
         </div>
-        {ability.id === 'oracao' && <p className="small gold">O mestre rola 1d6 de PE recuperado automaticamente. Se passar no teste de FÉ(20), ajuste mais 1d6.</p>}
+        {ability.id === 'oracao' && <p className="small gold">Recupera 1d6 + {2 * ch.attributes.FE} (dobro da FÉ) de PE, rolado automaticamente.</p>}
         {peN > ch.current.pe && <p className="small" style={{ color: 'var(--error)' }}>PE insuficiente.</p>}
         <div className="field">
           <label className="label">Nota (alvo, efeito extra…)</label>
@@ -140,6 +140,7 @@ export function LevelUpModal({ ch, onClose }: { ch: Character; onClose: () => vo
           <span>· PE máx. {now.peMax} → <strong>{preview.peMax}</strong></span>
           {preview.clarezaMax !== now.clarezaMax && <span>· Clareza {now.clarezaMax} → <strong>{preview.clarezaMax}</strong></span>}
           <span>· DEF {now.def} → <strong>{preview.def}</strong></span>
+          {preview.von !== now.von && <span>· VON {now.von} → <strong>{preview.von}</strong></span>}
           <span>· Título: <strong className="gold">{preview.title}</strong></span>
         </div>
       </div>

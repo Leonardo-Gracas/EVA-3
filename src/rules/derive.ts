@@ -1,6 +1,6 @@
 // Valores derivados da ficha: tudo que é calculado e nunca digitado.
 import { ATTRIBUTES, type Attributes, type AttrKey } from './attributes';
-import { CLASSES, CLASS_IDS, titleFor, type ClassId } from './classes';
+import { CLASSES, CLASS_IDS, PURE_TITLE_LEVEL, titleFor, type ClassId } from './classes';
 import { getAbility, type Ability, type Scaled } from './abilities';
 import type { Character, LevelPick } from '../model/types';
 
@@ -31,6 +31,7 @@ export interface Derived {
     pe: string[];
     clareza: string[];
     def: string[];
+    von: string[];
     rdPhysical: string[];
     rdMagic: string[];
   };
@@ -66,7 +67,7 @@ export function titleOf(levels: LevelPick[]): string {
   if (order.length === 0) return '—';
   if (order.length === 1) {
     const c = order[0];
-    return levels.length >= 2 ? titleFor(c, c) : CLASSES[c].name;
+    return levels.length >= PURE_TITLE_LEVEL ? titleFor(c, c) : CLASSES[c].name;
   }
   return titleFor(order[0], order[1]);
 }
@@ -89,6 +90,7 @@ export function deriveStats(
   const bdRdP: string[] = [];
   const bdRdM: string[] = [];
   const bdDef: string[] = [`10 base`, `${attrs.DES >= 0 ? '+' : ''}${attrs.DES} DES`];
+  const bdVon: string[] = [`10 base`, `${attrs.FE >= 0 ? '+' : ''}${attrs.FE} FÉ`];
 
   let pv = 0;
   let pe = 0;
@@ -118,6 +120,7 @@ export function deriveStats(
   bdClareza.push(`Base: ${CLAREZA_BASE} + INT = ${clareza}`);
 
   let def = 10 + attrs.DES;
+  let von = 10 + attrs.FE;
   let rdMagic = 0;
   let rdPhysical = 0;
   let unconsciousAtZero = true;
@@ -130,6 +133,7 @@ export function deriveStats(
     if (e.peMax) { const v = scaled(e.peMax, attrs); pe += v; bdPe.push(`${a.name}: ${scaledLabel(e.peMax)} = ${v}`); }
     if (e.clarezaMax) { const v = scaled(e.clarezaMax, attrs); clareza += v; bdClareza.push(`${a.name}: ${scaledLabel(e.clarezaMax)} = ${v}`); }
     if (e.def) { const v = scaled(e.def, attrs); def += v; bdDef.push(`${v >= 0 ? '+' : ''}${v} ${a.name}`); }
+    if (e.von) { const v = scaled(e.von, attrs); von += v; bdVon.push(`${v >= 0 ? '+' : ''}${v} ${a.name} (${scaledLabel(e.von)})`); }
     if (e.rdMagic) { rdMagic += e.rdMagic; bdRdM.push(`+${e.rdMagic} ${a.name}`); }
     if (e.rdPhysical) { rdPhysical += e.rdPhysical; bdRdP.push(`+${e.rdPhysical} ${a.name}`); }
     if (e.noUnconscious) unconsciousAtZero = false;
@@ -169,7 +173,7 @@ export function deriveStats(
     peMax: pe,
     clarezaMax: clareza,
     def,
-    von: 10 + attrs.FE,
+    von,
     rdPhysical: Math.max(0, rdPhysical),
     rdMagic: Math.max(0, rdMagic),
     testBonus: Math.floor(levels.length / 2),
@@ -177,7 +181,7 @@ export function deriveStats(
     unconsciousAtZero,
     abilities,
     damageAttrs,
-    breakdown: { pv: bdPv, pe: bdPe, clareza: bdClareza, def: bdDef, rdPhysical: bdRdP, rdMagic: bdRdM },
+    breakdown: { pv: bdPv, pe: bdPe, clareza: bdClareza, def: bdDef, von: bdVon, rdPhysical: bdRdP, rdMagic: bdRdM },
   };
 }
 

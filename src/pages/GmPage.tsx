@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ArrowLeft, BookOpen, ClipboardList, Dices, Download, Inbox, LogOut, Moon, Package, Search, Shield, Swords, UserPlus, UserX, VenetianMask,
+  ArrowLeft, BookOpen, ClipboardList, Dices, Download, Inbox, LogOut, Moon, Package, Search, Shield, Skull, Swords, Upload, UserPlus, UserX, VenetianMask,
 } from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
 import NpcsPanel from '../components/gm/NpcsPanel';
+import ThreatsPanel from '../components/gm/ThreatsPanel';
 import CharRow from '../components/gm/CharRow';
 import CombatPanel from '../components/combat/CombatPanel';
 import { ActProvider, type ActApi } from '../components/act';
@@ -13,6 +14,7 @@ import { downloadTable } from '../store/persistence';
 import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
 import Modal from '../components/common/Modal';
 import ConfirmButton from '../components/common/ConfirmButton';
+import { useImportCharacters } from '../components/common/CharacterFile';
 import RoomInvite from '../components/room/RoomInvite';
 import CharacterSheet from '../components/sheet/CharacterSheet';
 import RequestsPanel from '../components/gm/RequestsPanel';
@@ -24,7 +26,7 @@ import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
-type Tab = 'fichas' | 'combate' | 'npcs' | 'investigacao' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
+type Tab = 'fichas' | 'combate' | 'npcs' | 'ameacas' | 'investigacao' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
 const send: ActApi['send'] = async (a) => {
   const r = gmDispatch(a);
@@ -40,6 +42,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   // No celular, a aba Fichas mostra a lista ou a ficha aberta, uma de cada vez.
   const [sheetOpen, setSheetOpen] = useState(false);
   const [npcOpen, setNpcOpen] = useState(false);
+  const [threatOpen, setThreatOpen] = useState(false);
   const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('fichas'); };
 
   // Rolagens de todos (inclusive as ocultas) como aviso, exceto quando o registro já está aberto.
@@ -79,7 +82,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <Tabs<Tab>
           value={tab}
           onChange={setTab}
-          onReselect={(t) => { if (t === 'fichas') setSheetOpen(false); if (t === 'npcs') setNpcOpen(false); }}
+          onReselect={(t) => { if (t === 'fichas') setSheetOpen(false); if (t === 'npcs') setNpcOpen(false); if (t === 'ameacas') setThreatOpen(false); }}
           mobileBar
           tabs={[
             { id: 'fichas', label: 'Fichas', icon: <ClipboardList size={14} />, count: pendingSheets },
@@ -87,6 +90,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'npcs', label: 'NPCs', icon: <VenetianMask size={14} /> },
+            { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
             { id: 'investigacao', label: 'Investigação', icon: <Search size={14} /> },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
@@ -123,6 +127,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'combate' && <CombatPanel table={table} />}
           {tab === 'npcs' && <NpcsPanel table={table} detailOpen={npcOpen} setDetailOpen={setNpcOpen} />}
+          {tab === 'ameacas' && <ThreatsPanel table={table} detailOpen={threatOpen} setDetailOpen={setThreatOpen} />}
           {tab === 'investigacao' && <CasesPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
@@ -143,7 +148,8 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
   sheetOpen: boolean; setSheetOpen: (open: boolean) => void;
 }) {
   const [resting, setResting] = useState(false);
-  const players = useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
+  const importChars = useImportCharacters();
+  const players =useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
   const all = Object.values(table.characters);
   const pcs = all.filter((c) => c.kind === 'pc');
   const byOwner = (id: string) => pcs.filter((c) => c.ownerId === id).sort((a, b) => a.createdAt - b.createdAt);
@@ -185,6 +191,10 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
                 <strong>{p.name}</strong>
                 <span className="spacer" />
                 {!chars.length && <span className="tiny muted">sem ficha</span>}
+                <button className="btn btn-sm btn-ghost btn-icon" title={`Importar ficha de um arquivo para ${p.name} (já aprovada)`} onClick={async () => {
+                  const r = await importChars('pc', p.id);
+                  if (r?.id) open(r.id);
+                }}><Upload size={14} /></button>
                 <RemovePlayerButton player={p} chars={chars} />
               </div>
               <div className="col" style={{ gap: 6 }}>

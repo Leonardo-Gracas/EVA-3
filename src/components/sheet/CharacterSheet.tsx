@@ -10,6 +10,7 @@ import { cancelRollFx, startRollFx } from '../RollFx';
 import ActButton from '../common/ActButton';
 import ConfirmModal from '../common/ConfirmModal';
 import { EditableAvatar } from '../common/AvatarEditor';
+import { ExportCharactersButton } from '../common/CharacterFile';
 import Vitals from './Vitals';
 import AbilitiesPanel from './AbilitiesPanel';
 import Inventory from './Inventory';
@@ -75,7 +76,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
               {ownerName && <span className="tiny muted">Jogador: {ownerName}</span>}
             </div>
           </div>
-          {isGm && <GmControls ch={ch} />}
+          {isGm ? <GmControls ch={ch} /> : <ExportCharactersButton chars={[ch]} className="btn btn-sm btn-ghost btn-icon" />}
         </div>
         {ch.status === 'rejected' && ch.rejectReason && (
           <p className="small mt" style={{ color: '#f2a3a8' }}>Motivo: {ch.rejectReason}</p>
@@ -84,7 +85,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
 
       <div className="stats">
         <div className="stat" title={d.breakdown.def.join('\n')}><span className="stat-val">{d.def}</span><span className="stat-lbl">Defesa</span></div>
-        <div className="stat" title="10 + FÉ"><span className="stat-val">{d.von}</span><span className="stat-lbl">Vontade</span></div>
+        <div className="stat" title={d.breakdown.von.join('\n')}><span className="stat-val">{d.von}</span><span className="stat-lbl">Vontade</span></div>
         <div className="stat" title={['Redução de dano contra dano físico', ...d.breakdown.rdPhysical].join('\n')}><span className="stat-val">{d.rdPhysical}</span><span className="stat-lbl">RD física</span></div>
         <div className="stat" title={['Redução de dano contra dano mágico', ...d.breakdown.rdMagic].join('\n')}><span className="stat-val">{d.rdMagic}</span><span className="stat-lbl">RD mágica</span></div>
         <div className="stat" title="Distância percorrida num movimento">
@@ -184,6 +185,7 @@ function GmControls({ ch }: { ch: Character }) {
           <div className="row-wrap">
             <button className="btn btn-primary btn-sm" onClick={() => act({ type: 'character/approve', characterId: ch.id }, 'Ficha aprovada.')}><Check size={14} /> Aprovar</button>
             {ch.status === 'pending' && <button className="btn btn-sm" onClick={() => setRejecting(true)}><Undo2 size={14} /> Devolver</button>}
+            <ExportCharactersButton chars={[ch]} className="btn btn-sm btn-ghost btn-icon" />
             <DeleteCharacterButton ch={ch} />
           </div>
         ) : (
@@ -209,6 +211,7 @@ function GmControls({ ch }: { ch: Character }) {
           </button>
         )}
         <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE, RD extra e deslocamento"><Skull size={14} /> Ajustes</button>
+        <ExportCharactersButton chars={[ch]} className="btn btn-sm btn-ghost btn-icon" />
         <DeleteCharacterButton ch={ch} />
       </div>
       {lossOpen && (

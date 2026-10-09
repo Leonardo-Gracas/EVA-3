@@ -10,7 +10,7 @@ import {
   ATTR_COST, ATTR_KEYS, ATTR_MAX, ATTR_MIN, ATTRIBUTES, POINT_BUDGET, emptyAttributes, fmtMod, pointsLeft,
   pointsSpent, type AttrKey, type Attributes,
 } from '../rules/attributes';
-import { CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, titleFor, type ClassId } from '../rules/classes';
+import { CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, PURE_TITLE_LEVEL, titleFor, type ClassId } from '../rules/classes';
 import { abilitiesOf } from '../rules/abilities';
 import { CLAREZA_BASE, deathThreshold } from '../rules/derive';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, type ItemType } from '../model/types';
@@ -465,7 +465,7 @@ function ClassesSec({ go }: { go: (id: SectionId) => void }) {
       </Callout>
 
       <Sub>Títulos</Sub>
-      <p className="small secondary">A partir do nível 2, o personagem ganha um título pela combinação das suas classes. Ficar em uma classe só também dá título.</p>
+      <p className="small secondary">Ao pegar uma segunda classe, o personagem ganha um título pela combinação das suas classes. Quem fica em uma classe só ganha o título dela (Veterano, Exorcista, Feiticeiro, Oráculo) apenas ao chegar ao nível {PURE_TITLE_LEVEL} na classe; antes disso, é chamado só pelo nome da classe.</p>
       <div className="ref-table-wrap">
         <table className="ref-table ref-matrix">
           <thead>
@@ -610,6 +610,8 @@ function ItensSec() {
     <Section id="itens" title="Itens" lead="Itens só dão bônus enquanto estão equipados e inteiros. Eles também podem ser atacados e quebrar.">
       <ul className="ref-list">
         <li><strong>Equipar</strong> aplica os bônus do item (DEF, RD física, RD mágica) na sua ficha.</li>
+        <li>Todo item é de <strong>1 mão</strong>, <strong>2 mãos</strong> ou <strong>veste</strong>. O personagem tem duas mãos: dá para equipar duas armas de uma mão, arma e escudo, ou uma arma de duas mãos. Armas que podem ser usadas dos dois jeitos contam como 1 mão; o resto se resolve na mesa.</li>
+        <li><strong>Só uma proteção</strong> equipada por vez. Outras vestes (colar, óculos, máscara...) não têm limite; o mestre decide se elas se anulam ou dão desvantagem.</li>
         <li>Cada item tem <strong>durabilidade</strong>: PV, RD e DEF do próprio objeto, usados quando ele é o alvo.</li>
         <li>Item com <strong>0 PV está quebrado</strong> e para de dar bônus até ser reparado.</li>
         <li><strong>Catalisadores</strong> (sagrado, profano, etéreo) são exigidos por algumas habilidades. A descrição da habilidade diz qual.</li>
