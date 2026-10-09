@@ -382,6 +382,8 @@ export interface TableState {
   /** Nível com que os jogadores criam personagens. NPCs escolhem o próprio. */
   startLevel: number;
   players: Record<string, PlayerRecord>;
+  /** Jogadores excluídos pelo mestre que ainda não souberam (estavam offline): id → quando. */
+  removedPlayers: Record<string, number>;
   characters: Record<string, Character>;
   threats: Record<string, Threat>;
   itemLibrary: Record<string, LibraryItem>;
@@ -431,6 +433,8 @@ export type GameAction =
   | { type: 'library/give'; itemId: string; characterId: string; qty: number }
   | { type: 'permissions/global'; key: PermissionKey; value: ActionPermission }
   | { type: 'permissions/player'; playerId: string; key: PermissionKey; value: ActionPermission | null }
+  /** Mestre: tira o jogador da mesa, junto com as fichas, pedidos e permissões dele. */
+  | { type: 'player/remove'; playerId: string }
   | { type: 'request/resolve'; requestId: string; approve: boolean }
   | { type: 'roll'; expr: string; characterId?: string; threatId?: string; combatantId?: string; attr?: AttrKey; label?: string; target?: number; hidden?: boolean }
   | { type: 'combat/create' }

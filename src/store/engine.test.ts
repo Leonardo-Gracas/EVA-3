@@ -127,6 +127,33 @@ describe('motor', () => {
     expect(v2.log.some((e) => e.kind === 'roll')).toBe(false);
   });
 
+  it('excluir jogador: só o mestre; leva fichas, combate, pedidos e permissões', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    s = dispatch(s, gm, { type: 'combat/create' }, ctx).state;
+    s = dispatch(s, gm, { type: 'combat/add', refs: [{ kind: 'character', id: cid }] }, ctx).state;
+    s = dispatch(s, gm, { type: 'permissions/player', playerId: 'p1', key: 'resource_change', value: 'request' }, ctx).state;
+    s = dispatch(s, p1, { type: 'resource/set', characterId: cid, pv: 4, pe: 2 }, ctx).state;
+    expect(s.requests).toHaveLength(1);
+
+    expect(dispatch(s, p2, { type: 'player/remove', playerId: 'p1' }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s, gm, { type: 'player/remove', playerId: 'nada' }, ctx)).toMatchObject({ ok: false, error: /não encontrado/ });
+    s = dispatch(s, gm, { type: 'player/remove', playerId: 'p1' }, ctx).state;
+    expect(s.players.p1).toBeUndefined();
+    expect(s.players.p2).toBeDefined();
+    expect(s.removedPlayers.p1).toBe(1000);
+    expect(s.characters[cid]).toBeUndefined();
+    expect(s.combat?.order).toHaveLength(0);
+    expect(s.requests).toHaveLength(0);
+    expect(s.permissions.perPlayer.p1).toBeUndefined();
+    expect(s.log[s.log.length - 1].text).toBe('removeu Ana da mesa e excluiu a ficha de Mizael.');
+    expect(buildPlayerView(s, 'p2', new Set()).players.map((p) => p.id)).toEqual(['p2']);
+    // Mesa antiga, sem a lista de removidos.
+    const old = structuredClone(s) as Partial<TableState>;
+    delete old.removedPlayers;
+    expect(migrate(old as TableState).removedPlayers).toEqual({});
+  });
+
   it('nome da campanha: só o mestre renomeia', () => {
     const { s: s0 } = setup();
     expect(dispatch(s0, p1, { type: 'table/rename', name: 'Outra' }, ctx)).toMatchObject({ ok: false });

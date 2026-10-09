@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ArrowLeft, BookOpen, ClipboardList, Dices, Download, Eye, Inbox, LogOut, Moon, Package, Plus, Search, Shield, Skull, Swords, UserPlus, VenetianMask,
+  ArrowLeft, BookOpen, ClipboardList, Dices, Download, Inbox, LogOut, Moon, Package, Search, Shield, Swords, UserPlus, UserX, VenetianMask,
 } from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
-import CharacterWizard from '../components/sheet/CharacterWizard';
-import ThreatsPanel from '../components/gm/ThreatsPanel';
+import NpcsPanel from '../components/gm/NpcsPanel';
+import CharRow from '../components/gm/CharRow';
 import CombatPanel from '../components/combat/CombatPanel';
 import { ActProvider, type ActApi } from '../components/act';
-import type { Character, TableState } from '../model/types';
+import type { Character, PlayerRecord, TableState } from '../model/types';
 import { downloadTable } from '../store/persistence';
-import { deriveStats } from '../rules/derive';
 import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
 import Modal from '../components/common/Modal';
-import Avatar from '../components/common/Avatar';
+import ConfirmButton from '../components/common/ConfirmButton';
 import RoomInvite from '../components/room/RoomInvite';
-import CharacterSheet, { StatusBadge } from '../components/sheet/CharacterSheet';
+import CharacterSheet from '../components/sheet/CharacterSheet';
 import RequestsPanel from '../components/gm/RequestsPanel';
 import RestModal from '../components/gm/RestModal';
 import CasesPanel from '../components/investigation/CasesPanel';
@@ -25,7 +24,7 @@ import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
-type Tab = 'fichas' | 'combate' | 'ameacas' | 'investigacao' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
+type Tab = 'fichas' | 'combate' | 'npcs' | 'investigacao' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
 
 const send: ActApi['send'] = async (a) => {
   const r = gmDispatch(a);
@@ -40,6 +39,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   // No celular, a aba Fichas mostra a lista ou a ficha aberta, uma de cada vez.
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [npcOpen, setNpcOpen] = useState(false);
   const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('fichas'); };
 
   // Rolagens de todos (inclusive as ocultas) como aviso, exceto quando o registro já está aberto.
@@ -79,14 +79,14 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <Tabs<Tab>
           value={tab}
           onChange={setTab}
-          onReselect={(t) => { if (t === 'fichas') setSheetOpen(false); }}
+          onReselect={(t) => { if (t === 'fichas') setSheetOpen(false); if (t === 'npcs') setNpcOpen(false); }}
           mobileBar
           tabs={[
             { id: 'fichas', label: 'Fichas', icon: <ClipboardList size={14} />, count: pendingSheets },
             { id: 'combate', label: table.combat?.round ? `Combate · rodada ${table.combat.round}` : 'Combate', short: 'Combate', icon: <Swords size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
-            { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
+            { id: 'npcs', label: 'NPCs', icon: <VenetianMask size={14} /> },
             { id: 'investigacao', label: 'Investigação', icon: <Search size={14} /> },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
@@ -122,7 +122,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <main className="page">
           {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'combate' && <CombatPanel table={table} />}
-          {tab === 'ameacas' && <ThreatsPanel table={table} />}
+          {tab === 'npcs' && <NpcsPanel table={table} detailOpen={npcOpen} setDetailOpen={setNpcOpen} />}
           {tab === 'investigacao' && <CasesPanel table={table} />}
           {tab === 'pedidos' && <RequestsPanel table={table} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
@@ -142,32 +142,26 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
   table: TableState; online: string[]; onInvite: () => void; selected: string | null; setSelected: (id: string) => void;
   sheetOpen: boolean; setSheetOpen: (open: boolean) => void;
 }) {
-  const { act } = useAct();
-  const [creatingNpc, setCreatingNpc] = useState(false);
   const [resting, setResting] = useState(false);
-  const players =useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
+  const players = useMemo(() => Object.values(table.players).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [table.players]);
   const all = Object.values(table.characters);
-  const byOwner = (id: string) => all.filter((c) => c.ownerId === id).sort((a, b) => a.createdAt - b.createdAt);
-  const npcs = all.filter((c) => c.kind === 'npc').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  const current = selected ? table.characters[selected] : undefined;
-
-  // Ficha aberta por fora (sino, aviso): sai do cadastro de NPC.
-  useEffect(() => { setCreatingNpc(false); }, [selected]);
-  // Voltar à lista (tocar de novo em Fichas) também desiste do cadastro de NPC.
-  useEffect(() => { if (!sheetOpen) setCreatingNpc(false); }, [sheetOpen]);
+  const pcs = all.filter((c) => c.kind === 'pc');
+  const byOwner = (id: string) => pcs.filter((c) => c.ownerId === id).sort((a, b) => a.createdAt - b.createdAt);
+  // NPCs ficam na aba deles.
+  const current = selected && table.characters[selected]?.kind === 'pc' ? table.characters[selected] : undefined;
 
   useEffect(() => {
-    if (!current && !creatingNpc) {
-      const first = all.find((c) => c.status === 'pending') ?? all.find((c) => c.kind === 'pc') ?? all[0];
+    if (!current) {
+      const first = pcs.find((c) => c.status === 'pending') ?? pcs[0];
       if (first && first.id !== selected) setSelected(first.id);
     }
-  }, [current, all, selected, creatingNpc]);
+  }, [current, pcs, selected]);
 
-  const open = (id: string) => { setCreatingNpc(false); setSelected(id); setSheetOpen(true); window.scrollTo({ top: 0 }); };
-  const back = () => { setCreatingNpc(false); setSheetOpen(false); window.scrollTo({ top: 0 }); };
+  const open = (id: string) => { setSelected(id); setSheetOpen(true); window.scrollTo({ top: 0 }); };
+  const back = () => { setSheetOpen(false); window.scrollTo({ top: 0 }); };
 
   return (
-    <div className={`split split-master${sheetOpen || creatingNpc ? ' split-detail-open' : ''}`}>
+    <div className={`split split-master${sheetOpen ? ' split-detail-open' : ''}`}>
       <div className="col split-list">
         {all.some((c) => c.status === 'approved') && (
           <div className="row">
@@ -191,73 +185,41 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
                 <strong>{p.name}</strong>
                 <span className="spacer" />
                 {!chars.length && <span className="tiny muted">sem ficha</span>}
+                <RemovePlayerButton player={p} chars={chars} />
               </div>
               <div className="col" style={{ gap: 6 }}>
-                {chars.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => open(c.id)} />)}
+                {chars.map((c) => <CharRow key={c.id} c={c} active={c.id === selected} onClick={() => open(c.id)} />)}
               </div>
             </div>
           );
         })}
-        <div className="card" style={{ padding: 12 }}>
-          <div className="row" style={{ marginBottom: npcs.length ? 8 : 0 }}>
-            <VenetianMask size={15} className="gold" />
-            <strong>NPCs</strong>
-            <span className="spacer" />
-            <button className="btn btn-sm" onClick={() => { setCreatingNpc(true); setSheetOpen(true); window.scrollTo({ top: 0 }); }}><Plus size={13} /> NPC</button>
-          </div>
-          <div className="col" style={{ gap: 6 }}>
-            {npcs.map((c) => <CharRow key={c.id} c={c} active={!creatingNpc && c.id === selected} onClick={() => open(c.id)} />)}
-          </div>
-        </div>
       </div>
       <div className="split-detail">
         <button className="btn btn-sm btn-ghost split-back" onClick={back}><ArrowLeft size={14} /> Todas as fichas</button>
-        {creatingNpc ? (
-          <>
-            <h2 className="mb">Novo NPC</h2>
-            <CharacterWizard
-              submitLabel="Criar NPC"
-              levelEditable
-              onCancel={back}
-              onSubmit={async (draft) => {
-                const before = new Set(Object.keys(table.characters));
-                const r = await act({ type: 'npc/create', draft }, 'NPC criado.');
-                if (r.ok) {
-                  const fresh = Object.values(hostStore.get().table?.characters ?? {}).find((c) => !before.has(c.id));
-                  setCreatingNpc(false);
-                  if (fresh) setSelected(fresh.id); else setSheetOpen(false);
-                }
-                return r.ok;
-              }}
-            />
-          </>
-        ) : current ? (
-          <CharacterSheet ch={current} ownerName={current.kind === 'npc' ? undefined : table.players[current.ownerId]?.name} />
-        ) : <div className="empty">Selecione uma ficha.</div>}
+        {current
+          ? <CharacterSheet ch={current} ownerName={table.players[current.ownerId]?.name} />
+          : <div className="empty">{players.length ? 'Nenhuma ficha enviada ainda.' : 'Selecione uma ficha.'}</div>}
       </div>
     </div>
   );
 }
 
-function CharRow({ c, active, onClick }: { c: Character; active: boolean; onClick: () => void }) {
-  const d = deriveStats(c);
+function RemovePlayerButton({ player, chars }: { player: PlayerRecord; chars: Character[] }) {
+  const { act } = useAct();
   return (
-    <button className={`card card-hover row${active ? ' card-selected' : ''}`} style={{ padding: '8px 10px', textAlign: 'left' }} onClick={onClick}>
-      <Avatar config={c.avatar} size={32} />
-      <div className="grow" style={{ minWidth: 0 }}>
-        <div className="row">
-          <strong className="grow">{c.name}</strong>
-          {c.kind === 'npc' && c.visible && <Eye size={13} className="muted" />}
-          <StatusBadge status={c.status} />
-        </div>
-        <div className="row tiny muted">
-          <span className="gold">{d.title}</span> · Nv {d.level}
-          <span className="spacer" />
-          <span style={{ color: 'var(--pv)' }}>{c.current.pv}/{d.pvMax}</span>
-          <span style={{ color: 'var(--pe)' }}>{c.current.pe}/{d.peMax}</span>
-          <span style={{ color: 'var(--clareza)' }} title="Clareza">{c.current.clareza}/{d.clarezaMax}</span>
-        </div>
-      </div>
-    </button>
+    <ConfirmButton className="btn btn-sm btn-ghost btn-icon" title={`Excluir ${player.name} da mesa`} modalTitle="Excluir jogador"
+      confirmLabel={`Excluir ${player.name}`}
+      message={(
+        <>
+          <p>Excluir <strong>{player.name}</strong> da mesa?</p>
+          {chars.length > 0 && (
+            <p className="mt">{chars.length > 1 ? 'As fichas' : 'A ficha'} de <strong>{chars.map((c) => c.name).join(', ')}</strong> {chars.length > 1 ? 'serão apagadas' : 'será apagada'}, junto com os pedidos e as permissões do jogador.</p>
+          )}
+          <p className="small muted mt">Se estiver conectado, o jogador sai da sala na hora; se não, fica sabendo quando voltar. Para jogar de novo, precisa entrar com o código da sala, como um jogador novo. Não dá para desfazer.</p>
+        </>
+      )}
+      onConfirm={() => act({ type: 'player/remove', playerId: player.id }, 'Jogador excluído da mesa.')}>
+      <UserX size={14} />
+    </ConfirmButton>
   );
 }

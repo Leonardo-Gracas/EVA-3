@@ -7,7 +7,7 @@ import type { Identity } from './identity';
 import { Store } from './emitter';
 import { PROTOCOL_VERSION, type HostMsg } from './protocol';
 
-export type GuestStatus = 'idle' | 'connecting' | 'online' | 'host-offline' | 'reconnecting' | 'denied' | 'error';
+export type GuestStatus = 'idle' | 'connecting' | 'online' | 'host-offline' | 'reconnecting' | 'denied' | 'removed' | 'error';
 
 export interface GuestSnapshot {
   code: string;
@@ -118,6 +118,11 @@ function connect() {
         stopped = true;
         guestStore.patch({ status: 'denied', message: msg.reason });
         break;
+      case 'removed':
+        stopped = true;
+        failPending('O mestre removeu você desta mesa.');
+        guestStore.patch({ status: 'removed', message: 'O mestre removeu você desta mesa.', playerId: null, view: null });
+        break;
       case 'view':
         guestStore.patch({ view: msg.view });
         break;
@@ -166,7 +171,7 @@ export function startGuest(code: string, id: Identity): void {
 function resume() {
   if (stopped || document.visibilityState === 'hidden' || conn?.open) return;
   const s = guestStore.get().status;
-  if (s === 'denied' || s === 'error') return;
+  if (s === 'denied' || s === 'removed' || s === 'error') return;
   signalRetries = 0;
   if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
   connect();

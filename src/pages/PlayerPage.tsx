@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Search, Swords, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Search, Swords, UserX, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
+import { setRoom } from '../net/identity';
 import { ActProvider, type ActApi, useAct } from '../components/act';
 import type { Character, CharacterDraft, PlayerView } from '../model/types';
 import { PERMISSION_LABELS } from '../model/permissions';
@@ -32,6 +33,14 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   // Combate encerrado com a aba aberta: volta para a ficha.
   useEffect(() => { if (!inCombat && tab === 'combate') setTab('ficha'); }, [inCombat, tab]);
 
+  // Excluído pelo mestre: esquece a sala e o link, para um F5 não entrar de novo sozinho.
+  const removed = snap.status === 'removed';
+  useEffect(() => {
+    if (!removed) return;
+    setRoom(null);
+    if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
+  }, [removed]);
+
   const api: ActApi = useMemo(() => ({ role: 'player', permissions: view?.permissions ?? null, library: view?.library ?? [], send: sendAction }), [view?.permissions, view?.library]);
 
   if (!view) {
@@ -39,8 +48,9 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
       <div className="page page-narrow">
         <div className="hero"><h1>EVA 3</h1><p>Sala {snap.code}</p></div>
         <div className="card center-box col gap-lg center">
-          <ConnStatus status={snap.status} message={snap.message} />
+          {removed ? <UserX size={28} className="muted" style={{ alignSelf: 'center' }} /> : <ConnStatus status={snap.status} message={snap.message} />}
           <p className="secondary">{snap.message}</p>
+          {removed && <p className="small muted">Suas fichas nesta mesa foram excluídas. Para voltar, entre de novo com o código da sala.</p>}
           <button className="btn" onClick={onLeave}>Voltar ao início</button>
         </div>
       </div>

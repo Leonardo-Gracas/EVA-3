@@ -65,6 +65,7 @@ function onlineIds(): Set<string> {
 }
 
 function commit(next: TableState) {
+  next = kickRemoved(next);
   hostStore.patch({ table: next, online: [...onlineIds()] });
   scheduleSave();
   scheduleBroadcast();
@@ -114,6 +115,30 @@ function scheduleBroadcast() {
   broadcastTimer = setTimeout(broadcastNow, 30);
 }
 
+function sendRemoved(conn: DataConnection) {
+  send(conn, { t: 'removed' });
+  setTimeout(() => conn.close(), 300);
+}
+
+function withoutMark(t: TableState, ids: string[]): TableState {
+  const marks = { ...t.removedPlayers };
+  for (const id of ids) delete marks[id];
+  return { ...t, removedPlayers: marks };
+}
+
+/** Desconecta quem o mestre excluiu. Avisado na hora, o jogador não precisa mais da marca de removido. */
+function kickRemoved(t: TableState): TableState {
+  const kicked: string[] = [];
+  for (const [conn, info] of conns) {
+    if (!info.playerId || t.players[info.playerId]) continue;
+    kicked.push(info.playerId);
+    info.playerId = null;
+    info.lastView = undefined;
+    sendRemoved(conn);
+  }
+  return kicked.some((id) => id in t.removedPlayers) ? withoutMark(t, kicked) : t;
+}
+
 // ── Ações do mestre ──────────────────────────────────────────────────────────
 
 export function gmDispatch(action: GameAction): DispatchResult {
@@ -158,6 +183,12 @@ async function handleHello(conn: DataConnection, info: ConnInfo, msg: Extract<Gu
   const hash = await sha256(secret);
   const t = table();
   const existing = t.players[clientId];
+  if (!existing && clientId in t.removedPlayers) {
+    // Excluído enquanto estava fora: fica sabendo agora. Se entrar de novo, volta como jogador novo.
+    commit(withoutMark(t, [clientId]));
+    sendRemoved(conn);
+    return;
+  }
   if (existing && existing.secretHash !== hash) {
     send(conn, { t: 'denied', reason: 'Esse jogador já está registrado nesta mesa com outro navegador.' });
     setTimeout(() => conn.close(), 300);

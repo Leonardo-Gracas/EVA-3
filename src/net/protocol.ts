@@ -1,6 +1,6 @@
 import type { GameAction, PlayerView } from '../model/types';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export type GuestMsg =
   | { t: 'hello'; v: number; clientId: string; secret: string; name: string }
@@ -10,6 +10,8 @@ export type GuestMsg =
 export type HostMsg =
   | { t: 'welcome'; playerId: string }
   | { t: 'denied'; reason: string }
+  /** O mestre excluiu este jogador da mesa: a visão some e a sala sai da sessão. */
+  | { t: 'removed' }
   | { t: 'view'; view: PlayerView }
   | { t: 'ack'; id: number; ok: boolean; error?: string; requested?: boolean; message?: string }
   | { t: 'pong' };

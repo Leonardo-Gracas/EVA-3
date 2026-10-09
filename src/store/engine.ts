@@ -55,6 +55,7 @@ const MAX_SPAWN = 20;
 const MAX_CASES = 30;
 const MAX_CLUES = 150;
 const MAX_LINKS = 400;
+const MAX_REMOVED_KEPT = 100;
 const { w: CLUE_W, h: CLUE_H } = CLUE_SIZE;
 
 // ── Criação ──────────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     updatedAt: now,
     startLevel: 1,
     players: {},
+    removedPlayers: {},
     characters: {},
     threats: {},
     itemLibrary: {},
@@ -466,7 +468,7 @@ const GM_ONLY = new Set<GameAction['type']>([
   'library/upsert', 'library/delete', 'library/give',
   'combat/create', 'combat/end', 'combat/add', 'combat/remove', 'combat/move', 'combat/start', 'combat/next', 'combat/prev',
   'combat/setTurn', 'combat/hidden', 'combat/conditionAdd', 'combat/conditionRemove', 'combat/groupDamage', 'combat/resource',
-  'permissions/global', 'permissions/player', 'request/resolve', 'table/rename', 'table/startLevel', 'log/clear',
+  'permissions/global', 'permissions/player', 'player/remove', 'request/resolve', 'table/rename', 'table/startLevel', 'log/clear',
   'rest',
   'case/upsert', 'case/delete', 'case/publish', 'case/unpublish', 'case/archive',
   'clue/upsert', 'clue/move', 'clue/hidden', 'clue/delete', 'clue/restore', 'clue/link', 'clue/unlink',
@@ -855,6 +857,25 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       if (a.value === null) delete p[a.key];
       else p[a.key] = a.value;
       s.permissions.perPlayer[a.playerId] = p;
+      return;
+    }
+
+    case 'player/remove': {
+      const p = s.players[a.playerId] ?? fail('Jogador não encontrado.');
+      const chars = Object.values(s.characters).filter((c) => c.ownerId === p.id);
+      for (const c of chars) {
+        delete s.characters[c.id];
+        dropCharacterFromCombat(s, ctx, c.id);
+      }
+      s.requests = s.requests.filter((r) => r.playerId !== p.id);
+      delete s.permissions.perPlayer[p.id];
+      delete s.players[p.id];
+      // O host avisa quem está conectado e apaga a marca; quem estava fora fica sabendo ao voltar.
+      s.removedPlayers[p.id] = now;
+      const marks = Object.entries(s.removedPlayers).sort((x, y) => x[1] - y[1]);
+      for (const [id] of marks.slice(0, Math.max(0, marks.length - MAX_REMOVED_KEPT))) delete s.removedPlayers[id];
+      const lost = chars.length ? ` e excluiu ${chars.length > 1 ? 'as fichas' : 'a ficha'} de ${joinNames(chars.map((c) => c.name))}` : '';
+      log(s, ctx, { kind: 'system', actorName: who, text: `removeu ${p.name} da mesa${lost}.` });
       return;
     }
 

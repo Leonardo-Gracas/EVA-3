@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Copy, Dices, Eye, EyeOff, Heart, Pencil, Plus, Search, Swords, Trash2, Zap } from 'lucide-react';
-import type { CombatThreat, TableState, Threat } from '../../model/types';
+import { useState } from 'react';
+import { Copy, Dices, Eye, EyeOff, Heart, Pencil, Swords, Trash2, Zap } from 'lucide-react';
+import type { CombatThreat, Threat } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { parseExpr } from '../../rules/dice';
 import { useAct } from '../act';
@@ -8,68 +8,27 @@ import { cancelRollFx, startRollFx } from '../RollFx';
 import ConfirmButton from '../common/ConfirmButton';
 import ResourceAdjustModal, { peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
 import ThreatEditor from './ThreatEditor';
-import { hostStore } from '../../net/host';
 
 function pct(v: number, max: number) {
   return `${Math.max(0, Math.min(100, (v / Math.max(1, max)) * 100))}%`;
 }
 
-export default function ThreatsPanel({ table }: { table: TableState }) {
-  const { act } = useAct();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [q, setQ] = useState('');
-  const threats = useMemo(() => Object.values(table.threats)
-    .filter((t) => !q || t.name.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => a.createdAt - b.createdAt), [table.threats, q]);
-  const current = selected ? table.threats[selected] : undefined;
-
-  useEffect(() => {
-    if (!current && threats[0]) setSelected(threats[0].id);
-  }, [current, threats]);
-
-  const selectNewest = () => {
-    const all = Object.values(hostStore.get().table?.threats ?? {});
-    const newest = all.sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (newest) setSelected(newest.id);
-  };
-
+/** Linha de ameaça nas listas do mestre. */
+export function ThreatRow({ t, active, onClick }: { t: Threat; active: boolean; onClick: () => void }) {
   return (
-    <div className="split">
-      <div className="col">
-        <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={14} /> Nova ameaça</button>
-        {Object.keys(table.threats).length > 6 && (
-          <div className="row"><Search size={14} className="muted" /><input className="input" placeholder="Buscar" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        )}
-        {threats.length === 0 && <div className="empty">Ameaças são fichas de combate com valores livres.</div>}
-        {threats.map((t) => (
-          <button key={t.id} className={`card card-hover${t.id === current?.id ? ' card-selected' : ''}`} style={{ padding: '8px 10px', textAlign: 'left' }} onClick={() => setSelected(t.id)}>
-            <div className="row">
-              <strong className="grow">{t.name}</strong>
-              {t.visible ? <Eye size={13} className="muted" /> : null}
-              {t.current.pv <= 0 && <span className="badge badge-err">Abatida</span>}
-            </div>
-            <div className="bar bar-pv" style={{ height: 6, marginTop: 6 }}><div style={{ width: pct(t.current.pv, t.pvMax) }} /></div>
-            <div className="row tiny muted" style={{ marginTop: 4 }}>
-              <span className="grow">{t.concept}</span>
-              <span style={{ color: 'var(--pv)' }}>{t.current.pv}/{t.pvMax}</span>
-              {t.peMax > 0 && <span style={{ color: 'var(--pe)' }}>{t.current.pe}/{t.peMax}</span>}
-            </div>
-          </button>
-        ))}
+    <button className={`card card-hover${active ? ' card-selected' : ''}`} style={{ padding: '8px 10px', textAlign: 'left' }} onClick={onClick}>
+      <div className="row">
+        <strong className="grow">{t.name}</strong>
+        {t.visible ? <Eye size={13} className="muted" /> : null}
+        {t.current.pv <= 0 && <span className="badge badge-err">Abatida</span>}
       </div>
-      <div>
-        {current ? <ThreatSheet t={current} onDuplicated={selectNewest} /> : <div className="empty">Crie uma ameaça para começar.</div>}
+      <div className="bar bar-pv" style={{ height: 6, marginTop: 6 }}><div style={{ width: pct(t.current.pv, t.pvMax) }} /></div>
+      <div className="row tiny muted" style={{ marginTop: 4 }}>
+        <span className="grow">{t.concept}</span>
+        <span style={{ color: 'var(--pv)' }}>{t.current.pv}/{t.pvMax}</span>
+        {t.peMax > 0 && <span style={{ color: 'var(--pe)' }}>{t.current.pe}/{t.peMax}</span>}
       </div>
-      {creating && (
-        <ThreatEditor title="Nova ameaça" onClose={() => setCreating(false)}
-          onSave={async (data) => {
-            const r = await act({ type: 'threat/upsert', data }, 'Ameaça criada.');
-            if (r.ok) selectNewest();
-            return r.ok;
-          }} />
-      )}
-    </div>
+    </button>
   );
 }
 
@@ -77,7 +36,7 @@ export default function ThreatsPanel({ table }: { table: TableState }) {
  * Ficha de ameaça. Com `combatantId`, mostra a instância de um combate: PV/PE
  * e rolagens vão para ela, e o molde do livro (editar, duplicar...) fica de fora.
  */
-export function ThreatSheet(props: { t: Threat; onDuplicated?: () => void } | { t: CombatThreat; combatantId: string; templateName?: string }) {
+export function ThreatSheet(props: { t: Threat; onDuplicated?: (id: string) => void } | { t: CombatThreat; combatantId: string; templateName?: string }) {
   const { t } = props;
   const combatantId = 'combatantId' in props ? props.combatantId : undefined;
   const book = combatantId ? undefined : (t as Threat);
@@ -126,7 +85,7 @@ export function ThreatSheet(props: { t: Threat; onDuplicated?: () => void } | { 
                 {book.visible ? <Eye size={14} /> : <EyeOff size={14} />} {book.visible ? 'Visível' : 'Oculta'}
               </button>
               <button className="btn btn-sm" onClick={() => setEditing(true)}><Pencil size={14} /> Editar</button>
-              <button className="btn btn-sm" onClick={async () => { const r = await act({ type: 'threat/duplicate', threatId: book.id }, 'Ameaça duplicada.'); if (r.ok && 'onDuplicated' in props) props.onDuplicated?.(); }}><Copy size={14} /> Duplicar</button>
+              <button className="btn btn-sm" onClick={async () => { const r = await act({ type: 'threat/duplicate', threatId: book.id }, 'Ameaça duplicada.'); if (r.ok && r.id && 'onDuplicated' in props) props.onDuplicated?.(r.id); }}><Copy size={14} /> Duplicar</button>
               <ConfirmButton title="Excluir ameaça" modalTitle="Excluir ameaça" confirmLabel={`Excluir ${t.name}`}
                 message={<><p>Excluir a ameaça <strong>{t.name}</strong>?</p><p className="small muted mt">Não dá para desfazer.</p></>}
                 onConfirm={() => act({ type: 'threat/delete', threatId: book.id }, 'Ameaça excluída.')}><Trash2 size={14} /></ConfirmButton>

@@ -132,6 +132,7 @@ export async function readBackup(file: File): Promise<TableState> {
 export function migrate(t: TableState): TableState {
   t.startLevel ??= 1;
   t.players ??= {};
+  t.removedPlayers ??= {};
   t.characters ??= {};
   t.threats ??= {};
   t.itemLibrary ??= {};
