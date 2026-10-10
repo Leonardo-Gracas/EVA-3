@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Ability } from '../../rules/abilities';
 import { CLASSES } from '../../rules/classes';
@@ -12,18 +12,22 @@ export function costText(a: Ability): string | null {
   return parts.join(' · ') || null;
 }
 
+/** `defaultOpen` também abre/fecha o card quando muda (ex.: habilidade que passou a poder ser escolhida). */
 export default function AbilityCard({
-  ability, action, disabledReason, selected, onSelect, defaultOpen = false, showClass,
+  ability, action, disabledReason, selected, onSelect, multi = false, defaultOpen = false, showClass,
 }: {
   ability: Ability;
   action?: ReactNode;
   disabledReason?: string;
   selected?: boolean;
   onSelect?: () => void;
+  /** Caixa de marcar em vez de opção única. */
+  multi?: boolean;
   defaultOpen?: boolean;
   showClass?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => setOpen(defaultOpen), [defaultOpen]);
   const cost = costText(ability);
   const cls = CLASSES[ability.classId];
   return (
@@ -31,7 +35,7 @@ export default function AbilityCard({
       <div className="row" style={{ paddingRight: 10 }}>
         <button className="ability-head grow" onClick={() => (onSelect && !disabledReason ? onSelect() : setOpen(!open))}>
           {onSelect ? (
-            <input type="radio" readOnly checked={!!selected} disabled={!!disabledReason} style={{ accentColor: 'var(--gold)' }} />
+            <input type={multi ? 'checkbox' : 'radio'} readOnly checked={!!selected} disabled={!!disabledReason} style={{ accentColor: 'var(--gold)' }} />
           ) : open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span className="ability-name">{ability.name}</span>
           {showClass && <span className="tiny" style={{ color: cls.color }}>{cls.name}</span>}

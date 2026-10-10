@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { emptyAttributes, pointsLeft, isValidAttributeSet } from './attributes';
 import { deriveStats, deathThreshold, titleOf } from './derive';
-import { abilityOptions, validateDraft, validateLevelPick, classesAvailable, sanitizeLevels, resizeLevels } from './validate';
+import {
+  abilityOptions, validateDraft, validateLevelPick, classesAvailable, sanitizeLevels, resizeLevels, checkOptions, pruneChecks, levelsFromChecks,
+} from './validate';
+import { abilitiesOf } from './abilities';
 import { parseExpr, rollExpr } from './dice';
 import type { LevelPick } from '../model/types';
 
@@ -139,6 +142,36 @@ describe('progressão', () => {
     expect(third[2].classId).toBe('vidente');
     expect(resizeLevels(emptyAttributes(), levels, 1)).toEqual([levels[0]]);
     expect(resizeLevels(emptyAttributes(), [levels[0]], 3)).toEqual([levels[0], { classId: 'acolito', abilityId: null }, { classId: 'acolito', abilityId: null }]);
+  });
+  it('marcando de uma vez: 3º nível pede 2 de nível menor, 6º pede 5', () => {
+    const attrs = emptyAttributes();
+    const opt = (ids: string[], id: string) => checkOptions(attrs, 'acolito', ids).find((o) => o.ability.id === id)!;
+    expect(opt(['devocao'], 'oracao').eligible).toBe(false);
+    expect(opt(['devocao', 'clareza'], 'oracao').eligible).toBe(true);
+    // Outra habilidade de 3º nível não conta para liberar a de 3º.
+    expect(opt(['devocao', 'clareza', 'oracao', 'bencao'], 'rogar').eligible).toBe(false);
+    expect(opt(['devocao', 'clareza', 'oracao', 'bencao', 'repreensao'], 'rogar').eligible).toBe(true);
+    // Desmarcar uma de base derruba as que dependiam dela.
+    expect(pruneChecks(attrs, ['clareza', 'oracao', 'devocao', 'rogar'])).toEqual(['clareza', 'oracao', 'devocao']);
+    expect(pruneChecks(attrs, ['clareza', 'oracao'])).toEqual(['clareza']);
+    expect(pruneChecks(attrs, ['violencia', 'atencao'])).toEqual(['atencao']);
+  });
+  it('níveis montados das marcadas seguem a progressão', () => {
+    const attrs = { ...emptyAttributes(), FE: 3, PRE: 2, INT: 2, DES: 1, CON: 1 };
+    const base = { name: 'Mizael', concept: '', notes: '', attributes: attrs };
+    const levels = levelsFromChecks(attrs, 'acolito', ['oracao', 'lampejos', 'clareza', 'devocao'], 4);
+    expect(levels.map((l) => l.abilityId)).toEqual(['clareza', 'devocao', 'oracao', 'lampejos']);
+    expect(validateDraft({ ...base, levels }, 4)).toBeNull();
+    // Faltando marcar: o nível vazio fica na classe inicial e é inválido.
+    const short = levelsFromChecks(attrs, 'acolito', ['devocao'], 2);
+    expect(short).toEqual([{ classId: 'acolito', abilityId: 'devocao' }, { classId: 'acolito', abilityId: null }]);
+    expect(validateDraft({ ...base, levels: short })).toMatch(/Nível 2: Escolha/);
+    // Sem nenhuma da classe inicial, o 1º nível continua nela.
+    expect(levelsFromChecks(attrs, 'acolito', ['lampejos'], 2)[0]).toEqual({ classId: 'acolito', abilityId: null });
+    // Classe esgotada: os níveis que sobram vêm sem habilidade e valem.
+    const all = levelsFromChecks(attrs, 'acolito', abilitiesOf('acolito').map((a) => a.id), 12);
+    expect(all.slice(10)).toEqual([{ classId: 'acolito', abilityId: null }, { classId: 'acolito', abilityId: null }]);
+    expect(validateDraft({ ...base, levels: all })).toBeNull();
   });
   it('rascunho válido', () => {
     expect(validateDraft({ name: 'Mizael', concept: '', notes: '', attributes: { ...emptyAttributes(), FE: 3, PRE: 2, INT: 2, DES: 1, CON: 1 }, levels: [{ classId: 'acolito', abilityId: 'devocao' }] })).toBeNull();

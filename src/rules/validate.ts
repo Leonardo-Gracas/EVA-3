@@ -103,6 +103,60 @@ export function resizeLevels(attrs: Attributes, levels: LevelPick[], level: numb
   return sanitizeLevels(attrs, [...levels, ...Array.from({ length: n - levels.length }, () => ({ classId: last, abilityId: null }))]);
 }
 
+// ── Criação marcando todas as habilidades de uma vez ─────────────────────────
+// Uma habilidade de Nº nível pede N−1 habilidades marcadas de nível menor na mesma
+// classe (3º nível: 2; 6º: 5; 9º: 8). É a mesma progressão de um nível por vez,
+// pegando as habilidades em ordem de nível exigido.
+
+const byTier = (a: Ability, b: Ability) => a.minClassLevel - b.minClassLevel;
+
+function checkReason(attrs: Attributes, ability: Ability, checked: Ability[]): string | null {
+  const req = ability.requires;
+  if (req?.attr && attrs[req.attr.key] < req.attr.min) return `Requer ${req.attr.key === 'FE' ? 'FÉ' : req.attr.key} ${req.attr.min}+`;
+  const need = ability.minClassLevel - 1;
+  const have = checked.filter((a) => a.classId === ability.classId && a.minClassLevel < ability.minClassLevel).length;
+  if (have < need) {
+    const n = need - have;
+    return `Requer ${need} de nível menor marcadas (falta${n > 1 ? 'm' : ''} ${n})`;
+  }
+  if (req?.ability && !checked.some((a) => a.id === req.ability)) return `Requer ${getAbility(req.ability)?.name ?? req.ability}`;
+  return null;
+}
+
+/** Tira as marcadas que não valem (atributo, habilidades de nível menor, requisito), em cascata. */
+export function pruneChecks(attrs: Attributes, ids: string[]): string[] {
+  const all = [...new Set(ids)].map(getAbility).filter((a): a is Ability => !!a).sort(byTier);
+  const kept: Ability[] = [];
+  for (const a of all) if (!checkReason(attrs, a, kept)) kept.push(a);
+  return ids.filter((id) => kept.some((a) => a.id === id));
+}
+
+/** Habilidades da classe com as marcadas e quais ainda podem ser marcadas. */
+export function checkOptions(attrs: Attributes, classId: ClassId, ids: string[]): AbilityOption[] {
+  const checked = ids.map(getAbility).filter((a): a is Ability => !!a);
+  return abilitiesOf(classId).map((ability) => {
+    if (ids.includes(ability.id)) return { ability, eligible: true };
+    const reason = checkReason(attrs, ability, checked);
+    return reason ? { ability, eligible: false, reason } : { ability, eligible: true };
+  });
+}
+
+/**
+ * Monta os níveis a partir das habilidades marcadas: primeiro os da classe inicial,
+ * depois os da segunda, cada classe em ordem de nível exigido. Os níveis que faltam
+ * entram na classe inicial sem habilidade (só valem quando não sobra nada para marcar).
+ */
+export function levelsFromChecks(attrs: Attributes, primary: ClassId, ids: string[], total: number): LevelPick[] {
+  const checked = pruneChecks(attrs, ids).map((id) => getAbility(id)!);
+  const second = checked.find((a) => a.classId !== primary)?.classId;
+  const of = (c: ClassId): LevelPick[] => checked.filter((a) => a.classId === c).sort(byTier).map((a) => ({ classId: c, abilityId: a.id }));
+  const first = of(primary);
+  const rest = second ? of(second) : [];
+  const n = Math.max(1, Math.min(MAX_LEVEL, total));
+  const fill = Array.from({ length: Math.max(0, n - first.length - rest.length) }, () => ({ classId: primary, abilityId: null }));
+  return [...first, ...fill, ...rest].slice(0, n);
+}
+
 /** Primeiro nível (índice) inválido do rascunho e o motivo, ou null se todos valem. */
 export function firstInvalidLevel(attrs: Attributes, levels: LevelPick[]): { index: number; error: string } | null {
   for (let i = 0; i < levels.length; i++) {

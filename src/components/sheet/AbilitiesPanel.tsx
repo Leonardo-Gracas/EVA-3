@@ -130,7 +130,7 @@ export function LevelUpModal({ ch, onClose }: { ch: Character; onClose: () => vo
           {eligible.length === 0 && <div className="empty small">Nenhuma habilidade disponível nesta classe agora. O nível sobe sem habilidade.</div>}
           <div className="col">
             {options.map((o) => (
-              <AbilityCard key={o.ability.id} ability={o.ability} disabledReason={o.eligible ? undefined : o.reason}
+              <AbilityCard key={o.ability.id} ability={o.ability} disabledReason={o.eligible ? undefined : o.reason} defaultOpen={o.eligible}
                 selected={abilityId === o.ability.id} onSelect={() => setAbilityId(o.ability.id)} />
             ))}
           </div>
