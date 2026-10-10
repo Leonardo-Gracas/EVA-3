@@ -1,4 +1,5 @@
-// Campanha de exemplo: mesa nova com biblioteca de itens e ameaças padrão.
+// Mesa padrão: mesa nova com biblioteca de itens e ameaças padrão
+// (opção "Começar com itens e ameaças padrão" no lobby).
 // Tudo entra pelo motor (library/upsert, threat/upsert), então passa pelas
 // mesmas validações de uma mesa jogada de verdade.
 import type { Actor, ItemData, ItemEffects, ItemSlot, ItemType, TableState, ThreatAbility, ThreatAttack, ThreatData } from '../model/types';
@@ -243,10 +244,8 @@ export const PLACEHOLDER_THREATS: ThreatData[] = [
 
 // ── Mesa ─────────────────────────────────────────────────────────────────────
 
-export const PLACEHOLDER_NAME = 'Campanha de exemplo';
-
-export function placeholderTable(gmName: string, roomCode: string, ctx: EngineCtx = defaultCtx): TableState {
-  let s = newTable(PLACEHOLDER_NAME, gmName, roomCode, ctx);
+export function placeholderTable(name: string, gmName: string, roomCode: string, ctx: EngineCtx = defaultCtx): TableState {
+  let s = newTable(name, gmName, roomCode, ctx);
   // O painel lista ameaças por criação: um relógio crescente mantém a ordem por força.
   let clock = s.createdAt;
   const seed: EngineCtx = { ...ctx, now: () => clock++ };

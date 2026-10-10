@@ -2,10 +2,12 @@
 
 Gerenciador de campanhas online para o sistema de RPG **EVA 3**. O navegador do mestre é o servidor da mesa: guarda tudo, aplica as regras e conversa com os jogadores por P2P (PeerJS). O site é estático e pode ser publicado no Netlify; nenhum dado de jogo passa pelo servidor.
 
+**Acesse o app:** https://eva-3.netlify.app/
+
 ## Como funciona
 
 1. Quem abre o site escolhe um nome de usuário (fica salvo no navegador).
-2. **Criar mesa**: vira mestre e recebe um código de 6 caracteres, um link `/sala/CODIGO` e um QR.
+2. **Criar mesa**: vira mestre e recebe um código de 6 caracteres, um link `/sala/CODIGO` e um QR. Marcando **Começar com itens e ameaças padrão**, a mesa já nasce com a biblioteca de itens e o painel de ameaças preenchidos (dá para editar ou apagar tudo depois).
 3. **Entrar com código**: vira jogador, monta a ficha no assistente e envia para o mestre aprovar.
 4. Durante o jogo, cada ação do jogador segue as permissões que o mestre definiu: **livre**, **solicitar** (vira pedido na aba Pedidos) ou **bloqueada**. Há permissão global e exceções por jogador.
 
@@ -24,6 +26,14 @@ Ficha, classes e habilidades são estáticas, em `src/rules/`:
 O mestre também cria **NPCs** e **ameaças**. NPC é uma ficha comum, com as mesmas regras, mas sem jogador: nasce aprovada e fica oculta até o mestre torná-la visível (os jogadores veem só nome e conceito). Ameaça é uma ficha de combate com valores livres (atributos de −10 a 30, PV, PE, DEF, VON, RD, ataques e habilidades escritas pelo mestre), com botões de dano (aplica RD), ataque, rolagem de atributo e duplicar.
 
 Itens são dados: o mestre mantém uma biblioteca e entrega aos personagens; jogadores podem adicionar/editar itens no próprio inventário conforme as permissões. Todo item tem valor e durabilidade (PV, RD e Defesa do objeto), que nasce com o padrão do tipo; qualquer item pode ser equipado e, enquanto equipado e inteiro, soma à ficha seus efeitos de DEF, RD física e RD mágica; com PV 0 fica quebrado e os efeitos param. Catalisadores podem ser sagrados, profanos ou etéreos. A ficha mostra RD física e RD mágica, e o mestre pode somar RD extra em Ajustes.
+
+Além disso, a mesa tem:
+
+- **Combate**: fila de turnos com personagens, NPCs e ameaças; o app passa os turnos, conta rodadas e condições, e os jogadores acompanham pelo celular.
+- **Investigação**: casos e um mural de pistas em tela cheia.
+- **Descanso**: o mestre escolhe quais personagens descansam.
+- **Avatares**: criador de avatar dos personagens, no estilo picrew.
+- **Exportar e importar fichas**: fichas saem e entram como `.json`, como personagem de jogador ou como NPC; o mestre também pode excluir jogadores da mesa.
 
 ## Desenvolvimento
 

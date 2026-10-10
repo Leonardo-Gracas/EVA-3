@@ -7,7 +7,7 @@ const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 
 
 describe('campanha de exemplo', () => {
   it('cria todos os itens e ameaças pelo motor, ameaças na ordem por força', () => {
-    const s = placeholderTable('Mestre', 'ABCDEF', ctx);
+    const s = placeholderTable('Mesa', 'Mestre','ABCDEF', ctx);
     expect(Object.keys(s.itemLibrary)).toHaveLength(PLACEHOLDER_ITEMS.length);
     const threats = Object.values(s.threats).sort((a, b) => a.createdAt - b.createdAt);
     expect(threats.map((t) => t.name)).toEqual(PLACEHOLDER_THREATS.map((t) => t.name));
