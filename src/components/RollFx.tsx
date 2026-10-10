@@ -2,9 +2,10 @@
 // (e por um tempo mínimo, para dar suspense), depois pousam e mostram o total.
 // Cada dado tem a sua forma (d4 pirâmide, d6 cubo… e um molde genérico para d3, d17 etc.).
 // Um 20 natural ganha raios, faíscas e a faixa de crítico; um 1, o tremor vermelho.
+// No d20 com modificador, o modificador bate no dado depois que ele pousa e a soma aparece embaixo.
 // O jogador também vê as rolagens abertas do mestre; das ocultas, só o 20 ou o 1.
 import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from 'react';
-import type { LogEntry } from '../model/types';
+import type { LogEntry, RollResult } from '../model/types';
 import { ATTRIBUTES, type AttrKey } from '../rules/attributes';
 import { naturalD20, parseExpr } from '../rules/dice';
 import { Store } from '../net/emitter';
@@ -30,6 +31,8 @@ const MIN_ROLL_MS = 1100;
 const GIVE_UP_MS = 8000;
 const HOLD_MS = 2400;
 const HOLD_CRIT_MS = 4200;
+/** Tempo a mais na tela quando o modificador ainda vai bater no d20. */
+const BUMP_MS = 900;
 /** Dados desenhados; o resto vira "+N". */
 const MAX_SHOWN = 12;
 
@@ -49,6 +52,9 @@ function close(id?: number) {
 }
 
 const testOf = (attr: AttrKey) => `Teste de ${ATTRIBUTES[attr].name}`;
+
+/** Rolagem de um d20 com modificador: depois de pousar, o modificador bate no dado e a soma aparece. */
+const bumps = (fx: Fx, r?: RollResult) => !fx.secret && naturalD20(r) !== null && !!r?.modifier;
 
 /**
  * Começa o giro de uma rolagem feita aqui. `who` é o nome da ficha/ameaça que rola
@@ -77,7 +83,7 @@ function land(fx: Fx, e: LogEntry) {
     store.set({ ...cur, phase: 'result' });
     const nat = naturalD20(e.roll);
     navigator.vibrate?.(nat === 20 ? [40, 60, 40, 60, 140] : nat === 1 ? [120] : 25);
-    schedule(() => close(fx.id), nat === 20 ? HOLD_CRIT_MS : HOLD_MS);
+    schedule(() => close(fx.id), (nat === 20 ? HOLD_CRIT_MS : HOLD_MS) + (bumps(fx, e.roll) ? BUMP_MS : 0));
   };
   store.set({ ...fx, entry: e });
   const wait = Math.max(0, fx.startedAt + MIN_ROLL_MS - Date.now());
@@ -209,10 +215,12 @@ export function RollFxOverlay() {
   const all = shown ? shown.dice.map((d) => ({ sides: d.sides, value: Math.abs(d.value) })) : fx.sides.map((s, i) => ({ sides: s, value: spin[i] ?? s }));
   const dice = all.slice(0, MAX_SHOWN);
   const many = dice.length > 1;
+  // Modificador que voa até o d20 depois que ele pousa.
+  const bump = shown && bumps(fx, shown) ? shown.modifier : 0;
 
   return (
     <div className={`fx-overlay fx-${tone}`} onClick={() => close(fx.id)} role="status" aria-live="assertive">
-      <div className="fx-stage" key={`${fx.id}-${tone}`}>
+      <div className={`fx-stage${bump ? ' fx-bump' : ''}`} key={`${fx.id}-${tone}`}>
         {tone === 'crit' && <div className="fx-rays" aria-hidden="true" />}
         {tone === 'crit' && <Sparks />}
         <div className="fx-dice" style={{ '--die': `${dieSize(dice.length)}px` } as CSSProperties}>
@@ -222,6 +230,12 @@ export function RollFxOverlay() {
                 ? { animationDelay: `${-((i * 137) % 520)}ms`, animationDirection: i % 2 ? 'reverse' : 'normal' }
                 : { animationDelay: `${i * 45}ms` }) : undefined}>
               <Die sides={d.sides} value={d.value} />
+              {bump !== 0 && (
+                <>
+                  <span className="fx-impact" aria-hidden="true" />
+                  <span className={`fx-mod${bump < 0 ? ' fx-mod-neg' : ''}`} aria-hidden="true">{bump > 0 ? '+' : '−'}{Math.abs(bump)}</span>
+                </>
+              )}
             </div>
           ))}
           {all.length > MAX_SHOWN && <div className="fx-more">+{all.length - MAX_SHOWN}</div>}

@@ -868,6 +868,27 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 .fx-break strong { color: var(--text-primary); }
 .fx-banner { font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 4px; }
 
+/* d20 com modificador: depois de pousar, o modificador voa, bate no dado e a soma cai embaixo. */
+.fx-bump { --mod-at: 540ms; --impact: calc(var(--mod-at) + 340ms); }
+.fx-crit .fx-bump { --mod-at: 780ms; }
+.fx-mod {
+  position: absolute; left: 50%; top: 50%; z-index: 3; translate: -50% -50%; pointer-events: none; white-space: nowrap;
+  padding: 2px 14px; border-radius: 999px; border: 2px solid var(--gold); background: var(--bg-elevated);
+  font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1.2; color: var(--gold-soft); font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 18px rgba(201, 162, 74, 0.55);
+  animation: fx-mod-fly 460ms var(--mod-at) cubic-bezier(.55, 0, .85, .45) both;
+}
+.fx-mod-neg { border-color: var(--error); color: #f2a3a8; box-shadow: 0 0 18px rgba(214, 69, 79, 0.5); }
+.fx-impact {
+  position: absolute; inset: 14%; border-radius: 50%; border: 3px solid var(--gold-soft); pointer-events: none;
+  animation: fx-ring 560ms var(--impact) ease-out both;
+}
+.fx-crit .fx-impact { border-color: #ffe3a0; }
+.fx-fumble .fx-impact { border-color: var(--error); }
+.fx-bump .fx-shape { animation: fx-impact 440ms var(--impact) cubic-bezier(.2, 1.4, .4, 1) both; }
+.fx-bump .fx-total { animation: fx-sum 520ms var(--impact) cubic-bezier(.2, 1.6, .4, 1) both; }
+.fx-bump .fx-break { animation: fx-rise 360ms var(--impact) ease both; }
+
 /* 20 natural: ouro, raios girando, faíscas e faixa de crítico. */
 .fx-crit { background: radial-gradient(circle at 50% 42%, rgba(201, 162, 74, 0.28), rgba(5, 4, 3, 0.9) 68%); }
 .fx-crit .fx-stage { animation: fx-shake 420ms 80ms ease both; }
@@ -934,6 +955,19 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 @keyframes fx-shimmer { to { background-position: -200% 0; } }
 @keyframes fx-rays-in { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: scale(1); } }
 @keyframes fx-spin { to { rotate: 360deg; } }
+@keyframes fx-mod-fly {
+  0% { opacity: 0; transform: translate(150px, -90px) scale(1.5) rotate(18deg); }
+  20% { opacity: 1; }
+  74% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); }
+  100% { opacity: 0; transform: translate(0, 0) scale(0.2); }
+}
+@keyframes fx-impact {
+  0%, 100% { transform: none; }
+  25% { transform: translate(-8px, 5px) scale(0.86) rotate(-7deg); }
+  60% { transform: scale(1.07) rotate(2deg); }
+}
+@keyframes fx-ring { 0% { opacity: 0; transform: scale(0.5); } 1% { opacity: 0.9; } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes fx-sum { 0% { opacity: 0; transform: translateY(-34px) scale(0.4); } 100% { opacity: 1; transform: none; } }
 @keyframes fx-spark {
   0% { opacity: 1; transform: rotate(var(--a)) translateY(0) scale(1); }
   70% { opacity: 1; }
@@ -942,7 +976,8 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 @media (prefers-reduced-motion: reduce) {
   .fx-rolling { animation: fx-pulse 900ms ease-in-out infinite; }
   .fx-landed, .fx-crit .fx-landed, .fx-fumble .fx-landed, .fx-crit .fx-stage, .fx-crit .fx-banner, .fx-rays { animation: none; }
-  .fx-sparks { display: none; }
+  .fx-sparks, .fx-mod, .fx-impact { display: none; }
+  .fx-bump .fx-shape, .fx-bump .fx-total, .fx-bump .fx-break { animation: none; }
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
