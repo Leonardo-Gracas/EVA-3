@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ArrowLeft, BookOpen, ClipboardList, Dices, Download, Inbox, LogOut, Moon, Package, Search, Shield, Skull, Swords, Upload, UserPlus, UserX, VenetianMask,
+  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Moon, Package, Search, Settings, Shield, Skull, Swords, Upload, UserPlus, UserX, Users, VenetianMask,
 } from 'lucide-react';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
@@ -11,7 +11,7 @@ import CombatPanel from '../components/combat/CombatPanel';
 import { ActProvider, type ActApi } from '../components/act';
 import type { Character, PlayerRecord, TableState } from '../model/types';
 import { downloadTable } from '../store/persistence';
-import { TopBar, Tabs, ConnStatus } from '../components/room/TopBar';
+import { TopBar, Tabs, SubTabs, ConnStatus } from '../components/room/TopBar';
 import Modal from '../components/common/Modal';
 import ConfirmButton from '../components/common/ConfirmButton';
 import { useImportCharacters } from '../components/common/CharacterFile';
@@ -26,7 +26,10 @@ import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
-type Tab = 'fichas' | 'combate' | 'npcs' | 'ameacas' | 'investigacao' | 'pedidos' | 'itens' | 'permissoes' | 'registro' | 'regras';
+/** Abas na ordem do preparo à mesa: quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
+type Tab = 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'npcs' | 'admin' | 'regras';
+type CastView = 'npcs' | 'ameacas';
+type AdminView = 'pedidos' | 'registro' | 'permissoes';
 
 const send: ActApi['send'] = async (a) => {
   const r = gmDispatch(a);
@@ -36,17 +39,22 @@ const send: ActApi['send'] = async (a) => {
 export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(hostStore.subscribe, hostStore.get);
   const table = snap.table;
-  const [tab, setTab] = useState<Tab>('fichas');
+  const [tab, setTab] = useState<Tab>('jogadores');
+  // Cada aba com sub-navegação lembra a última tela aberta.
+  const [castView, setCastView] = useState<CastView>('npcs');
+  const [adminView, setAdminView] = useState<AdminView>('pedidos');
   const [invite, setInvite] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  // No celular, a aba Fichas mostra a lista ou a ficha aberta, uma de cada vez.
+  // No celular, a aba Jogadores mostra a lista ou a ficha aberta, uma de cada vez.
   const [sheetOpen, setSheetOpen] = useState(false);
   const [npcOpen, setNpcOpen] = useState(false);
   const [threatOpen, setThreatOpen] = useState(false);
-  const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('fichas'); };
+  const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('jogadores'); };
+  const openRequests = () => { setAdminView('pedidos'); setTab('admin'); };
+  const logOpen = tab === 'admin' && adminView === 'registro';
 
   // Rolagens de todos (inclusive as ocultas) como aviso, exceto quando o registro já está aberto.
-  useRollToasts(table?.log ?? null,() => tab !== 'registro');
+  useRollToasts(table?.log ?? null, () => !logOpen);
 
   useEffect(() => {
     if (table && Object.keys(table.players).length === 0) setInvite(true);
@@ -60,6 +68,8 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   if (!table) return null;
   const pending = table.requests.filter((r) => r.status === 'pending').length;
   const pendingSheets = Object.values(table.characters).filter((c) => c.status === 'pending').length;
+  const npcCount = Object.values(table.characters).filter((c) => c.kind === 'npc').length;
+  const threatCount = Object.keys(table.threats).length;
 
   const saveError = snap.saveError
     ? <span className="small" style={{ color: 'var(--error)' }} title={snap.saveError}>Erro ao salvar</span>
@@ -73,7 +83,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <TopBar title={table.name}>
           {saveError}
           <ConnStatus status={snap.status} message={snap.message} />
-          <GmInbox table={table} onOpenSheet={openSheet} onOpenRequests={() => setTab('pedidos')} />
+          <GmInbox table={table} onOpenSheet={openSheet} onOpenRequests={openRequests} />
           <button className="code-pill desktop-only" onClick={() => setInvite(true)} title="Convidar jogadores">{table.roomCode}</button>
           {!saveError && savedAt && <span className="tiny muted desktop-only">Salvo {savedAt}</span>}
           <button className="btn btn-sm btn-ghost desktop-only" onClick={() => downloadTable(table)} title="Exportar backup (.json)"><Download size={14} />Backup</button>
@@ -82,18 +92,15 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <Tabs<Tab>
           value={tab}
           onChange={setTab}
-          onReselect={(t) => { if (t === 'fichas') setSheetOpen(false); if (t === 'npcs') setNpcOpen(false); if (t === 'ameacas') setThreatOpen(false); }}
+          onReselect={(t) => { if (t === 'jogadores') setSheetOpen(false); if (t === 'npcs') { setNpcOpen(false); setThreatOpen(false); } }}
           mobileBar
           tabs={[
-            { id: 'fichas', label: 'Fichas', icon: <ClipboardList size={14} />, count: pendingSheets },
-            { id: 'combate', label: table.combat?.round ? `Combate · rodada ${table.combat.round}` : 'Combate', short: 'Combate', icon: <Swords size={14} /> },
-            { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
-            { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
-            { id: 'npcs', label: 'NPCs', icon: <VenetianMask size={14} /> },
-            { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} /> },
-            { id: 'investigacao', label: 'Investigação', icon: <Search size={14} /> },
+            { id: 'jogadores', label: 'Jogadores', icon: <Users size={14} />, count: pendingSheets },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
-            { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
+            { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
+            { id: 'combate', label: table.combat?.round ? `Combate · rodada ${table.combat.round}` : 'Combate', short: 'Combate', icon: <Swords size={14} /> },
+            { id: 'npcs', label: 'NPCs e Ameaças', short: 'NPCs', icon: <VenetianMask size={14} /> },
+            { id: 'admin', label: 'Admin', icon: <Settings size={14} />, count: pending },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
           ]}
           more={(close) => (
@@ -124,15 +131,36 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         />
         <GmNotifications table={table} onOpenSheet={openSheet} />
         <main className="page">
-          {tab === 'fichas' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
-          {tab === 'combate' && <CombatPanel table={table} />}
-          {tab === 'npcs' && <NpcsPanel table={table} detailOpen={npcOpen} setDetailOpen={setNpcOpen} />}
-          {tab === 'ameacas' && <ThreatsPanel table={table} detailOpen={threatOpen} setDetailOpen={setThreatOpen} />}
-          {tab === 'investigacao' && <CasesPanel table={table} />}
-          {tab === 'pedidos' && <RequestsPanel table={table} />}
+          {tab === 'jogadores' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
-          {tab === 'permissoes' && <PermissionsPanel table={table} />}
-          {tab === 'registro' && <LogPanel log={table.log} characters={Object.values(table.characters)} threats={Object.values(table.threats)} />}
+          {tab === 'investigacao' && <CasesPanel table={table} />}
+          {tab === 'combate' && <CombatPanel table={table} />}
+          {tab === 'npcs' && (
+            <div className="section">
+              <SubTabs<CastView> label="NPCs e Ameaças" value={castView} onChange={setCastView}
+                onReselect={(v) => (v === 'npcs' ? setNpcOpen(false) : setThreatOpen(false))}
+                tabs={[
+                  { id: 'npcs', label: 'NPCs', icon: <VenetianMask size={14} />, total: npcCount },
+                  { id: 'ameacas', label: 'Ameaças', icon: <Skull size={14} />, total: threatCount },
+                ]} />
+              {castView === 'npcs'
+                ? <NpcsPanel table={table} detailOpen={npcOpen} setDetailOpen={setNpcOpen} />
+                : <ThreatsPanel table={table} detailOpen={threatOpen} setDetailOpen={setThreatOpen} />}
+            </div>
+          )}
+          {tab === 'admin' && (
+            <div className="section">
+              <SubTabs<AdminView> label="Admin" value={adminView} onChange={setAdminView}
+                tabs={[
+                  { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
+                  { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
+                  { id: 'permissoes', label: 'Permissões', icon: <Shield size={14} /> },
+                ]} />
+              {adminView === 'pedidos' && <RequestsPanel table={table} />}
+              {adminView === 'registro' && <LogPanel log={table.log} characters={Object.values(table.characters)} threats={Object.values(table.threats)} />}
+              {adminView === 'permissoes' && <PermissionsPanel table={table} />}
+            </div>
+          )}
           {tab === 'regras' && <Reference />}
         </main>
         <Modal open={invite} onClose={() => setInvite(false)} title="Convidar jogadores" width={600}>

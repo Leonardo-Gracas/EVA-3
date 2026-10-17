@@ -176,7 +176,7 @@ export async function readCharacterFile(file: File): Promise<CharacterExport[]> 
   }
   const d = (data ?? {}) as Partial<CharacterFile> & Partial<BackupFile> & Partial<CharacterExport>;
   if (d.app === 'eva3' && d.type === 'characters' && Array.isArray(d.characters) && d.characters.length) return d.characters;
-  if (d.app === 'eva3' && d.table) throw new Error('Esse arquivo é o backup de uma mesa inteira. Exporte as fichas pela ficha ou pela aba NPCs.');
+  if (d.app === 'eva3' && d.table) throw new Error('Esse arquivo é o backup de uma mesa inteira. Exporte as fichas pela ficha ou pela aba NPCs e Ameaças.');
   if (typeof d.name === 'string' && d.attributes && Array.isArray(d.levels)) return [d as CharacterExport];
   throw new Error('Esse arquivo não é uma ficha do EVA 3.');
 }

@@ -87,6 +87,36 @@ export function Tabs<T extends string>({ tabs, value, onChange, onReselect, mobi
   );
 }
 
+/** `count` pede atenção (vermelho, como nas abas); `total` só informa quantos há. */
+export interface SubTabDef<T extends string> extends TabDef<T> { total?: number }
+
+/**
+ * Navegação dentro de uma aba: um seletor segmentado logo acima do conteúdo, um nível
+ * abaixo das abas principais. No celular ocupa a largura toda e usa os rótulos curtos.
+ * Tocar na opção já aberta chama `onReselect`, como nas abas.
+ */
+export function SubTabs<T extends string>({ tabs, value, onChange, onReselect, label }: {
+  tabs: SubTabDef<T>[]; value: T; onChange: (t: T) => void; onReselect?: (t: T) => void; label: string;
+}) {
+  return (
+    <div className="subtabs" role="tablist" aria-label={label}>
+      {tabs.map((t) => {
+        const on = t.id === value;
+        return (
+          <button key={t.id} role="tab" aria-selected={on} className={`subtab${on ? ' on' : ''}`}
+            onClick={() => (on ? onReselect?.(t.id) : onChange(t.id))}
+            aria-label={t.count ? `${t.label} (${t.count})` : t.label}>
+            {t.icon}
+            <span className="subtab-label">{t.label}</span>
+            <span className="subtab-short">{t.short ?? t.label}</span>
+            {t.count ? <span className="count">{t.count}</span> : t.total != null ? <span className="subtab-total">{t.total}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ConnStatus({ status, message }: { status: string; message: string }) {
   const on = status === 'online';
   return (

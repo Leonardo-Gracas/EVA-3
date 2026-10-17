@@ -67,7 +67,7 @@ export default function PermissionsPanel({ table }: { table: TableState }) {
       <div className="card">
         <div className="card-title">Permissões da mesa</div>
         <p className="small secondary mb">
-          <strong>Livre</strong>: o jogador faz direto. <strong>Solicitar</strong>: vira pedido na aba Pedidos. <strong>Bloqueada</strong>: só o mestre faz.
+          <strong>Livre</strong>: o jogador faz direto. <strong>Solicitar</strong>: vira pedido em Admin › Pedidos. <strong>Bloqueada</strong>: só o mestre faz.
           Criar ficha sempre passa pela sua aprovação; atributos nunca mudam depois disso.
         </p>
         <div className="perm-scroll">

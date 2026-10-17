@@ -180,6 +180,35 @@ input, textarea, select { font-family: inherit; font-size: 14px; color: inherit;
 .split { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
 .split-back { display: none; }
 
+/* ── Sub-navegação (dentro de uma aba) ───────────────────── */
+/* Um nível abaixo das abas: trilho com a opção aberta em relevo. Distinto dos chips de filtro,
+   que acrescentam critérios; aqui se troca de tela. Vermelho continua significando "pede atenção". */
+.section { display: flex; flex-direction: column; gap: 16px; --subnav-space: 58px; }
+.subtabs {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px; max-width: 100%;
+  background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow-x: auto; scrollbar-width: none;
+}
+.subtabs::-webkit-scrollbar { display: none; }
+.subtab {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 6px 14px;
+  border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; color: var(--text-secondary); white-space: nowrap;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.subtab:hover { color: var(--text-primary); background: var(--bg-surface); }
+.subtab.on {
+  background: var(--bg-overlay); color: var(--gold-soft);
+  box-shadow: inset 0 0 0 1px var(--border-gold), 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.subtab.on svg { color: var(--gold); }
+.subtab:focus-visible { outline: 2px solid var(--gold-soft); outline-offset: 1px; }
+.subtab svg { flex-shrink: 0; }
+.subtab-short { display: none; }
+.subtab-total { font-size: 11px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.subtab.on .subtab-total { color: var(--gold); }
+.subtab .count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 6px; font-weight: 700; }
+
 /* ── Gaveta "Mais" (abas extras e sessão no celular) ─────── */
 .menu-list { display: flex; flex-direction: column; gap: 6px; }
 .menu-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -990,6 +1019,7 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .split-back { display: inline-flex; margin: -4px 0 10px -8px; min-height: 40px; font-size: 13px; }
   /* Dados no celular: o registro vem primeiro e o compositor fica preso ao rodapé, como num chat. */
   .dice-panel { display: flex; flex-direction: column; min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 100px); }
+  .section > .dice-panel { min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 100px - var(--subnav-space)); }
   .dice-log { order: 1; width: 100%; }
   .dice-log .log { max-height: none; overflow: visible; padding-right: 0; }
   .dice-composer {
@@ -1025,7 +1055,13 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .toasts { left: 12px; right: 12px; bottom: calc(var(--bottom-nav-h, 0px) + 12px); max-width: none; }
   /* 16px evita o zoom automático do iOS ao focar um campo. */
   .input, .select, .textarea { font-size: 16px; }
-  .page:has(> .dice-panel) { padding-bottom: 0; }
+  .page:has(> .dice-panel), .page:has(> .section > .dice-panel) { padding-bottom: 0; }
+  /* Sub-navegação no celular: largura toda, partes iguais e alvos de toque maiores. */
+  .section { gap: 12px; --subnav-space: 60px; }
+  .subtabs { display: flex; align-self: stretch; }
+  .subtab { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 8px 10px; }
+  .subtab-label { display: none; }
+  .subtab-short { display: block; overflow: hidden; text-overflow: ellipsis; }
   /* Filtros no celular: rótulo acima, chips numa faixa que rola de lado. */
   .filter-group { flex-direction: column; gap: 5px; }
   .filter-group > .filter-label { width: auto; }
@@ -1036,6 +1072,7 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
   .qty-presets { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
   .filter-sort { flex: 1 1 100%; }
   .dice-panel { min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 62px); }
+  .section > .dice-panel { min-height: calc(100dvh - var(--bottom-nav-h, 0px) - 62px - var(--subnav-space)); }
   .dice-composer { margin: auto -12px 0; width: auto; padding: 12px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; border-bottom: none; }
 }
 

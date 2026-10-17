@@ -38,7 +38,7 @@ const byName = (a: Threat, b: Threat) => a.name.localeCompare(b.name, 'pt-BR');
 /**
  * Livro de ameaças do mestre: moldes instanciáveis (cada combate cria cópias com PV/PE próprios),
  * então a grade mostra os números do molde para consulta rápida, sem barras.
- * Abrir um cartão mostra a ficha; tocar de novo na aba (ou "Todas as ameaças") volta à grade.
+ * Abrir um cartão mostra a ficha; tocar de novo na aba ou em "Ameaças" (ou "Todas as ameaças") volta à grade.
  */
 export default function ThreatsPanel({ table, detailOpen, setDetailOpen }: {
   table: TableState; detailOpen: boolean; setDetailOpen: (open: boolean) => void;
@@ -98,10 +98,8 @@ export default function ThreatsPanel({ table, detailOpen, setDetailOpen }: {
 
   return (
     <div className="col gap-lg">
+      {/* Nome e total ficam na sub-navegação da aba. */}
       <div className="row">
-        <Skull size={15} className="gold" />
-        <strong>Ameaças</strong>
-        <span className="tiny muted">{all.length}</span>
         <span className="spacer" />
         <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}><Plus size={13} /> Ameaça</button>
       </div>

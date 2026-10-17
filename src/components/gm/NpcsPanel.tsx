@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Upload, VenetianMask } from 'lucide-react';
+import { ArrowLeft, Plus, Upload } from 'lucide-react';
 import type { Character, TableState } from '../../model/types';
 import { CLASS_IDS, CLASSES, type ClassId } from '../../rules/classes';
 import { deriveStats, type Derived } from '../../rules/derive';
@@ -94,10 +94,8 @@ export default function NpcsPanel({ table, detailOpen, setDetailOpen }: {
   return (
     <div className={`split split-master${detailOpen || creating ? ' split-detail-open' : ''}`}>
       <div className="col split-list">
+        {/* Nome e total ficam na sub-navegação da aba. */}
         <div className="row">
-          <VenetianMask size={15} className="gold" />
-          <strong>NPCs</strong>
-          <span className="tiny muted">{all.length}</span>
           <span className="spacer" />
           <button className="btn btn-sm btn-ghost btn-icon" title="Importar NPCs de um arquivo (.json)" onClick={async () => {
             const r = await importChars('npc');
