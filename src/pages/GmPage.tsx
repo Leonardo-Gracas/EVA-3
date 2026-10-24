@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Moon, Package, Search, Settings, Shield, Skull, Swords, Upload, UserPlus, UserX, Users, VenetianMask,
+  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Moon, Package, ScrollText, Search, Settings, Shield, Skull, Swords, Upload, UserPlus, UserX, Users,
+  VenetianMask,
 } from 'lucide-react';
+import CampaignPanel from '../components/campaign/CampaignPanel';
 import { hostStore, gmDispatch, flush } from '../net/host';
 import { useAct } from '../components/act';
 import NpcsPanel from '../components/gm/NpcsPanel';
@@ -26,8 +28,8 @@ import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 
-/** Abas na ordem do preparo à mesa: quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
-type Tab = 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'npcs' | 'admin' | 'regras';
+/** Abas na ordem do preparo à mesa: o caderno da campanha, quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
+type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'npcs' | 'admin' | 'regras';
 type CastView = 'npcs' | 'ameacas';
 type AdminView = 'pedidos' | 'registro' | 'permissoes';
 
@@ -39,7 +41,7 @@ const send: ActApi['send'] = async (a) => {
 export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(hostStore.subscribe, hostStore.get);
   const table = snap.table;
-  const [tab, setTab] = useState<Tab>('jogadores');
+  const [tab, setTab] = useState<Tab>('campanha');
   // Cada aba com sub-navegação lembra a última tela aberta.
   const [castView, setCastView] = useState<CastView>('npcs');
   const [adminView, setAdminView] = useState<AdminView>('pedidos');
@@ -49,6 +51,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [npcOpen, setNpcOpen] = useState(false);
   const [threatOpen, setThreatOpen] = useState(false);
+  const [campOpen, setCampOpen] = useState(false);
   const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('jogadores'); };
   const openRequests = () => { setAdminView('pedidos'); setTab('admin'); };
   const logOpen = tab === 'admin' && adminView === 'registro';
@@ -92,9 +95,14 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <Tabs<Tab>
           value={tab}
           onChange={setTab}
-          onReselect={(t) => { if (t === 'jogadores') setSheetOpen(false); if (t === 'npcs') { setNpcOpen(false); setThreatOpen(false); } }}
+          onReselect={(t) => {
+            if (t === 'campanha') setCampOpen(false);
+            if (t === 'jogadores') setSheetOpen(false);
+            if (t === 'npcs') { setNpcOpen(false); setThreatOpen(false); }
+          }}
           mobileBar
           tabs={[
+            { id: 'campanha', label: 'Campanha', icon: <ScrollText size={14} /> },
             { id: 'jogadores', label: 'Jogadores', icon: <Users size={14} />, count: pendingSheets },
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
@@ -131,6 +139,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         />
         <GmNotifications table={table} onOpenSheet={openSheet} />
         <main className="page">
+          {tab === 'campanha' && <CampaignPanel table={table} detailOpen={campOpen} setDetailOpen={setCampOpen} />}
           {tab === 'jogadores' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
           {tab === 'investigacao' && <CasesPanel table={table} />}

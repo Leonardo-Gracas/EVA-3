@@ -5,6 +5,7 @@ import { DEFAULT_PERMISSIONS } from '../model/permissions';
 import { deriveStats } from '../rules/derive';
 import { equipBlock } from '../rules/equipment';
 import { snapshotOf } from '../model/cases';
+import { emptyCampaign, emptySessionData } from '../model/campaign';
 
 const DB_NAME = 'eva3';
 const STORE = 'tables';
@@ -223,9 +224,30 @@ export function migrate(t: TableState): TableState {
     const legacy = th as typeof th & { rd?: number };
     th.rdPhysical ??= legacy.rd ?? 0;
     th.rdMagic ??= 0;
+    th.category ??= 'humano';
     delete legacy.rd;
   }
+  for (const cb of t.combat?.order ?? []) if (cb.threat) cb.threat.category ??= 'humano';
+  migrateCampaign(t);
   return t;
+}
+
+/** Mesas de antes do caderno de campanha ganham um caderno vazio; campos novos ganham padrão. */
+function migrateCampaign(t: TableState) {
+  t.campaign ??= emptyCampaign();
+  const c = t.campaign;
+  c.title ??= '';
+  c.premise ??= '';
+  c.notes ??= '';
+  c.threads ??= [];
+  c.arcs ??= [];
+  c.sessions ??= {};
+  for (const s of Object.values(c.sessions)) {
+    const blank = emptySessionData(s.number);
+    s.plan = { ...blank.plan, ...s.plan };
+    s.report = { ...blank.report, ...s.report };
+    s.arcId ??= null;
+  }
 }
 
 /**

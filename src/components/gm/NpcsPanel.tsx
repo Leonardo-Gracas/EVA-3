@@ -109,6 +109,7 @@ export default function NpcsPanel({ table, detailOpen, setDetailOpen }: {
         </div>
         {all.length > 0 && (
           <FilterBar active={active} shown={npcs.length} total={all.length} onClear={clear} noun={['NPC', 'NPCs']}
+            filterCount={classes.length + states.length + vis.length}
             search={<SearchInput value={q} onChange={setQ} placeholder="Buscar por nome, conceito ou classe" />}
             sort={<SortSelect value={sort} onChange={setSort} options={SORTS} />}>
             {classCounts.length > 1 && (

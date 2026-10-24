@@ -1,8 +1,9 @@
 // Modais da tela de combate do mestre: adicionar à fila, dano em grupo,
 // condições e encerrar.
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowRight, Check, Minus, Plus, Search, Skull, Users, VenetianMask } from 'lucide-react';
-import type { Combat, CombatantRef, GroupDamageOp, TableState } from '../../model/types';
+import { THREAT_CATEGORIES, type Combat, type CombatantRef, type GroupDamageOp, type TableState } from '../../model/types';
+import { ThreatGlyph } from '../gm/ThreatIcon';
 import { characterInfo, combatantInfo, GROUP_OPS, groupDamageResult, rdFor, threatInfo } from '../../store/combat';
 import { hostStore } from '../../net/host';
 import { useAct } from '../act';
@@ -63,7 +64,7 @@ export function AddCombatantsModal({ table, combat, onClose }: { table: TableSta
     if (ok) onClose();
   };
 
-  const row = ({ id, name, sub, pv, qty }: { id: string; name: string; sub?: string; pv: string; qty?: boolean }) => {
+  const row = ({ id, name, sub, pv, qty, icon }: { id: string; name: string; sub?: string; pv: string; qty?: boolean; icon?: ReactNode }) => {
     const on = !!picked[id];
     const already = inCombat.has(id);
     const locked = already && !qty; // ficha já na fila
@@ -71,6 +72,7 @@ export function AddCombatantsModal({ table, combat, onClose }: { table: TableSta
       <div key={id} className={`pick-row${on ? ' on' : ''}${locked ? ' locked' : ''}`}>
         <button type="button" className="pick-main" disabled={locked} onClick={() => toggle(id)} aria-pressed={on}>
           <span className="pick-box">{(on || locked) && <Check size={13} />}</span>
+          {icon}
           <span className="grow">
             <strong>{name}</strong>
             {sub && <span className="tiny muted"> · {sub}</span>}
@@ -140,7 +142,10 @@ export function AddCombatantsModal({ table, combat, onClose }: { table: TableSta
           {threats.length === 0 && <div className="tiny muted">{q ? 'Nenhuma ameaça com esse nome.' : 'Nenhuma ameaça criada ainda.'}</div>}
           {threats.map((t) => {
             const i = threatInfo(t);
-            return row({ id: t.id, name: t.name, sub: t.concept, pv: `${i.pv}/${i.pvMax} PV`, qty: true });
+            return row({
+              id: t.id, name: t.name, sub: t.concept, pv: `${i.pv}/${i.pvMax} PV`, qty: true,
+              icon: <span className={`pick-cat threat-cat-${t.category}`} title={THREAT_CATEGORIES[t.category]?.label}><ThreatGlyph category={t.category} size={14} /></span>,
+            });
           })}
           <div className="tiny muted">O livro é só o molde: cada ameaça entra na fila como uma entidade própria, com PV e PE separados. Com mais de uma, elas são numeradas (Goblin 1, Goblin 2…).</div>
         </section>

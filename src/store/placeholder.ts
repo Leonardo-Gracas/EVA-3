@@ -146,7 +146,7 @@ function threat(
 ): ThreatData {
   const attributes = { FOR: 0, CON: 0, DES: 0, FE: 0, INT: 0, PRE: 0, ...attrs };
   return {
-    name, concept: `${tier} · ${concept}`, attributes,
+    name, concept: `${tier} · ${concept}`, category: 'humano', attributes,
     pvMax: stats.pv, peMax: stats.pe ?? 0, def: stats.def, von: stats.von ?? 10 + attributes.FE,
     rdPhysical: stats.rd ?? 0, rdMagic: stats.rdm ?? 0,
     attacks, abilities, notes,

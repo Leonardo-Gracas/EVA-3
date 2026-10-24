@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { ThreatAbility, ThreatAttack, ThreatData } from '../../model/types';
+import { THREAT_CATEGORIES, type ThreatAbility, type ThreatAttack, type ThreatCategory, type ThreatData } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES } from '../../rules/attributes';
 import { LIMITS } from '../../rules/validate';
 import Modal from '../common/Modal';
+import { ThreatGlyph } from './ThreatIcon';
 
 export const EMPTY_THREAT: ThreatData = {
   name: '',
   concept: '',
+  category: 'humano',
   attributes: { FOR: 0, CON: 0, DES: 0, FE: 0, INT: 0, PRE: 0 },
   pvMax: 10,
   peMax: 0,
@@ -85,6 +87,18 @@ export default function ThreatEditor({ title, initial, onSave, onClose }: {
           <div className="field">
             <label className="label">Descrição curta</label>
             <input className="input" value={d.concept} maxLength={LIMITS.concept} onChange={(e) => up({ concept: e.target.value })} placeholder="Ex.: Entidade menor, vagante" />
+          </div>
+        </div>
+
+        <div className="field">
+          <span className="label">Categoria</span>
+          <div className="cat-picker" role="radiogroup" aria-label="Categoria">
+            {(Object.keys(THREAT_CATEGORIES) as ThreatCategory[]).map((c) => (
+              <button key={c} type="button" role="radio" aria-checked={d.category === c}
+                className={`cat-opt threat-cat-${c}${d.category === c ? ' on' : ''}`} onClick={() => up({ category: c })}>
+                <ThreatGlyph category={c} size={16} />{THREAT_CATEGORIES[c].label}
+              </button>
+            ))}
           </div>
         </div>
 

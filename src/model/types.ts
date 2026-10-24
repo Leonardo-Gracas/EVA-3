@@ -200,9 +200,20 @@ export interface ThreatAbility {
   text: string;
 }
 
+/** Natureza da ameaça: define o ícone e serve de filtro no livro. */
+export type ThreatCategory = 'humano' | 'demoniaco' | 'etereo' | 'celestial';
+
+export const THREAT_CATEGORIES: Record<ThreatCategory, { label: string; plural: string }> = {
+  humano: { label: 'Humano', plural: 'Humanos' },
+  demoniaco: { label: 'Demoníaco', plural: 'Demoníacos' },
+  etereo: { label: 'Etéreo', plural: 'Etéreos' },
+  celestial: { label: 'Celestial', plural: 'Celestiais' },
+};
+
 export interface ThreatData {
   name: string;
   concept: string;
+  category: ThreatCategory;
   attributes: Attributes;
   pvMax: number;
   peMax: number;
@@ -333,6 +344,102 @@ export interface InvestigationCase {
   updatedAt: number;
 }
 
+// ── Campanha ─────────────────────────────────────────────────────────────────
+// Caderno do mestre: nunca vai para os jogadores.
+
+/** Item de lista com marcação: segredo revelado, preparo feito, fio resolvido. */
+export interface CampaignCheck {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export type ArcStatus = 'planejado' | 'andamento' | 'concluido';
+
+export const ARC_STATUS: Record<ArcStatus, string> = {
+  planejado: 'Planejado',
+  andamento: 'Em andamento',
+  concluido: 'Concluído',
+};
+
+/** Arco: um capítulo da campanha que agrupa sessões. */
+export interface CampaignArc {
+  id: string;
+  title: string;
+  summary: string;
+  status: ArcStatus;
+}
+
+export type SessionStatus = 'planejada' | 'jogada';
+
+/** NPC ou ameaça que deve aparecer na sessão. */
+export interface SessionCastRef {
+  kind: 'npc' | 'threat';
+  id: string;
+}
+
+/** Antes da sessão. */
+export interface SessionPlan {
+  /** Em uma frase: o que a sessão precisa entregar. */
+  goal: string;
+  /** Abertura forte: a primeira cena. */
+  opening: string;
+  /** Cenas possíveis, roteiro livre. */
+  outline: string;
+  /** Segredos e pistas que podem aparecer (done = revelado). */
+  secrets: CampaignCheck[];
+  cast: SessionCastRef[];
+  /** O que preparar antes de jogar (done = pronto). */
+  prep: CampaignCheck[];
+}
+
+/** Durante e depois da sessão. */
+export interface SessionReport {
+  /** Jogadores presentes; o nome fica guardado caso o jogador saia da mesa. */
+  attendees: Array<{ id: string; name: string }>;
+  /** Outros presentes (convidados, quem jogou sem conta...). */
+  guests: string;
+  /** Rascunho rápido durante o jogo. */
+  live: string;
+  /** O que aconteceu. */
+  recap: string;
+  /** Ganchos, consequências e o que fica para a próxima. */
+  hooks: string;
+}
+
+export interface CampaignSessionData {
+  number: number;
+  title: string;
+  /** AAAA-MM-DD, ou vazio sem data marcada. */
+  date: string;
+  arcId: string | null;
+  status: SessionStatus;
+  plan: SessionPlan;
+  report: SessionReport;
+}
+
+export interface CampaignSession extends CampaignSessionData {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CampaignInfo {
+  title: string;
+  /** Premissa: do que trata a campanha. */
+  premise: string;
+  /** Mundo, facções, regras da casa... */
+  notes: string;
+  /** Fios soltos da campanha inteira (done = resolvido). */
+  threads: CampaignCheck[];
+}
+
+export interface Campaign extends CampaignInfo {
+  /** Na ordem da campanha. */
+  arcs: CampaignArc[];
+  sessions: Record<string, CampaignSession>;
+}
+
 // ── Mesa ─────────────────────────────────────────────────────────────────────
 
 export interface PlayerRecord {
@@ -428,6 +535,7 @@ export interface TableState {
   threats: Record<string, Threat>;
   itemLibrary: Record<string, LibraryItem>;
   cases: Record<string, InvestigationCase>;
+  campaign: Campaign;
   permissions: PermissionState;
   requests: PendingRequest[];
   log: LogEntry[];
@@ -522,6 +630,15 @@ export type GameAction =
   | { type: 'clue/restore'; caseId: string; cards: ClueCard[]; links: ClueLink[] }
   | { type: 'clue/link'; caseId: string; from: string; to: string }
   | { type: 'clue/unlink'; caseId: string; linkId: string }
+  /** Campos ausentes não mudam. */
+  | { type: 'campaign/update'; data: Partial<CampaignInfo> }
+  | { type: 'campaign/arcUpsert'; arcId?: string; title: string; summary: string; status: ArcStatus }
+  /** As sessões do arco ficam sem arco. */
+  | { type: 'campaign/arcDelete'; arcId: string }
+  | { type: 'campaign/arcMove'; arcId: string; to: number }
+  /** Sem sessionId: cria (com `number` 0, vira a próxima da campanha). */
+  | { type: 'campaign/sessionUpsert'; sessionId?: string; data: CampaignSessionData }
+  | { type: 'campaign/sessionDelete'; sessionId: string }
   | { type: 'table/rename'; name: string }
   | { type: 'table/startLevel'; level: number }
   | { type: 'log/clear' };

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Gift, Pencil, Plus, Trash2 } from 'lucide-react';
-import { ITEM_TYPES, isStackable, type Character, type ItemData, type ItemType, type LibraryItem, type TableState } from '../../model/types';
+import { ChevronDown, Coins, Gift, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ITEM_SLOTS, ITEM_TYPES, isStackable, type Character, type ItemData, type ItemType, type LibraryItem, type TableState } from '../../model/types';
 import { useAct } from '../act';
 import Avatar from '../common/Avatar';
 import ConfirmButton from '../common/ConfirmButton';
 import QtyPicker, { defaultQty, parseQty } from '../common/QtyPicker';
-import { Chip, FilterBar, FilterGroup, SearchInput, SortSelect, matchesQuery, toggleIn } from '../common/Filters';
-import ItemCard, { TYPE_ICON } from '../common/ItemCard';
+import { Chip, FilterBar, FilterGroup, QuickFilter, SearchInput, SortSelect, matchesQuery, toggleIn } from '../common/Filters';
+import { ItemIcon, TYPE_ICON } from '../common/ItemCard';
 import Modal from '../common/Modal';
 import ItemFormModal from '../sheet/ItemForm';
 
@@ -39,6 +39,7 @@ export default function ItemLibrary({ table }: { table: TableState }) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<LibraryItem | null>(null);
   const [giving, setGiving] = useState<LibraryItem | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const all = useMemo(() => Object.values(table.itemLibrary), [table.itemLibrary]);
   // Só os tipos que existem na biblioteca viram filtro, na ordem do formulário.
@@ -64,30 +65,32 @@ export default function ItemLibrary({ table }: { table: TableState }) {
 
   const active = !!q.trim() || types.length > 0 || props.length > 0;
   const clear = () => { setQ(''); setTypes([]); setProps([]); };
+  const createBtn = (
+    <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)} title="Novo item" aria-label="Novo item">
+      <Plus size={14} /><span className="hide-xs">Novo item</span>
+    </button>
+  );
 
   return (
-    <div className="card">
-      <div className="row-wrap mb">
-        <div className="card-title" style={{ margin: 0 }}>Biblioteca de itens</div>
-        <div className="spacer" />
-        <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus size={14} /> Novo item</button>
+    <div className="col gap-lg">
+      <div className="page-head">
+        <h2>Biblioteca de itens</h2>
+        {all.length > 0 && <span className="page-head-count">{all.length}</span>}
+        <span className="spacer" />
+        {all.length === 0 && createBtn}
       </div>
       {all.length > 0 && (
         <FilterBar active={active} shown={items.length} total={all.length} onClear={clear} noun={['item', 'itens']}
-          search={<SearchInput value={q} onChange={setQ} placeholder="Buscar por nome, descrição ou dano" />}
-          sort={<SortSelect value={sort} onChange={setSort} options={SORTS} />}>
-          {typeCounts.length > 1 && (
-            <FilterGroup label="Tipo">
-              {typeCounts.map(({ type, count }) => {
+          filterCount={props.length} action={createBtn}
+          search={<SearchInput value={q} onChange={setQ} placeholder="Buscar item" />}
+          quick={typeCounts.length > 1 && (
+            <QuickFilter label="Tipo" value={types[0] ?? null} onChange={(t) => setTypes(t ? [t] : [])} total={all.length}
+              options={typeCounts.map(({ type, count }) => {
                 const Icon = TYPE_ICON[type];
-                return (
-                  <Chip key={type} on={types.includes(type)} count={count} onClick={() => setTypes((l) => toggleIn(l, type))}>
-                    <Icon size={13} />{ITEM_TYPES[type]}
-                  </Chip>
-                );
-              })}
-            </FilterGroup>
+                return { id: type, label: ITEM_TYPES[type], count, icon: <Icon size={13} /> };
+              })} />
           )}
+          sort={<SortSelect value={sort} onChange={setSort} options={SORTS} />}>
           <FilterGroup label="Mostrar">
             {PROPS.map((p) => (
               <Chip key={p.id} on={props.includes(p.id)} title={p.title} count={all.filter(p.test).length}
@@ -98,19 +101,15 @@ export default function ItemLibrary({ table }: { table: TableState }) {
       )}
       {all.length === 0 && <div className="empty">Crie itens aqui e entregue aos personagens.</div>}
       {all.length > 0 && items.length === 0 && <div className="empty">Nenhum item com esses filtros.</div>}
-      <div className="item-list">
-        {items.map((it) => (
-          <ItemCard key={it.id} it={it} actions={(
-            <>
-              <button className="btn btn-sm" onClick={() => setGiving(it)}><Gift size={13} /> Entregar</button>
-              <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setEditing(it)} title="Editar"><Pencil size={14} /></button>
-              <ConfirmButton className="btn btn-sm btn-ghost btn-icon" title="Excluir" modalTitle="Excluir item da biblioteca" confirmLabel={`Excluir ${it.name}`}
-                message={<><p>Excluir <strong>{it.name}</strong> da biblioteca?</p><p className="small muted mt">Cópias já entregues aos personagens continuam nos inventários. Não dá para desfazer.</p></>}
-                onConfirm={() => act({ type: 'library/delete', itemId: it.id })}><Trash2 size={14} /></ConfirmButton>
-            </>
-          )} />
-        ))}
-      </div>
+      {items.length > 0 && (
+        <div className="lib-list">
+          {items.map((it) => (
+            <LibraryRow key={it.id} it={it} open={openId === it.id} onToggle={() => setOpenId(openId === it.id ? null : it.id)}
+              onGive={() => setGiving(it)} onEdit={() => setEditing(it)}
+              onDelete={() => act({ type: 'library/delete', itemId: it.id })} />
+          ))}
+        </div>
+      )}
       {creating && (
         <ItemFormModal title="Novo item" withQty={false} onClose={() => setCreating(false)}
           onSubmit={async (item) => (await act({ type: 'library/upsert', item }, 'Item criado.')).ok} />
@@ -120,6 +119,81 @@ export default function ItemLibrary({ table }: { table: TableState }) {
           onSubmit={async (item) => (await act({ type: 'library/upsert', item, itemId: editing.id }, 'Item atualizado.')).ok} />
       )}
       {giving && <GiveModal table={table} item={giving} onClose={() => setGiving(null)} />}
+    </div>
+  );
+}
+
+const fmt = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+/** O número que mais importa de relance: o dano, ou o bônus para quem equipa. */
+function keyStat(it: ItemData): { text: string; tone: 'dmg' | 'buff' | 'mixed' } | null {
+  if (it.damage) return { text: it.damage, tone: 'dmg' };
+  const { def, rdPhysical, rdMagic } = it.effects;
+  const parts = [
+    def ? `DEF ${fmt(def)}` : '',
+    rdPhysical ? `RD ${fmt(rdPhysical)}` : '',
+    rdMagic ? `RDM ${fmt(rdMagic)}` : '',
+  ].filter(Boolean);
+  // Verde só quando tudo é bônus; com alguma penalidade, cor neutra.
+  return parts.length ? { text: parts.join(' · '), tone: def < 0 || rdPhysical < 0 || rdMagic < 0 ? 'mixed' : 'buff' } : null;
+}
+
+const signTone = (n: number) => (n < 0 ? 'dmg' : 'buff');
+
+/**
+ * Linha da biblioteca: ícone, nome, tipo e o número principal. Tocar abre os detalhes
+ * (descrição, bônus, durabilidade) e as ações de editar e excluir; "Entregar" fica sempre à mão.
+ */
+function LibraryRow({ it, open, onToggle, onGive, onEdit, onDelete }: {
+  it: LibraryItem; open: boolean; onToggle: () => void; onGive: () => void; onEdit: () => void; onDelete: () => void;
+}) {
+  const key = keyStat(it);
+  const stats = [
+    it.damage && { label: 'Dano', value: it.damage, tone: 'dmg' },
+    it.effects.def && { label: 'Defesa', value: fmt(it.effects.def), tone: signTone(it.effects.def) },
+    it.effects.rdPhysical && { label: 'RD física', value: fmt(it.effects.rdPhysical), tone: signTone(it.effects.rdPhysical) },
+    it.effects.rdMagic && { label: 'RD mágica', value: fmt(it.effects.rdMagic), tone: signTone(it.effects.rdMagic) },
+    it.pack > 1 && { label: 'Pacote', value: `${it.pack} un.` },
+    it.value > 0 && { label: it.pack > 1 ? 'Valor do pacote' : 'Valor', value: it.value.toLocaleString('pt-BR') },
+    { label: 'Durabilidade', value: `${it.durability.pv} PV · RD ${it.durability.rd} · DEF ${it.durability.def}` },
+  ].filter(Boolean) as Array<{ label: string; value: string; tone?: string }>;
+  return (
+    <div className={`lib-row${open ? ' open' : ''}`}>
+      <div className="lib-row-top">
+        <button className="lib-row-main" onClick={onToggle} aria-expanded={open}>
+          <ItemIcon type={it.type} size={16} />
+          <div className="grow">
+            <div className="lib-row-name">{it.name}{it.pack > 1 && <span className="item-qty">×{it.pack}</span>}</div>
+            <div className="item-sub">
+              <span>{ITEM_TYPES[it.type] ?? 'Outro'}</span>
+              {it.slot && <span>{ITEM_SLOTS[it.slot]}</span>}
+            </div>
+          </div>
+          {key && <span className={`lib-row-key item-${key.tone}`}>{key.text}</span>}
+          {it.value > 0 && <span className="lib-row-value"><Coins size={12} />{it.value.toLocaleString('pt-BR')}</span>}
+          <ChevronDown size={15} className="lib-row-chev" />
+        </button>
+        <button className="btn btn-sm btn-ghost lib-row-give" onClick={onGive} title={`Entregar ${it.name}`}>
+          <Gift size={14} /><span className="hide-xs">Entregar</span>
+        </button>
+      </div>
+      {open && (
+        <div className="lib-row-detail">
+          {it.description ? <p className="item-desc">{it.description}</p> : <p className="tiny muted">Sem descrição.</p>}
+          <dl className="lib-row-stats">
+            {stats.map((s) => (
+              <div key={s.label}><dt>{s.label}</dt><dd className={s.tone ? `item-${s.tone}` : undefined}>{s.value}</dd></div>
+            ))}
+          </dl>
+          <div className="row">
+            <span className="spacer" />
+            <ConfirmButton className="btn btn-sm btn-ghost" title="Excluir" modalTitle="Excluir item da biblioteca" confirmLabel={`Excluir ${it.name}`}
+              message={<><p>Excluir <strong>{it.name}</strong> da biblioteca?</p><p className="small muted mt">Cópias já entregues aos personagens continuam nos inventários. Não dá para desfazer.</p></>}
+              onConfirm={onDelete}><Trash2 size={14} /> Excluir</ConfirmButton>
+            <button className="btn btn-sm" onClick={onEdit}><Pencil size={14} /> Editar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

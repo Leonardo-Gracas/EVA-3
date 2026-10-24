@@ -19,6 +19,10 @@ export const LIMITS = {
   caseText: 1000,
   clueTitle: 80,
   clueText: 1000,
+  /** Caderno de campanha: títulos, frases curtas e textos longos. */
+  campaignTitle: 80,
+  campaignLine: 300,
+  campaignText: 10000,
 };
 
 export function isClassId(v: unknown): v is ClassId {

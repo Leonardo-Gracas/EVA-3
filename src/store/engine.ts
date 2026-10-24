@@ -3,12 +3,15 @@
 // dono da ficha, regra e permissão (livre / solicitar / bloqueada) e aplica.
 import type {
   Actor, Character, CharacterDraft, CharacterKind, ClueCard, ClueKind, Combat, Combatant, CombatThreat, GameAction, InventoryItem,
-  InvestigationCase, ItemData, ItemSlot, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatData,
+  InvestigationCase, ItemData, ItemSlot, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatCategory, ThreatData,
+  ArcStatus, CampaignArc, CampaignCheck, CampaignSession, CampaignSessionData, SessionCastRef, SessionReport,
 } from '../model/types';
 import { caseChanges, snapshotOf } from '../model/cases';
+import { emptyCampaign } from '../model/campaign';
 import { sanitizeAvatar } from '../model/avatar';
 import {
   BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, GM_OWNER, ITEM_SLOTS, ITEM_TYPES, isStackable,
+  THREAT_CATEGORIES, ARC_STATUS,
 } from '../model/types';
 import { equipBlock } from '../rules/equipment';
 import {
@@ -82,6 +85,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     threats: {},
     itemLibrary: {},
     cases: {},
+    campaign: emptyCampaign(),
     permissions: { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} },
     requests: [],
     log: [],
@@ -314,6 +318,7 @@ function cleanThreat(raw: unknown, ctx: EngineCtx): ThreatData {
   return {
     name: str(r.name, LIMITS.name, 'Nome', true),
     concept: str(r.concept ?? '', LIMITS.concept, 'Descrição'),
+    category: typeof r.category === 'string' && r.category in THREAT_CATEGORIES ? r.category as ThreatCategory : 'humano',
     attributes,
     pvMax: int(r.pvMax, 1, 9999, 'PV máximo'),
     peMax: int(r.peMax ?? 0, 0, 9999, 'PE máximo'),
@@ -336,6 +341,82 @@ function cleanThreat(raw: unknown, ctx: EngineCtx): ThreatData {
     })),
     notes: str(r.notes ?? '', LIMITS.notes, 'Anotações'),
   };
+}
+
+// ── Campanha ─────────────────────────────────────────────────────────────────
+
+const MAX_ARCS = 50;
+const MAX_SESSIONS = 400;
+const MAX_CHECKS = 80;
+
+function cleanChecks(raw: unknown, field: string, ctx: EngineCtx): CampaignCheck[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) return fail(`${field} inválido.`);
+  if (raw.length > MAX_CHECKS) fail(`Máximo de ${MAX_CHECKS} itens em ${field.toLowerCase()}.`);
+  const seen = new Set<string>();
+  return raw.map((x) => {
+    const r = record(x);
+    let id = typeof r.id === 'string' && /^[\w-]{1,40}$/.test(r.id) ? r.id : ctx.newId();
+    if (seen.has(id)) id = ctx.newId();
+    seen.add(id);
+    return { id, text: str(r.text ?? '', LIMITS.campaignLine, field), done: !!r.done };
+  });
+}
+
+function cleanSession(s: TableState, raw: unknown, ctx: EngineCtx): CampaignSessionData {
+  const r = record(raw);
+  const plan = record(r.plan);
+  const rep = record(r.report);
+  const date = typeof r.date === 'string' ? r.date : '';
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) fail('Data inválida.');
+  const arcId = typeof r.arcId === 'string' && s.campaign.arcs.some((a) => a.id === r.arcId) ? r.arcId : null;
+  const castRaw = Array.isArray(plan.cast) ? plan.cast.slice(0, MAX_CHECKS) : [];
+  const cast: SessionCastRef[] = [];
+  for (const x of castRaw) {
+    const c = record(x);
+    const ok = (c.kind === 'npc' && typeof c.id === 'string' && s.characters[c.id]?.kind === 'npc')
+      || (c.kind === 'threat' && typeof c.id === 'string' && !!s.threats[c.id]);
+    if (ok && !cast.some((y) => y.kind === c.kind && y.id === c.id)) cast.push({ kind: c.kind as SessionCastRef['kind'], id: c.id as string });
+  }
+  const attendees: SessionReport['attendees'] = [];
+  for (const x of Array.isArray(rep.attendees) ? rep.attendees.slice(0, 50) : []) {
+    const a = record(x);
+    if (typeof a.id !== 'string' || attendees.some((y) => y.id === a.id)) continue;
+    const name = s.players[a.id]?.name ?? (typeof a.name === 'string' ? a.name.trim().slice(0, LIMITS.userName) : '');
+    if (name) attendees.push({ id: a.id, name });
+  }
+  const text = (v: unknown, field: string) => str(v ?? '', LIMITS.campaignText, field);
+  return {
+    number: int(r.number ?? 0, 0, 9999, 'Número da sessão'),
+    title: str(r.title ?? '', LIMITS.campaignTitle, 'Título da sessão'),
+    date,
+    arcId,
+    status: r.status === 'jogada' ? 'jogada' : 'planejada',
+    plan: {
+      goal: str(plan.goal ?? '', LIMITS.campaignLine, 'Objetivo'),
+      opening: text(plan.opening, 'Abertura'),
+      outline: text(plan.outline, 'Roteiro'),
+      secrets: cleanChecks(plan.secrets, 'Segredos e pistas', ctx),
+      cast,
+      prep: cleanChecks(plan.prep, 'Preparativos', ctx),
+    },
+    report: {
+      attendees,
+      guests: str(rep.guests ?? '', LIMITS.campaignLine, 'Outros presentes'),
+      live: text(rep.live, 'Anotações da mesa'),
+      recap: text(rep.recap, 'Resumo'),
+      hooks: text(rep.hooks, 'Ganchos'),
+    },
+  };
+}
+
+function getArc(s: TableState, id: unknown): CampaignArc {
+  return s.campaign.arcs.find((a) => a.id === id) ?? fail('Arco não encontrado.');
+}
+
+function getSession(s: TableState, id: unknown): CampaignSession {
+  const x = typeof id === 'string' ? s.campaign.sessions[id] : undefined;
+  return x ?? fail('Sessão não encontrada.');
 }
 
 function log(s: TableState, ctx: EngineCtx, e: Omit<LogEntry, 'id' | 'at'>) {
@@ -561,6 +642,7 @@ const GM_ONLY = new Set<GameAction['type']>([
   'rest',
   'case/upsert', 'case/delete', 'case/publish', 'case/unpublish', 'case/archive',
   'clue/upsert', 'clue/move', 'clue/hidden', 'clue/delete', 'clue/restore', 'clue/link', 'clue/unlink',
+  'campaign/update', 'campaign/arcUpsert', 'campaign/arcDelete', 'campaign/arcMove', 'campaign/sessionUpsert', 'campaign/sessionDelete',
 ]);
 
 function authorize(s: TableState, actor: Actor, a: GameAction) {
@@ -1453,6 +1535,68 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       k.links = k.links.filter((l) => l.id !== a.linkId);
       if (k.links.length === before) fail('Ligação não encontrada.');
       k.updatedAt = now;
+      return;
+    }
+
+    case 'campaign/update': {
+      const d = record(a.data);
+      const c = s.campaign;
+      if (d.title !== undefined) c.title = str(d.title, LIMITS.campaignTitle, 'Nome da campanha');
+      if (d.premise !== undefined) c.premise = str(d.premise, LIMITS.campaignText, 'Premissa');
+      if (d.notes !== undefined) c.notes = str(d.notes, LIMITS.campaignText, 'Anotações');
+      if (d.threads !== undefined) c.threads = cleanChecks(d.threads, 'Fios soltos', ctx);
+      return;
+    }
+
+    case 'campaign/arcUpsert': {
+      const title = str(a.title, LIMITS.campaignTitle, 'Nome do arco', true);
+      const summary = str(a.summary ?? '', LIMITS.campaignText, 'Resumo do arco');
+      const status: ArcStatus = typeof a.status === 'string' && a.status in ARC_STATUS ? a.status : 'planejado';
+      if (a.arcId) {
+        Object.assign(getArc(s, a.arcId), { title, summary, status });
+        return a.arcId;
+      }
+      if (s.campaign.arcs.length >= MAX_ARCS) fail('Limite de arcos atingido.');
+      const arc: CampaignArc = { id: ctx.newId(), title, summary, status };
+      s.campaign.arcs.push(arc);
+      return arc.id;
+    }
+
+    case 'campaign/arcDelete': {
+      const arc = getArc(s, a.arcId);
+      s.campaign.arcs = s.campaign.arcs.filter((x) => x.id !== arc.id);
+      for (const x of Object.values(s.campaign.sessions)) if (x.arcId === arc.id) x.arcId = null;
+      return;
+    }
+
+    case 'campaign/arcMove': {
+      const arc = getArc(s, a.arcId);
+      const arcs = s.campaign.arcs.filter((x) => x.id !== arc.id);
+      arcs.splice(int(a.to, 0, arcs.length, 'Posição'), 0, arc);
+      s.campaign.arcs = arcs;
+      return;
+    }
+
+    case 'campaign/sessionUpsert': {
+      const data = cleanSession(s, a.data, ctx);
+      const all = Object.values(s.campaign.sessions);
+      if (a.sessionId) {
+        const x = getSession(s, a.sessionId);
+        Object.assign(x, data, { number: data.number || x.number, updatedAt: now });
+        return x.id;
+      }
+      if (all.length >= MAX_SESSIONS) fail('Limite de sessões atingido.');
+      const x: CampaignSession = {
+        ...data,
+        number: data.number || all.reduce((m, y) => Math.max(m, y.number), 0) + 1,
+        id: ctx.newId(), createdAt: now, updatedAt: now,
+      };
+      s.campaign.sessions[x.id] = x;
+      return x.id;
+    }
+
+    case 'campaign/sessionDelete': {
+      delete s.campaign.sessions[getSession(s, a.sessionId).id];
       return;
     }
 

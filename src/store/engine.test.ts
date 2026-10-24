@@ -3,6 +3,7 @@ import { dispatch, newTable, type EngineCtx } from './engine';
 import { buildPlayerView } from './views';
 import { migrate, toExport } from './persistence';
 import { caseChanges } from '../model/cases';
+import { emptyCampaign, emptySessionData } from '../model/campaign';
 import { deriveStats } from '../rules/derive';
 import type { Actor, CharacterDraft, ItemSlot, ItemType, TableState } from '../model/types';
 import { GM_OWNER } from '../model/types';
@@ -203,7 +204,7 @@ describe('motor', () => {
   it('Ameaça: valores livres, duplicar, rolar e PV', () => {
     const { s: s0 } = setup();
     const data = {
-      name: 'Possuído', concept: 'Corpo tomado', notes: '',
+      name: 'Possuído', concept: 'Corpo tomado', notes: '', category: 'demoniaco' as const,
       attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
       pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0,
       attacks: [{ id: 'a1', name: 'Garras', bonus: 6, damage: '2d6+8', notes: '' }],
@@ -213,6 +214,10 @@ describe('motor', () => {
     let s = dispatch(s0, gm, { type: 'threat/upsert', data }, ctx).state;
     const t = Object.values(s.threats)[0];
     expect(t.current).toEqual({ pv: 60, pe: 10 });
+    expect(t.category).toBe('demoniaco');
+    // Categoria desconhecida cai em "humano".
+    const odd = dispatch(s, gm, { type: 'threat/upsert', threatId: t.id, data: { ...data, category: 'x' as never } }, ctx).state;
+    expect(odd.threats[t.id].category).toBe('humano');
     s = dispatch(s, gm, { type: 'threat/duplicate', threatId: t.id }, ctx).state;
     expect(Object.values(s.threats).map((x) => x.name)).toContain('Possuído 2');
     s = dispatch(s, gm, { type: 'roll', expr: 'd20', threatId: t.id, attr: 'FOR' }, ctx).state;
@@ -227,7 +232,7 @@ describe('motor', () => {
   it('rolagem do mestre: aberta chega inteira; oculta, só o 20 ou 1 natural', () => {
     const { s: s0 } = setup();
     const data = {
-      name: 'Possuído', concept: '', notes: '',
+      name: 'Possuído', concept: '', notes: '', category: 'demoniaco' as const,
       attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
       pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0, attacks: [], abilities: [],
     };
@@ -701,5 +706,73 @@ describe('motor', () => {
       const many = Array.from({ length: 10 }, (_, i) => ({ ...file, name: `Cópia ${i}` }));
       expect(dispatch(s, p1, { type: 'character/import', characters: many, as: 'pc' }, ctx)).toMatchObject({ ok: false, error: /Limite/ });
     });
+  });
+});
+
+describe('caderno de campanha', () => {
+  const blank = emptySessionData();
+
+  it('só o mestre escreve e nada vai para os jogadores', () => {
+    const { s: s0 } = setup();
+    expect(dispatch(s0, p1, { type: 'campaign/update', data: { premise: 'x' } }, ctx).ok).toBe(false);
+    const s = dispatch(s0, gm, { type: 'campaign/update', data: { title: 'A Noite Longa', premise: 'Segredo' } }, ctx).state;
+    expect(s.campaign).toMatchObject({ title: 'A Noite Longa', premise: 'Segredo', notes: '' });
+    expect(JSON.stringify(buildPlayerView(s, 'p1', new Set()))).not.toContain('Segredo');
+  });
+
+  it('sessões numeradas em sequência, com plano e presença', () => {
+    const { s: s0 } = setup();
+    let r = dispatch(s0, gm, { type: 'campaign/sessionUpsert', data: blank }, ctx);
+    let s = r.state;
+    const first = (r as { id: string }).id;
+    r = dispatch(s, gm, { type: 'campaign/sessionUpsert', data: blank }, ctx);
+    s = r.state;
+    const second = (r as { id: string }).id;
+    expect([s.campaign.sessions[first].number, s.campaign.sessions[second].number]).toEqual([1, 2]);
+
+    const data = {
+      ...blank, date: '2026-10-24', status: 'jogada' as const,
+      plan: { ...blank.plan, goal: 'Achar o padre', secrets: [{ id: '', text: 'O padre mente', done: true }], cast: [{ kind: 'threat' as const, id: 'nao-existe' }] },
+      report: { ...blank.report, attendees: [{ id: 'p1', name: 'falso' }, { id: 'p1', name: 'dup' }], recap: 'Fugiram.' },
+    };
+    s = dispatch(s, gm, { type: 'campaign/sessionUpsert', sessionId: first, data }, ctx).state;
+    const x = s.campaign.sessions[first];
+    expect(x).toMatchObject({ number: 1, date: '2026-10-24', status: 'jogada' });
+    expect(x.plan.secrets[0]).toMatchObject({ text: 'O padre mente', done: true });
+    expect(x.plan.secrets[0].id).not.toBe('');
+    // Ameaça inexistente sai; presença usa o nome atual do jogador, sem repetir.
+    expect(x.plan.cast).toEqual([]);
+    expect(x.report.attendees).toEqual([{ id: 'p1', name: 'Ana' }]);
+    expect(dispatch(s, gm, { type: 'campaign/sessionUpsert', sessionId: first, data: { ...data, date: '24/10' } }, ctx).ok).toBe(false);
+
+    s = dispatch(s, gm, { type: 'campaign/sessionDelete', sessionId: first }, ctx).state;
+    expect(Object.keys(s.campaign.sessions)).toEqual([second]);
+  });
+
+  it('arcos: ordem, e apagar solta as sessões', () => {
+    const { s: s0 } = setup();
+    let s = s0;
+    const ids: string[] = [];
+    for (const title of ['Ato I', 'Ato II', 'Ato III']) {
+      const r = dispatch(s, gm, { type: 'campaign/arcUpsert', title, summary: '', status: 'planejado' }, ctx);
+      s = r.state;
+      ids.push((r as { id: string }).id);
+    }
+    s = dispatch(s, gm, { type: 'campaign/arcMove', arcId: ids[2], to: 0 }, ctx).state;
+    expect(s.campaign.arcs.map((a) => a.title)).toEqual(['Ato III', 'Ato I', 'Ato II']);
+    const r = dispatch(s, gm, { type: 'campaign/sessionUpsert', data: { ...blank, arcId: ids[0] } }, ctx);
+    s = r.state;
+    const sid = (r as { id: string }).id;
+    expect(s.campaign.sessions[sid].arcId).toBe(ids[0]);
+    s = dispatch(s, gm, { type: 'campaign/arcDelete', arcId: ids[0] }, ctx).state;
+    expect(s.campaign.arcs).toHaveLength(2);
+    expect(s.campaign.sessions[sid].arcId).toBeNull();
+  });
+
+  it('mesa antiga ganha caderno vazio', () => {
+    const { s } = setup();
+    const old = structuredClone(s) as Partial<TableState>;
+    delete old.campaign;
+    expect(migrate(old as TableState).campaign).toEqual(emptyCampaign());
   });
 });
