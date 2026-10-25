@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  ArrowDown, ArrowUp, Blend, ChevronDown, ChevronLeft, Info, ListMusic, ListPlus, ListVideo, Loader2, Music,
+  ArrowDown, ArrowUp, Blend, ChevronLeft, Info, ListMusic, ListPlus, ListVideo, Loader2, Music,
   Pause, Play, Plus, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
 } from 'lucide-react';
 import { SubTabs } from '../room/TopBar';
@@ -44,12 +44,16 @@ export default function MusicDock() {
       <div className="music-engine" aria-hidden><div ref={host} className="music-engine-host" /></div>
       {open ? (
         <section id="music-panel" className="music-panel" aria-label="Trilha sonora">
-          <header className="music-head">
-            <Music size={16} className="gold" />
-            <strong className="grow">Trilha sonora</strong>
+          {/* Clicar no cabeçalho (fora do botão de ajuda) recolhe o painel. */}
+          <header className="music-head" title="Recolher"
+            onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) toggle(); }}>
+            <div className="music-head-title" role="button" tabIndex={0} aria-expanded aria-controls="music-panel" aria-label="Recolher a trilha sonora"
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
+              <Music size={16} className="gold" />
+              <strong>Trilha sonora</strong>
+            </div>
             <button className={`music-btn music-btn-sm${help ? ' on' : ''}`} onClick={() => setHelp((h) => !h)}
               aria-expanded={help} aria-label="Ajuda" title="Ajuda"><Info size={16} /></button>
-            <button className="music-btn music-btn-sm" onClick={toggle} aria-label="Recolher a trilha sonora" title="Recolher"><ChevronDown size={16} /></button>
           </header>
           <div className="music-top">
             <Artwork />
