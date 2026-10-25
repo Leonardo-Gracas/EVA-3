@@ -11,7 +11,7 @@ export interface LocalPlaylist {
 }
 
 export type Repeat = 'all' | 'one' | 'off';
-export type MusicTab = 'fila' | 'sistema' | 'conta';
+export type MusicTab = 'fila' | 'sistema';
 
 export interface MusicPrefs {
   volume: number;
@@ -19,11 +19,15 @@ export interface MusicPrefs {
   repeat: Repeat;
   shuffle: boolean;
   tab: MusicTab;
+  /** Segundos de transição entre faixas (0 = corte seco). */
+  crossfade: number;
 }
+
+export const CROSSFADE_STEPS = [0, 3, 5, 8, 12];
 
 const LIB_KEY = 'eva3.music.playlists';
 const PREFS_KEY = 'eva3.music.prefs';
-const DEFAULT_PREFS: MusicPrefs = { volume: 60, muted: false, repeat: 'all', shuffle: false, tab: 'sistema' };
+const DEFAULT_PREFS: MusicPrefs = { volume: 60, muted: false, repeat: 'all', shuffle: false, tab: 'sistema', crossfade: 5 };
 
 function read<T>(key: string): T | null {
   try {
@@ -45,7 +49,14 @@ function validPlaylists(v: unknown): LocalPlaylist[] {
 }
 
 export const libraryStore = new Store<LocalPlaylist[]>(validPlaylists(read(LIB_KEY)));
-export const prefsStore = new Store<MusicPrefs>({ ...DEFAULT_PREFS, ...read<Partial<MusicPrefs>>(PREFS_KEY) });
+function validPrefs(v: Partial<MusicPrefs> | null): MusicPrefs {
+  const prefs = { ...DEFAULT_PREFS, ...v };
+  if (prefs.tab !== 'fila' && prefs.tab !== 'sistema') prefs.tab = DEFAULT_PREFS.tab;
+  if (!CROSSFADE_STEPS.includes(prefs.crossfade)) prefs.crossfade = DEFAULT_PREFS.crossfade;
+  return prefs;
+}
+
+export const prefsStore = new Store<MusicPrefs>(validPrefs(read<Partial<MusicPrefs>>(PREFS_KEY)));
 
 libraryStore.subscribe(() => write(LIB_KEY, libraryStore.get()));
 prefsStore.subscribe(() => write(PREFS_KEY, prefsStore.get()));

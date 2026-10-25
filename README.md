@@ -38,30 +38,29 @@ Além disso, a mesa tem:
 
 ## Trilha sonora
 
-Só o mestre ouve: o player é um iframe do YouTube na página do mestre e nada passa pela mesa nem pelo servidor de salas.
-Recolhido, mostra tocar/pausar, anterior, próxima e volume. Expandido, mostra o vídeo, a posição na faixa, aleatório,
-repetir (playlist, faixa ou nada), um campo para tocar qualquer link do YouTube e três abas:
+Só o mestre ouve: o player fica na página do mestre e nada passa pela mesa nem pelo servidor de salas.
+Recolhido, mostra tocar/pausar, anterior, próxima, recomeçar a faixa quando acabar e volume; clicar na barra fora dos botões
+abre o painel. Expandido, mostra o vídeo, a posição na faixa, aleatório, repetir (playlist, faixa ou nada), a duração da
+transição, um campo para tocar qualquer link do YouTube (vídeo ou playlist) e duas abas:
 
-- **Tocando**: a fila atual.
+- **Tocando**: a fila atual, com o nome de cada vídeo. Uma fila aberta por link pode ser salva como playlist do sistema.
 - **Do sistema**: playlists montadas no EVA colando links de vídeos. Ficam no `localStorage` do navegador do mestre
   (não entram no backup da mesa).
-- **Minha conta**: as playlists da conta do YouTube do mestre (login Google, só leitura). Dá para copiá-las para "Do sistema".
 
-Vídeos cujo dono proíbe tocar fora do YouTube (comum em clipes oficiais) são pulados com um aviso.
+**Transição (crossfade)**: são dois iframes do YouTube que se revezam. Uns segundos antes do fim, o próximo vídeo é
+carregado mudo e pausado no começo; na hora da transição ele entra subindo o volume enquanto o atual desce (curva de potência
+constante), inclusive quando a faixa repete nela mesma. A duração vai de desligada a 12 s (padrão 5 s); pular de faixa na mão
+usa no máximo 1,5 s. No iPhone/iPad o iOS não deixa o site mudar o volume nem tocar dois vídeos juntos, então lá a troca é seca.
 
-**Anúncios**: o player incorporado usa a sessão do youtube.com do navegador. Com YouTube Premium e logado no youtube.com
-neste navegador, não há anúncios. Conectar a conta na aba "Minha conta" serve para listar as playlists; não muda os anúncios.
-Navegadores que bloqueiam cookies de outros sites (Safari, Brave, Firefox estrito) podem mostrar anúncios mesmo com Premium.
+Títulos e nomes de playlist vêm do oEmbed do YouTube, sem conta nem chave de API. Vídeos cujo dono proíbe tocar fora do
+YouTube (comum em clipes oficiais) são pulados com um aviso.
 
-**Configurar o login da conta** (uma vez; sem isto o resto funciona, só a aba "Minha conta" fica desligada):
+**Anúncios**: o player incorporado usa a sessão do youtube.com do navegador. Com YouTube Premium e logado no youtube.com,
+não há anúncios. O botão **Abrir YouTube** abre o site para entrar na conta; ao voltar para o EVA, o player é recarregado para
+usar a sessão nova, continuando a faixa de onde estava. Navegadores que bloqueiam cookies de outros sites (Safari, Brave,
+Firefox estrito) podem mostrar anúncios mesmo com Premium.
 
-1. No [Google Cloud Console](https://console.cloud.google.com/), crie um projeto e ative a **YouTube Data API v3**.
-2. Em **Tela de consentimento OAuth**, escolha "Externo", mantenha em modo de teste e adicione seu e-mail como usuário de teste.
-3. Em **Credenciais → Criar credenciais → ID do cliente OAuth**, tipo "Aplicativo da Web", com as origens JavaScript
-   `https://eva-3.netlify.app` e `http://localhost:5173`.
-4. Copie o ID do cliente para `VITE_GOOGLE_CLIENT_ID` (no Netlify, em variáveis de ambiente; localmente, num `.env`) e publique de novo.
-
-A CSP do `netlify.toml` libera só o necessário: player e miniaturas do YouTube, login do Google e a API de playlists.
+A CSP do `netlify.toml` libera só o necessário: o player, as miniaturas e o oEmbed do YouTube.
 
 ## Desenvolvimento
 

@@ -1,27 +1,23 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Copy, Headphones, ListMusic, ListVideo, Loader2, LogOut, Music,
-  Pause, Play, Plus, RefreshCw, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
+  ArrowDown, ArrowUp, Blend, ChevronDown, ChevronLeft, ExternalLink, Headphones, ListMusic, ListPlus, ListVideo, Loader2, Music,
+  Pause, Play, Plus, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
 } from 'lucide-react';
 import { SubTabs } from '../room/TopBar';
 import ConfirmButton from '../common/ConfirmButton';
 import { toast } from '../common/toast';
 import {
-  attachPlayer, cycleRepeat, next, playAt, playerStore, playLink, playTracks, prev, seek, setVolume, toggleMute, togglePlay, toggleShuffle,
+  attachPlayer, cycleCrossfade, cycleRepeat, next, originalQueue, playAt, playerStore, playLink, playTracks, prev, reloadPlayer, seek, setVolume,
+  toggleMute, togglePlay, toggleRepeatOne, toggleShuffle,
 } from '../../music/player';
 import {
   addTracks, createPlaylist, deletePlaylist, libraryStore, moveTrack, prefsStore, removeTrack, renamePlaylist,
   type LocalPlaylist, type MusicTab, type Repeat as RepeatMode,
 } from '../../music/library';
-import {
-  accountConfigured, accountStore, connectAccount, disconnectAccount, ensureProfile, hasToken, listMyPlaylists, listPlaylistTracks,
-  type AccountPlaylist,
-} from '../../music/google';
 import { fetchVideoInfo, formatTime, parseVideoIds, parseYouTube, thumbUrl, type Track } from '../../music/youtube';
 
 const usePlayer = () => useSyncExternalStore(playerStore.subscribe, playerStore.get);
 const usePrefs = () => useSyncExternalStore(prefsStore.subscribe, prefsStore.get);
-const useAccount = () => useSyncExternalStore(accountStore.subscribe, accountStore.get);
 
 const faixas = (n: number) => `${n} ${n === 1 ? 'faixa' : 'faixas'}`;
 const playLocal = (p: LocalPlaylist, i = 0) => playTracks({ kind: 'local', id: p.id, name: p.name }, p.tracks, i);
@@ -54,6 +50,7 @@ export default function MusicDock() {
           <div className="music-video"><div ref={host} className="music-video-host" /></div>
           {s.loadError && <div className="music-alert">{s.loadError} Verifique a conexão e recarregue a página.</div>}
           <NowPlaying />
+          <YouTubeLogin />
           <LinkBox />
           <Library />
         </div>
@@ -65,16 +62,23 @@ export default function MusicDock() {
 
 // ── Barra recolhida ───────────────────────────────────────
 
+/** Clique na barra fora dos controles abre ou fecha o painel. */
 function MiniBar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const s = usePlayer();
+  const prefs = usePrefs();
   const has = Boolean(s.current || s.queue.length);
   const title = s.current?.title || (has ? 'Carregando…' : 'Trilha sonora');
   const sub = has ? (s.current?.channel || s.source?.name || '') : 'Nada tocando';
   const loading = s.buffering && !s.playing;
+  const loopOne = prefs.repeat === 'one';
 
   return (
-    <div className="music-bar">
-      <button className="music-bar-info" onClick={onToggle} aria-expanded={open} aria-controls="music-panel" title={open ? 'Recolher' : 'Abrir a trilha sonora'}>
+    <div className="music-bar" title={open ? 'Recolher' : 'Abrir a trilha sonora'}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, .music-vol')) onToggle(); }}>
+      {/* Para o teclado: a área do título faz o papel de botão de abrir. */}
+      <div className="music-bar-info" role="button" tabIndex={0} aria-expanded={open} aria-controls="music-panel"
+        aria-label={open ? 'Recolher a trilha sonora' : 'Abrir a trilha sonora'}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}>
         <span className="music-cover">
           {s.current ? <img src={thumbUrl(s.current.id)} alt="" /> : <Music size={16} />}
           {s.playing && <span className="music-eq" aria-hidden><i /><i /><i /></span>}
@@ -83,17 +87,18 @@ function MiniBar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <span className="music-title">{title}</span>
           {sub && <span className="music-sub">{sub}</span>}
         </span>
-      </button>
+      </div>
       <button className="music-btn" onClick={prev} disabled={!has} aria-label="Faixa anterior" title="Anterior"><SkipBack size={16} /></button>
       <button className="music-btn music-play" onClick={() => (has ? togglePlay() : !open && onToggle())}
         aria-label={s.playing ? 'Pausar' : 'Tocar'} title={has ? (s.playing ? 'Pausar' : 'Tocar') : 'Escolher o que tocar'}>
         {loading ? <Loader2 size={18} className="music-spin" /> : s.playing ? <Pause size={18} /> : <Play size={18} />}
       </button>
       <button className="music-btn" onClick={next} disabled={!has} aria-label="Próxima faixa" title="Próxima"><SkipForward size={16} /></button>
-      <VolumeControl />
-      <button className="music-btn music-expand" onClick={onToggle} aria-label={open ? 'Recolher' : 'Expandir'} title={open ? 'Recolher' : 'Playlists'}>
-        {open ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      <button className={`music-btn${loopOne ? ' on' : ''}`} onClick={toggleRepeatOne} aria-pressed={loopOne}
+        aria-label="Recomeçar a faixa quando acabar" title={loopOne ? 'Recomeçando a faixa quando acabar (clique para desligar)' : 'Recomeçar a faixa quando acabar'}>
+        <Repeat1 size={16} />
       </button>
+      <VolumeControl />
     </div>
   );
 }
@@ -163,7 +168,41 @@ function NowPlaying() {
         <button className={`music-mode${prefs.repeat !== 'off' ? ' on' : ''}`} onClick={cycleRepeat} title="Trocar o modo de repetição">
           {prefs.repeat === 'one' ? <Repeat1 size={14} /> : <Repeat size={14} />} {REPEAT_LABEL[prefs.repeat]}
         </button>
+        <button className={`music-mode${prefs.crossfade ? ' on' : ''}`} onClick={cycleCrossfade}
+          title="Uma faixa entra enquanto a outra sai, inclusive ao repetir a mesma. Clique para trocar a duração.">
+          <Blend size={14} /> {prefs.crossfade ? `Transição ${prefs.crossfade}s` : 'Sem transição'}
+        </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * O player usa a sessão do youtube.com deste navegador (Premium = sem anúncios). O site não consegue
+ * saber se essa sessão existe, então o botão fica sempre à mão. Ao voltar para o EVA, o player é
+ * recriado para pegar o login novo, continuando a faixa de onde estava.
+ */
+let awaitingReturn = false;
+
+function YouTubeLogin() {
+  const open = () => {
+    window.open('https://www.youtube.com/', '_blank', 'noopener,noreferrer');
+    if (awaitingReturn) return;
+    awaitingReturn = true;
+    const back = () => {
+      window.removeEventListener('focus', back);
+      awaitingReturn = false;
+      reloadPlayer();
+      toast('Player recarregado com a sua sessão do YouTube.', 'ok');
+    };
+    // Espera a aba nova roubar o foco antes de escutar a volta.
+    setTimeout(() => window.addEventListener('focus', back), 600);
+  };
+  return (
+    <div className="music-login">
+      <Youtube size={14} />
+      <span className="grow">Com YouTube Premium, entre na sua conta no YouTube neste navegador para tocar sem anúncios.</span>
+      <button className="btn btn-sm" onClick={open} title="Abre o YouTube numa aba nova"><ExternalLink size={13} /> Abrir YouTube</button>
     </div>
   );
 }
@@ -191,21 +230,18 @@ function Library() {
   const s = usePlayer();
   const lists = useSyncExternalStore(libraryStore.subscribe, libraryStore.get);
   const [localId, setLocalId] = useState<string | null>(null);
-  const [accountList, setAccountList] = useState<AccountPlaylist | null>(null);
 
   return (
     <div className="music-lib">
       <SubTabs<MusicTab> label="Músicas" value={prefs.tab} onChange={(tab) => prefsStore.patch({ tab })}
-        onReselect={(t) => (t === 'sistema' ? setLocalId(null) : t === 'conta' ? setAccountList(null) : undefined)}
+        onReselect={(t) => { if (t === 'sistema') setLocalId(null); }}
         tabs={[
           { id: 'fila', label: 'Tocando', icon: <ListVideo size={14} />, total: s.queue.length || undefined },
-          { id: 'sistema', label: 'Do sistema', short: 'Sistema', icon: <ListMusic size={14} />, total: lists.length },
-          { id: 'conta', label: 'Minha conta', short: 'Conta', icon: <Youtube size={14} /> },
+          { id: 'sistema', label: 'Do sistema', icon: <ListMusic size={14} />, total: lists.length },
         ]} />
       <div className="music-pane">
-        {prefs.tab === 'fila' && <QueueTab />}
+        {prefs.tab === 'fila' && <QueueTab onSaved={(id) => { setLocalId(id); prefsStore.patch({ tab: 'sistema' }); }} />}
         {prefs.tab === 'sistema' && <SystemTab lists={lists} openId={localId} setOpenId={setLocalId} />}
-        {prefs.tab === 'conta' && <AccountTab open={accountList} setOpen={setAccountList} />}
       </div>
     </div>
   );
@@ -222,7 +258,7 @@ function TrackRow({ t, active, failed, onPlay, actions }: {
           {active && <span className="music-thumb-now"><span className="music-eq" aria-hidden><i /><i /><i /></span></span>}
         </span>
         <span className="music-text">
-          <span className="music-title">{t.title || 'Vídeo do YouTube'}</span>
+          <span className="music-title">{t.title || (failed ? 'Vídeo indisponível' : 'Vídeo do YouTube')}</span>
           {(failed || t.channel) && <span className="music-sub">{failed ? 'Não toca fora do YouTube' : t.channel}</span>}
         </span>
       </button>
@@ -231,8 +267,15 @@ function TrackRow({ t, active, failed, onPlay, actions }: {
   );
 }
 
-function QueueTab() {
+function QueueTab({ onSaved }: { onSaved: (playlistId: string) => void }) {
   const s = usePlayer();
+  // Uma fila que veio de link (vídeo ou playlist do YouTube) pode virar playlist do sistema.
+  const save = () => {
+    const tracks = originalQueue();
+    const id = createPlaylist(s.source?.name ?? 'Playlist do YouTube', tracks);
+    toast(`Playlist salva em “Do sistema” com ${faixas(tracks.length)}.`, 'ok');
+    onSaved(id);
+  };
   if (!s.queue.length) {
     return (
       <div className="music-empty">
@@ -242,10 +285,18 @@ function QueueTab() {
   }
   return (
     <>
-      {s.source && <div className="music-pane-head"><span className="tiny muted">Tocando de</span> <strong className="small">{s.source.name}</strong></div>}
+      {s.source && (
+        <div className="music-pane-head">
+          <span className="tiny muted">Tocando de</span>
+          <strong className="small grow music-ellipsis">{s.source.name}</strong>
+          {s.source.kind === 'link' && (
+            <button className="btn btn-ghost btn-sm" onClick={save} title="Salvar esta fila como playlist do sistema"><ListPlus size={14} /> Salvar</button>
+          )}
+        </div>
+      )}
       <div className="music-rows">
         {s.queue.map((t, i) => (
-          <TrackRow key={`${t.id}-${i}`} t={t} active={t.id === s.current?.id} failed={s.failed.includes(t.id)} onPlay={() => playAt(i)} />
+          <TrackRow key={`${t.id}-${i}`} t={t} active={i === s.index} failed={s.failed.includes(t.id)} onPlay={() => playAt(i)} />
         ))}
       </div>
     </>
@@ -350,35 +401,30 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
 }
 
 function AddTracks({ list }: { list: LocalPlaylist }) {
-  const account = useAccount();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const ids = parseVideoIds(text);
-    const playlistId = ids.length ? undefined : parseYouTube(text)?.playlistId;
-    if (!ids.length && !playlistId) { toast('Nenhum link de vídeo do YouTube encontrado.', 'error'); return; }
-    if (playlistId && account.status !== 'on') {
-      toast('Para trazer uma playlist inteira, conecte a conta na aba “Minha conta”. Para só tocá-la, use o campo de link lá em cima.', 'info');
+    if (!ids.length) {
+      toast(parseYouTube(text)?.playlistId
+        ? 'Para trazer uma playlist inteira, toque o link dela pelo campo lá em cima e use “Salvar” na aba Tocando.'
+        : 'Nenhum link de vídeo do YouTube encontrado.', parseYouTube(text) ? 'info' : 'error');
       return;
     }
     setBusy(true);
     try {
-      let tracks: Track[] = [];
+      const tracks: Track[] = [];
       let blocked = 0;
-      if (playlistId) {
-        tracks = await listPlaylistTracks(playlistId);
-      } else {
-        // O título vem do YouTube; vídeos que o dono não deixa tocar fora do site ficam de fora.
-        const infos = await Promise.all(ids.map(fetchVideoInfo));
-        ids.forEach((id, i) => {
-          const r = infos[i];
-          if (r.ok) tracks.push({ id, title: r.title, channel: r.channel });
-          else if (r.blocked) blocked++;
-          else tracks.push({ id, title: '' });
-        });
-      }
+      // O título vem do YouTube; vídeos que o dono não deixa tocar fora do site ficam de fora.
+      const infos = await Promise.all(ids.map(fetchVideoInfo));
+      ids.forEach((id, i) => {
+        const r = infos[i];
+        if (r.ok) tracks.push({ id, title: r.title, channel: r.channel });
+        else if (r.blocked) blocked++;
+        else tracks.push({ id, title: '' });
+      });
       const added = tracks.length ? addTracks(list.id, tracks) : 0;
       const repeated = tracks.length - added;
       const parts: string[] = [];
@@ -397,170 +443,8 @@ function AddTracks({ list }: { list: LocalPlaylist }) {
   return (
     <form className="music-form" onSubmit={submit}>
       <input className="input" value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
-        placeholder={account.status === 'on' ? 'Links de vídeos ou de uma playlist' : 'Links de vídeos do YouTube'} aria-label="Links para adicionar" />
+        placeholder="Links de vídeos do YouTube" aria-label="Links para adicionar" />
       <button className="btn btn-sm" disabled={busy || !text.trim()}>{busy ? <Loader2 size={14} className="music-spin" /> : <Plus size={14} />} Adicionar</button>
     </form>
-  );
-}
-
-// ── Conta do YouTube ──────────────────────────────────────
-
-// Playlists da conta lidas nesta visita (a aba desmonta ao trocar).
-const cache: { lists: AccountPlaylist[] | null; tracks: Map<string, Track[]> } = { lists: null, tracks: new Map() };
-
-function AdsNote() {
-  return (
-    <p className="music-note">
-      <strong>Sem anúncios:</strong> com YouTube Premium, entre no{' '}
-      <a href="https://www.youtube.com" target="_blank" rel="noreferrer">youtube.com</a> com a mesma conta neste navegador; o player daqui usa
-      essa sessão. Navegadores que bloqueiam cookies de outros sites (Safari, Brave, Firefox no modo estrito) podem mostrar anúncios mesmo assim.
-    </p>
-  );
-}
-
-function AccountTab({ open, setOpen }: { open: AccountPlaylist | null; setOpen: (p: AccountPlaylist | null) => void }) {
-  const acc = useAccount();
-  const [lists, setLists] = useState<AccountPlaylist[] | null>(cache.lists);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      cache.lists = await listMyPlaylists();
-      setLists(cache.lists);
-      await ensureProfile();
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    // Sem token válido, a leitura abriria a janela de login sem um clique: espera o botão.
-    if (acc.status === 'on' && !cache.lists && hasToken()) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acc.status]);
-
-  if (!accountConfigured) {
-    return (
-      <>
-        <div className="music-empty">
-          A conexão com a conta do YouTube ainda não foi configurada neste site (falta o <code>VITE_GOOGLE_CLIENT_ID</code>; veja o README).
-          Enquanto isso, cole o link de qualquer playlist no campo lá em cima para tocá-la.
-        </div>
-        <AdsNote />
-      </>
-    );
-  }
-
-  if (acc.status !== 'on') {
-    return (
-      <>
-        <div className="music-connect">
-          <Youtube size={28} />
-          <p>Conecte sua conta para tocar aqui as suas playlists do YouTube.</p>
-          <button className="btn btn-primary btn-sm" onClick={connectAccount} disabled={acc.status === 'connecting'}>
-            {acc.status === 'connecting' ? <Loader2 size={14} className="music-spin" /> : <Youtube size={14} />} Conectar conta do YouTube
-          </button>
-          {acc.error && <p className="small music-error">{acc.error}</p>}
-          <p className="tiny muted">Acesso só de leitura: o EVA vê suas playlists, mas não muda nada na conta.</p>
-        </div>
-        <AdsNote />
-      </>
-    );
-  }
-
-  if (open) return <AccountPlaylistView list={open} onBack={() => setOpen(null)} />;
-
-  const disconnect = () => {
-    cache.lists = null;
-    cache.tracks.clear();
-    setLists(null);
-    disconnectAccount();
-  };
-
-  return (
-    <>
-      <div className="music-pane-head">
-        <span className="music-avatar">{acc.avatar ? <img src={acc.avatar} alt="" /> : <Youtube size={14} />}</span>
-        <strong className="small grow music-ellipsis">{acc.name ?? 'Conta conectada'}</strong>
-        {lists && <button className="btn btn-ghost btn-icon btn-sm" onClick={load} disabled={loading} aria-label="Atualizar playlists" title="Atualizar"><RefreshCw size={14} /></button>}
-        <button className="btn btn-ghost btn-sm" onClick={disconnect} title="Desconectar a conta"><LogOut size={14} /> Sair</button>
-      </div>
-      {error && <p className="small music-error">{error}</p>}
-      {!lists ? (
-        <div className="music-empty">
-          <button className="btn btn-sm" onClick={load} disabled={loading}>
-            {loading ? <Loader2 size={14} className="music-spin" /> : <ListMusic size={14} />} Ver minhas playlists
-          </button>
-        </div>
-      ) : lists.length === 0 ? (
-        <div className="music-empty">Nenhuma playlist nesta conta.</div>
-      ) : (
-        <div className="music-rows">
-          {lists.map((p) => (
-            <div key={p.id} className="music-row">
-              <button className="music-row-main" onClick={() => setOpen(p)} title="Abrir a playlist">
-                <span className="music-thumb">{p.thumb ? <img src={p.thumb} alt="" loading="lazy" /> : <ListMusic size={16} />}</span>
-                <span className="music-text">
-                  <span className="music-title">{p.title}</span>
-                  <span className="music-sub">{faixas(p.count)}</span>
-                </span>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <AdsNote />
-    </>
-  );
-}
-
-function AccountPlaylistView({ list, onBack }: { list: AccountPlaylist; onBack: () => void }) {
-  const s = usePlayer();
-  const [tracks, setTracks] = useState<Track[] | null>(cache.tracks.get(list.id) ?? null);
-  const [error, setError] = useState<string | null>(null);
-  const mine = s.source?.kind === 'account' && s.source.id === list.id;
-
-  useEffect(() => {
-    if (tracks) return;
-    let alive = true;
-    listPlaylistTracks(list.id)
-      .then((t) => { cache.tracks.set(list.id, t); if (alive) setTracks(t); })
-      .catch((e) => alive && setError(errMsg(e)));
-    return () => { alive = false; };
-  }, [list.id, tracks]);
-
-  const play = (i = 0) => tracks && playTracks({ kind: 'account', id: list.id, name: list.title }, tracks, i);
-  const copy = () => {
-    if (!tracks) return;
-    createPlaylist(list.title, tracks);
-    toast(`“${list.title}” copiada para “Do sistema”.`, 'ok');
-  };
-
-  return (
-    <>
-      <div className="music-pane-head">
-        <button className="btn btn-ghost btn-icon btn-sm" onClick={onBack} aria-label="Voltar às playlists"><ChevronLeft size={16} /></button>
-        <strong className="small grow music-ellipsis">{list.title}</strong>
-        <button className="btn btn-ghost btn-icon btn-sm" onClick={copy} disabled={!tracks?.length} aria-label="Copiar para as playlists do sistema" title="Copiar para “Do sistema”"><Copy size={14} /></button>
-        <button className="btn btn-sm btn-primary" disabled={!tracks?.length} onClick={() => (mine ? togglePlay() : play())}>
-          {mine && s.playing ? <><Pause size={14} /> Pausar</> : <><Play size={14} /> Tocar</>}
-        </button>
-      </div>
-      {error ? <p className="small music-error">{error}</p>
-        : !tracks ? <div className="music-empty"><Loader2 size={16} className="music-spin" /></div>
-          : tracks.length === 0 ? <div className="music-empty">Nenhum vídeo disponível nesta playlist.</div>
-            : (
-              <div className="music-rows">
-                {tracks.map((t, i) => (
-                  <TrackRow key={`${t.id}-${i}`} t={t} active={mine && s.current?.id === t.id} failed={mine && s.failed.includes(t.id)} onPlay={() => play(i)} />
-                ))}
-              </div>
-            )}
-    </>
   );
 }

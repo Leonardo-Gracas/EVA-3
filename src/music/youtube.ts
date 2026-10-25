@@ -71,13 +71,26 @@ export function formatTime(sec: number): string {
 
 export type OEmbed = { ok: true; title: string; channel: string } | { ok: false; blocked: boolean };
 
-/**
- * Título e canal de um vídeo, sem precisar de conta. O YouTube responde 401 quando o dono
- * proíbe tocar fora do site e 404 quando o vídeo não existe ou é privado.
- */
-export async function fetchVideoInfo(id: string): Promise<OEmbed> {
+// Consultas ao oEmbed: no máximo algumas ao mesmo tempo (uma playlist pode ter 200 vídeos).
+const MAX_PARALLEL = 6;
+let active = 0;
+const waiting: (() => void)[] = [];
+
+async function limited<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= MAX_PARALLEL) await new Promise<void>((r) => waiting.push(r));
+  active++;
   try {
-    const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watchUrl(id))}`);
+    return await fn();
+  } finally {
+    active--;
+    waiting.shift()?.();
+  }
+}
+
+/** oEmbed do YouTube: título e canal, sem conta. 401/403/404 = vídeo proibido fora do site, privado ou inexistente. */
+async function oembed(url: string): Promise<OEmbed> {
+  try {
+    const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`);
     if (r.status === 401 || r.status === 403 || r.status === 404) return { ok: false, blocked: true };
     if (!r.ok) return { ok: false, blocked: false };
     const j = await r.json() as { title?: string; author_name?: string };
@@ -87,28 +100,41 @@ export async function fetchVideoInfo(id: string): Promise<OEmbed> {
   }
 }
 
+const infoCache = new Map<string, Promise<OEmbed>>();
+
+/** Título e canal de um vídeo (com cache; falhas de rede são tentadas de novo na próxima vez). */
+export function fetchVideoInfo(id: string): Promise<OEmbed> {
+  let pr = infoCache.get(id);
+  if (!pr) {
+    pr = limited(() => oembed(watchUrl(id)));
+    infoCache.set(id, pr);
+    pr.then((r) => { if (!r.ok && !r.blocked) infoCache.delete(id); });
+  }
+  return pr;
+}
+
+/** Nome de uma playlist pública ou não listada. */
+export async function fetchPlaylistTitle(listId: string): Promise<string> {
+  const r = await limited(() => oembed(`https://www.youtube.com/playlist?list=${listId}`));
+  return r.ok ? r.title : '';
+}
+
 // ── API do iframe (https://developers.google.com/youtube/iframe_api_reference) ──
 
 export const YTState = { Unstarted: -1, Ended: 0, Playing: 1, Paused: 2, Buffering: 3, Cued: 5 } as const;
 
 export interface YTPlayer {
-  loadPlaylist(playlist: string[], index?: number, startSeconds?: number): void;
-  loadPlaylist(args: { list: string; listType: 'playlist'; index?: number; startSeconds?: number }): void;
-  cuePlaylist(playlist: string[], index?: number, startSeconds?: number): void;
+  loadVideoById(videoId: string, startSeconds?: number): void;
+  cueVideoById(videoId: string, startSeconds?: number): void;
+  cuePlaylist(args: { list: string; listType: 'playlist' }): void;
   playVideo(): void;
   pauseVideo(): void;
   stopVideo(): void;
-  nextVideo(): void;
-  previousVideo(): void;
-  playVideoAt(index: number): void;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   setVolume(volume: number): void;
   mute(): void;
   unMute(): void;
-  setLoop(loop: boolean): void;
-  setShuffle(shuffle: boolean): void;
   getPlaylist(): string[] | null;
-  getPlaylistIndex(): number;
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
