@@ -1,8 +1,9 @@
 // Peças do caderno de campanha: salvamento automático, texto que cresce,
-// lista com marcação e o cartão de seção.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TextareaHTMLAttributes } from 'react';
-import { Check, Plus, X } from 'lucide-react';
-import type { CampaignCheck } from '../../model/types';
+// lista com marcação, o cartão de seção e os seletores de data e de arco.
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { CalendarDays, Check, ChevronDown, Milestone, Plus, X } from 'lucide-react';
+import { ARC_STATUS, type CampaignArc, type CampaignCheck } from '../../model/types';
+import { formatSessionDate } from '../../model/campaign';
 import { LIMITS } from '../../rules/validate';
 
 export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
@@ -84,6 +85,95 @@ export function Section({ icon, title, hint, aside, children, className = '' }: 
       {hint && <p className="camp-hint">{hint}</p>}
       {children}
     </section>
+  );
+}
+
+/**
+ * Data em pílula: mostra a data por extenso e abre o calendário do sistema ao toque.
+ * O campo nativo fica invisível por cima da pílula (no celular o toque nele já abre o
+ * calendário; no computador, `showPicker`).
+ */
+export function DatePill({ value, onChange, label = 'Data' }: { value: string; onChange: (v: string) => void; label?: string }) {
+  const text = formatSessionDate(value);
+  const openPicker = (el: HTMLInputElement) => {
+    try { el.showPicker(); } catch { /* navegador sem showPicker: o próprio campo resolve */ }
+  };
+  return (
+    <span className={`camp-pill${value ? ' set' : ''}`}>
+      <span className="camp-pill-main">
+        <CalendarDays size={14} />
+        <span className="camp-pill-text">{text || 'Marcar data'}</span>
+        <input type="date" className="camp-date-native" value={value} aria-label={label} title={label}
+          onChange={(e) => onChange(e.target.value)}
+          onClick={(e) => openPicker(e.currentTarget)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(e.currentTarget); } }} />
+      </span>
+      {value && <button type="button" className="camp-pill-x" aria-label="Tirar a data" title="Tirar a data" onClick={() => onChange('')}><X size={12} /></button>}
+    </span>
+  );
+}
+
+/** Escolha do arco em pílula, com a lista dos arcos (situação e ordem da campanha). */
+export function ArcPicker({ arcs, value, onChange }: { arcs: CampaignArc[]; value: string | null; onChange: (id: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const current = arcs.find((a) => a.id === value) ?? null;
+  // "Sem arco" só aparece para quem já está sem arco (sessões antigas ou de arco excluído).
+  const options: (CampaignArc | null)[] = current ? arcs : [...arcs, null];
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    // Foco no arco escolhido, para seguir pelas setas.
+    const sel = list.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ?? list.current?.querySelector('button');
+    sel?.focus();
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
+
+  const close = () => { setOpen(false); trigger.current?.focus(); };
+  const pick = (id: string | null) => { onChange(id); close(); };
+  const onListKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(list.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0]?.focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1]?.focus(); }
+  };
+
+  return (
+    <div className="camp-pick" ref={wrap}>
+      <button ref={trigger} type="button" className={`camp-pill camp-pill-main${current ? ' set' : ' warn'}`} aria-haspopup="listbox" aria-expanded={open}
+        title="Arco da campanha" onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true); } }}>
+        {current ? <span className={`arc-dot arc-${current.status}`} /> : <Milestone size={14} />}
+        <span className="camp-pill-text">{current ? current.title : 'Sem arco'}</span>
+        <ChevronDown size={14} className={`camp-pick-caret${open ? ' up' : ''}`} />
+      </button>
+      {open && (
+        <div ref={list} className="camp-pick-menu" role="listbox" aria-label="Arco da campanha" onKeyDown={onListKey}>
+          {arcs.length === 0 && <p className="camp-pick-empty">Nenhum arco ainda. Crie os arcos na visão geral.</p>}
+          {options.map((a, i) => {
+            const on = (a?.id ?? null) === (current?.id ?? null);
+            return (
+              <button key={a?.id ?? 'sem-arco'} type="button" role="option" aria-selected={on} className={`camp-pick-opt${on ? ' on' : ''}`}
+                onClick={() => pick(a?.id ?? null)}>
+                {a ? <span className={`arc-dot arc-${a.status}`} /> : <Milestone size={13} className="muted" />}
+                <span className="grow">
+                  <span className="camp-pick-title">{a ? a.title : 'Sem arco'}</span>
+                  <span className="camp-pick-sub">{a ? `Arco ${i + 1} · ${ARC_STATUS[a.status]}` : 'Fora dos capítulos da campanha'}</span>
+                </span>
+                {on && <Check size={14} className="gold" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

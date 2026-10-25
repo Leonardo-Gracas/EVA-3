@@ -1,5 +1,5 @@
 // Caderno de campanha do mestre: valores iniciais e consultas simples.
-import type { Campaign, CampaignSession, CampaignSessionData } from './types';
+import type { Campaign, CampaignArc, CampaignSession, CampaignSessionData } from './types';
 
 export function emptyCampaign(title = ''): Campaign {
   return { title, premise: '', notes: '', threads: [], arcs: [], sessions: {} };
@@ -25,6 +25,16 @@ export function sessionsInOrder(c: Campaign): CampaignSession[] {
 /** Próxima sessão a jogar: a planejada de menor número. */
 export function nextSession(c: Campaign): CampaignSession | undefined {
   return sessionsInOrder(c).find((s) => s.status === 'planejada');
+}
+
+/**
+ * Arco onde a próxima sessão deve nascer: o em andamento; senão, o primeiro planejado;
+ * senão, o último. Sem arcos, nenhum.
+ */
+export function currentArc(c: Campaign): CampaignArc | undefined {
+  return c.arcs.find((a) => a.status === 'andamento')
+    ?? c.arcs.find((a) => a.status === 'planejado')
+    ?? c.arcs[c.arcs.length - 1];
 }
 
 export function sessionLabel(s: Pick<CampaignSessionData, 'number' | 'title'>): string {

@@ -1647,10 +1647,29 @@ kbd {
   display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; padding: 0 2px 0 10px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
 }
-.camp-nav-empty { padding: 10px; font-size: 12.5px; color: var(--text-muted); }
+.camp-nav-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px; font-size: 12.5px; line-height: 1.45; color: var(--text-muted);
+  border: 1px dashed var(--border-light); border-radius: var(--radius);
+}
+/* Cada arco é um ramo: o cabeçalho do arco e, abaixo, as sessões presas a uma linha guia. */
 .camp-nav-group { display: flex; flex-direction: column; gap: 2px; }
-.camp-nav-group + .camp-nav-group { margin-top: 8px; }
-.camp-nav-arc { display: flex; align-items: center; gap: 7px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-nav-group + .camp-nav-group { margin-top: 10px; }
+.camp-nav-arc { display: flex; align-items: center; gap: 2px; }
+.camp-nav-arc-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 8px 4px 10px; text-align: left;
+  border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 600; color: var(--text-secondary); transition: background var(--transition), color var(--transition);
+}
+button.camp-nav-arc-main:hover { background: var(--bg-surface); color: var(--text-primary); }
+.camp-nav-arc-num { font-size: 10.5px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.camp-nav-arc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-nav-arc-n { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.camp-nav-arc-loose .camp-nav-arc-main { color: var(--text-muted); font-style: italic; }
+.camp-nav-sessions { display: flex; flex-direction: column; gap: 2px; margin-left: 13px; padding-left: 8px; border-left: 1px solid var(--border); }
+.camp-nav-add {
+  display: flex; align-items: center; gap: 7px; width: 100%; min-height: 36px; padding: 6px 10px; text-align: left; font-size: 12.5px; color: var(--text-muted);
+  border: 1px dashed var(--border); border-radius: var(--radius); transition: border-color var(--transition), color var(--transition);
+}
+.camp-nav-add:hover { border-color: var(--border-gold); color: var(--gold-soft); }
 .camp-sess-num {
   flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
   font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -1688,15 +1707,59 @@ kbd {
 .camp-kpis dd { margin: 0; order: -1; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .camp-sess-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
-.camp-pill-field {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px; border-radius: 999px;
-  border: 1px solid var(--border); background: var(--bg-base); color: var(--text-muted); transition: border-color var(--transition);
+/* Pílulas de arco e data: mesma altura e borda do seletor de situação ao lado. */
+.camp-pill {
+  position: relative; display: inline-flex; align-items: center; min-height: 36px; max-width: 100%; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-base); color: var(--text-muted);
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
 }
-.camp-pill-field:focus-within { border-color: var(--gold); }
-.camp-pill-field input, .camp-pill-field select {
-  border: none; background: transparent; outline: none; color: var(--text-primary); font-size: 13px; padding: 6px 0; max-width: 190px; color-scheme: dark;
+.camp-pill:hover { border-color: var(--border-light); background: var(--bg-surface); }
+.camp-pill:focus-within, .camp-pill:focus-visible, .camp-pill[aria-expanded="true"] { border-color: var(--gold); outline: none; }
+.camp-pill.set { color: var(--text-primary); }
+.camp-pill.warn { border-style: dashed; }
+.camp-pill-main {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; min-width: 0; min-height: 34px; padding: 0 14px 0 12px;
+  font-size: 13px; font-weight: 500; text-align: left; cursor: pointer;
 }
-.camp-pill-field select option { background: var(--bg-elevated); }
+button.camp-pill { min-height: 36px; }
+.camp-pill-main > svg { flex-shrink: 0; color: var(--gold); }
+.camp-pill:not(.set) .camp-pill-main > svg, .camp-pill-main:not(.set) > svg { color: var(--text-muted); }
+.camp-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-pill:not(.set) .camp-pill-text, .camp-pill-main:not(.set) > .camp-pill-text { color: var(--text-muted); }
+.camp-pill .camp-pill-main:has(+ .camp-pill-x) { padding-right: 4px; }
+.camp-pill-x {
+  display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; margin-right: 5px; border-radius: 50%; color: var(--text-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.camp-pill-x:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* O campo de data nativo cobre a pílula, invisível: o toque nele abre o calendário do sistema. */
+.camp-date-native {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  border: none; padding: 0; margin: 0; background: transparent; color-scheme: dark;
+}
+.camp-date-native::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; cursor: pointer; }
+
+/* Menu de arcos */
+.camp-pick { position: relative; display: inline-flex; max-width: 100%; }
+.camp-pick > .camp-pill { width: 100%; }
+.camp-pick-caret { margin-left: 2px; color: var(--text-muted) !important; transition: transform var(--transition); }
+.camp-pick-caret.up { transform: rotate(180deg); }
+.camp-pick-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: flex; flex-direction: column; gap: 2px;
+  width: max-content; min-width: 100%; max-width: min(340px, calc(100vw - 32px)); max-height: 320px; overflow-y: auto; padding: 5px;
+  background: var(--bg-elevated); border: 1px solid var(--border-light); border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  animation: camp-pick-in 120ms ease-out;
+}
+@keyframes camp-pick-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.camp-pick-opt {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 6px 10px; text-align: left;
+  border-radius: var(--radius-sm); color: var(--text-secondary); transition: background var(--transition), color var(--transition);
+}
+.camp-pick-opt:hover, .camp-pick-opt:focus-visible { background: var(--bg-hover); color: var(--text-primary); outline: none; }
+.camp-pick-opt.on { background: var(--gold-dim); color: var(--gold-soft); }
+.camp-pick-title { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-pick-sub { display: block; font-size: 11px; color: var(--text-muted); }
+.camp-pick-empty { padding: 8px 10px; font-size: 12px; color: var(--text-muted); }
 .camp-status { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-base); }
 .camp-status button {
   display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 12px; border-radius: 999px;
@@ -1779,17 +1842,31 @@ kbd {
 .camp-progress .bar { flex: 1; height: 5px; display: block; }
 .camp-progress .bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #7a5d24, var(--gold)); }
 
-.arc-list { display: flex; flex-direction: column; }
-.arc-row { display: flex; align-items: flex-start; gap: 4px; border-bottom: 1px solid var(--border); }
-.arc-row:last-child { border-bottom: none; }
-.arc-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 10px; padding: 9px 4px; text-align: left; color: inherit; border-radius: var(--radius-sm); }
+/* Arcos em ordem, como etapas de uma trilha: o número e o ponto da situação à esquerda. */
+.arc-list { display: flex; flex-direction: column; list-style: none; }
+.arc-row { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; }
+.arc-row + .arc-row { border-top: 1px solid var(--border); }
+.arc-step { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 26px; padding-top: 12px; }
+.arc-num { font-size: 11px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.arc-row.now .arc-num { color: var(--gold); }
+.arc-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 1px; padding: 8px 10px; text-align: left; color: inherit;
+  border-radius: var(--radius-sm); transition: background var(--transition);
+}
 .arc-main:hover { background: var(--bg-elevated); }
-.arc-main .arc-dot { margin-top: 6px; }
-.arc-title { display: block; font-weight: 600; font-size: 13.5px; }
+.arc-title { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 14px; }
+.arc-edit { color: var(--text-muted); opacity: 0; transition: opacity var(--transition); }
+.arc-main:hover .arc-edit, .arc-main:focus-visible .arc-edit { opacity: 1; }
 .arc-sub { display: block; font-size: 11.5px; color: var(--text-muted); }
 .arc-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 3px; font-size: 12.5px; color: var(--text-secondary); white-space: pre-wrap; }
-.arc-move { display: flex; flex-direction: column; padding-top: 4px; }
+.arc-bar { display: block; height: 4px; margin-top: 8px; max-width: 220px; }
+.arc-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #7a5d24, var(--gold)); }
+.arc-actions { flex-shrink: 0; display: flex; align-items: center; gap: 2px; padding-top: 6px; }
+.arc-move { display: flex; flex-direction: column; }
 .arc-move .btn-icon { padding: 3px; }
+.camp-arc-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.camp-loose { margin: 6px 0 0; padding-top: 8px; border-top: 1px solid var(--border); }
+.camp-modal-hint { margin: 0; }
 
 @media (max-width: 1100px) {
   .camp-cols { grid-template-columns: 1fr; }
@@ -1803,9 +1880,12 @@ kbd {
   .camp-title-lg { font-size: 20px; }
   .camp-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .camp-card { padding: 12px 14px; }
-  .camp-pill-field input, .camp-pill-field select { font-size: 16px; }
+  .camp-date-native { font-size: 16px; }
   .camp-sess-meta > * { flex: 1 1 auto; }
+  .camp-sess-meta .camp-pill-main { flex: 1; }
   .camp-status button { flex: 1; justify-content: center; }
+  .camp-pick-menu { right: 0; max-width: none; }
+  .arc-actions { flex-direction: column; align-items: flex-end; }
 }
 
 /* ── Trilha sonora do mestre (canto inferior direito) ────── */

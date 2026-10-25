@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  CalendarDays, CheckCheck, ClipboardList, Eye, Flag, KeyRound, ListChecks, Milestone, NotebookPen, ScrollText, Sparkles, Target,
+  CheckCheck, ClipboardList, Eye, Flag, KeyRound, ListChecks, NotebookPen, ScrollText, Sparkles, Target,
   Trash2, UserCheck, Users, VenetianMask, X,
 } from 'lucide-react';
 import type { CampaignSession, CampaignSessionData, SessionCastRef, TableState } from '../../model/types';
@@ -12,7 +12,7 @@ import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import { SubTabs } from '../room/TopBar';
 import { ThreatGlyph } from '../gm/ThreatIcon';
-import { AutoTextarea, CheckList, SaveBadge, Section, tmpId, useAutosave } from './parts';
+import { ArcPicker, AutoTextarea, CheckList, DatePill, SaveBadge, Section, tmpId, useAutosave } from './parts';
 
 type Phase = 'plano' | 'conclusao';
 
@@ -66,17 +66,8 @@ export default function SessionEditor({ table, session, onDeleted }: {
         <input className="camp-title-input" value={d.title} maxLength={LIMITS.campaignTitle} placeholder={`Sessão ${session.number}: dê um título`}
           onChange={(e) => up({ title: e.target.value })} aria-label="Título da sessão" />
         <div className="camp-sess-meta">
-          <label className="camp-pill-field" title="Data da sessão">
-            <CalendarDays size={14} />
-            <input type="date" value={d.date} onChange={(e) => up({ date: e.target.value })} aria-label="Data" />
-          </label>
-          <label className="camp-pill-field" title="Arco da campanha">
-            <Milestone size={14} />
-            <select value={d.arcId ?? ''} onChange={(e) => up({ arcId: e.target.value || null })} aria-label="Arco">
-              <option value="">Sem arco</option>
-              {arcs.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-            </select>
-          </label>
+          <ArcPicker arcs={arcs} value={d.arcId} onChange={(arcId) => up({ arcId })} />
+          <DatePill value={d.date} onChange={(date) => up({ date })} label="Data da sessão" />
           <div className="camp-status" role="radiogroup" aria-label="Situação">
             <button role="radio" aria-checked={d.status === 'planejada'} className={d.status === 'planejada' ? 'on' : ''}
               onClick={() => up({ status: 'planejada' })}>Planejada</button>
