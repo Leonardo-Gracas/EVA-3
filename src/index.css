@@ -1809,8 +1809,8 @@ kbd {
 }
 
 /* ── Trilha sonora do mestre (canto inferior direito) ────── */
-/* Recolhida: só a barra de controles. Expandida: o painel abre acima dela.
-   O painel recolhido fica montado fora da tela, porque o vídeo do YouTube não pode sair do lugar. */
+/* Recolhida: só a barra de controles. Expandida: painel com capa, posição na faixa, a mesma barra e as playlists.
+   Os players do YouTube ficam sempre fora da tela (.music-engine): o painel mostra só a capa. */
 #root:has(.music-dock) { --music-bottom: 16px; }
 #root:has(.music-dock) .toasts { bottom: calc(var(--music-bottom) + 68px); }
 #root:has(.music-dock) .page { padding-bottom: 96px; }
@@ -1872,30 +1872,54 @@ kbd {
 @keyframes music-spin { to { rotate: 360deg; } }
 @keyframes music-open { from { opacity: 0; } to { opacity: 1; } }
 
+/* Players do YouTube: fora da tela, sempre montados (um iframe não pode mudar de lugar sem recarregar). */
+.music-engine { position: fixed; left: -10000px; top: 0; width: 400px; height: 225px; pointer-events: none; }
+.music-engine-host { position: relative; width: 100%; height: 100%; }
+.music-layer { position: absolute; inset: 0; }
+.music-layer iframe { width: 100%; height: 100%; display: block; border: 0; }
+
 /* Painel */
 .music-panel {
-  display: flex; flex-direction: column; max-height: min(720px, calc(100dvh - var(--music-bottom, 16px) - 64px - 72px));
+  position: relative; display: flex; flex-direction: column; max-height: calc(100dvh - var(--music-bottom, 16px) - 72px);
   background: var(--bg-surface); border: 1px solid var(--border-gold); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden;
   animation: music-open 140ms ease;
 }
-.music-dock:not(.music-open) .music-panel { position: fixed; left: -10000px; top: 0; width: 400px; pointer-events: none; animation: none; }
-.music-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--border); }
+.music-head { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; border-bottom: 1px solid var(--border); }
 .music-head strong { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.06em; color: var(--gold-soft); }
-.music-private {
-  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
-  color: var(--text-secondary); background: var(--bg-overlay); border: 1px solid var(--border); white-space: nowrap;
+/* Capa, posição e controles ficam parados; só a parte das playlists rola. */
+.music-top { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 8px; border-bottom: 1px solid var(--border); }
+.music-art {
+  width: 100%; aspect-ratio: 16 / 9; max-height: 28vh; border-radius: var(--radius); overflow: hidden;
+  display: grid; place-items: center; background: var(--bg-base); color: var(--border-light); border: 1px solid var(--border);
 }
-.music-body { display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
-.music-video { flex-shrink: 0; aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden; background: #000; border: 1px solid var(--border); }
-.music-video-host { position: relative; width: 100%; height: 100%; }
-/* Dois players empilhados: o que entra fica por cima e aparece aos poucos durante a transição. */
-.music-layer { position: absolute; inset: 0; }
-.music-layer iframe { width: 100%; height: 100%; display: block; border: 0; }
+.music-art img { width: 100%; height: 100%; object-fit: cover; display: block; animation: music-art-in 700ms ease; }
+@keyframes music-art-in { from { opacity: 0; } to { opacity: 1; } }
+.music-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
 .music-alert { padding: 8px 10px; border-radius: var(--radius); font-size: 12.5px; color: #f2a3a8; background: var(--accent-dim); border: 1px solid rgba(179, 52, 59, 0.45); }
 
-.music-now { display: flex; flex-direction: column; gap: 4px; }
-.music-now-title { font-weight: 600; font-size: 14px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.music-seek { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+/* A barra de controles dentro do painel: sem moldura e sem a miniatura (a capa já está acima). */
+.music-bar-docked { min-height: 0; padding: 0; background: none; border: 0; box-shadow: none; cursor: default; }
+.music-bar-docked:hover { border-color: transparent; }
+.music-bar-docked .music-cover { display: none; }
+.music-bar-docked .music-bar-info { padding-left: 2px; }
+.music-bar-docked .music-bar-info:hover { background: none; }
+.music-bar-docked .music-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
+
+/* Ajuda (botão i): cobre o painel. */
+.music-help {
+  position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; gap: 12px; padding: 10px 14px 14px;
+  background: var(--bg-surface); overflow-y: auto; animation: music-open 140ms ease;
+}
+.music-help-head { display: flex; align-items: center; gap: 8px; }
+.music-help-head strong { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.06em; color: var(--gold-soft); }
+.music-help ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.music-help li strong { color: var(--text-primary); }
+.music-help li svg { vertical-align: -1px; color: var(--gold); }
+.music-help-yt { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px; border-radius: var(--radius); background: var(--bg-base); border: 1px solid var(--border); }
+.music-help-yt p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.music-help-yt strong { color: var(--text-primary); }
+
+.music-seek { display: flex; align-items: center; gap: 8px; }
 .music-seek .mono { min-width: 34px; }
 .music-seek .mono:last-child { text-align: right; }
 .music-modes { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1943,11 +1967,6 @@ kbd {
 @media (hover: none) { .music-row-actions { opacity: 1; } }
 
 .music-empty { padding: 18px 12px; text-align: center; font-size: 12.5px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius); }
-.music-login {
-  display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; font-size: 11.5px; line-height: 1.4; color: var(--text-muted);
-  background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius);
-}
-.music-login > svg { flex-shrink: 0; color: var(--accent); }
 
 @media (max-width: 640px) {
   #root:has(.music-dock) { --music-bottom: calc(var(--bottom-nav-h, 0px) + 8px); }
@@ -1961,6 +1980,6 @@ kbd {
   .music-form .input { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .music-eq i, .music-panel { animation: none; }
+  .music-eq i, .music-panel, .music-help, .music-art img { animation: none; }
   .music-eq i { transform: scaleY(0.7); }
 }

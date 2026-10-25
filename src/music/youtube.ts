@@ -58,6 +58,8 @@ export function parseVideoIds(text: string): string[] {
 }
 
 export const thumbUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+/** Capa maior (4:3 com faixas pretas; cortada para 16:9 na tela). */
+export const artUrl = (id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 export const watchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 
 export function formatTime(sec: number): string {

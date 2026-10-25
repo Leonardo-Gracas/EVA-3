@@ -1,20 +1,20 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  ArrowDown, ArrowUp, Blend, ChevronDown, ChevronLeft, ExternalLink, Headphones, ListMusic, ListPlus, ListVideo, Loader2, Music,
+  ArrowDown, ArrowUp, Blend, ChevronDown, ChevronLeft, Info, ListMusic, ListPlus, ListVideo, Loader2, Music,
   Pause, Play, Plus, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
 } from 'lucide-react';
 import { SubTabs } from '../room/TopBar';
 import ConfirmButton from '../common/ConfirmButton';
 import { toast } from '../common/toast';
 import {
-  attachPlayer, cycleCrossfade, cycleRepeat, next, originalQueue, playAt, playerStore, playLink, playTracks, prev, reloadPlayer, seek, setVolume,
-  toggleMute, togglePlay, toggleRepeatOne, toggleShuffle,
+  attachPlayer, cycleCrossfade, next, originalQueue, playAt, playerStore, playLink, playTracks, prev, reloadPlayer, seek, setVolume,
+  toggleLoop, toggleMute, togglePlay, toggleRepeatList, toggleShuffle,
 } from '../../music/player';
 import {
   addTracks, createPlaylist, deletePlaylist, libraryStore, moveTrack, prefsStore, removeTrack, renamePlaylist,
-  type LocalPlaylist, type MusicTab, type Repeat as RepeatMode,
+  type LocalPlaylist, type MusicTab,
 } from '../../music/library';
-import { fetchVideoInfo, formatTime, parseVideoIds, parseYouTube, thumbUrl, type Track } from '../../music/youtube';
+import { artUrl, fetchVideoInfo, formatTime, parseVideoIds, parseYouTube, thumbUrl, type Track } from '../../music/youtube';
 
 const usePlayer = () => useSyncExternalStore(playerStore.subscribe, playerStore.get);
 const usePrefs = () => useSyncExternalStore(prefsStore.subscribe, prefsStore.get);
@@ -24,61 +24,74 @@ const playLocal = (p: LocalPlaylist, i = 0) => playTracks({ kind: 'local', id: p
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Algo deu errado.');
 
 /**
- * Trilha sonora do mestre, presa ao canto inferior direito. Recolhida, mostra só os controles;
- * expandida, mostra o vídeo, a fila e as playlists. O áudio sai só deste navegador.
+ * Trilha sonora do mestre, presa ao canto inferior direito. Recolhida, é só a barra de controles;
+ * expandida, mostra a capa, a posição na faixa, a mesma barra e as playlists. O áudio sai só deste navegador.
  */
 export default function MusicDock() {
   const [open, setOpen] = useState(false);
+  const [help, setHelp] = useState(false);
   const host = useRef<HTMLDivElement>(null);
   const s = usePlayer();
 
   useEffect(() => (host.current ? attachPlayer(host.current) : undefined), []);
 
-  // Recolhido, o painel (com o vídeo) continua montado fora da tela: o iframe não pode sair do lugar sem recarregar.
-  const hidden = open ? {} : { inert: '' } as Record<string, string>;
+  const toggle = () => { setOpen((o) => !o); setHelp(false); };
 
   return (
-    <div className={`music-dock${open ? ' music-open' : ''}`} onKeyDown={(e) => { if (e.key === 'Escape' && open) setOpen(false); }}>
-      <section id="music-panel" className="music-panel" aria-label="Trilha sonora" aria-hidden={!open} {...hidden}>
-        <header className="music-head">
-          <Music size={16} className="gold" />
-          <strong className="grow">Trilha sonora</strong>
-          <span className="music-private" title="A música toca só neste navegador. Os jogadores não ouvem."><Headphones size={12} /> Só você ouve</span>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setOpen(false)} aria-label="Recolher a trilha sonora"><ChevronDown size={16} /></button>
-        </header>
-        <div className="music-body">
-          <div className="music-video"><div ref={host} className="music-video-host" /></div>
-          {s.loadError && <div className="music-alert">{s.loadError} Verifique a conexão e recarregue a página.</div>}
-          <NowPlaying />
-          <YouTubeLogin />
-          <LinkBox />
-          <Library />
-        </div>
-      </section>
-      <MiniBar open={open} onToggle={() => setOpen((o) => !o)} />
+    <div className={`music-dock${open ? ' music-open' : ''}`}
+      onKeyDown={(e) => { if (e.key !== 'Escape') return; if (help) setHelp(false); else if (open) setOpen(false); }}>
+      {/* O som vem de players do YouTube mantidos fora da tela; o painel mostra só a capa. */}
+      <div className="music-engine" aria-hidden><div ref={host} className="music-engine-host" /></div>
+      {open ? (
+        <section id="music-panel" className="music-panel" aria-label="Trilha sonora">
+          <header className="music-head">
+            <Music size={16} className="gold" />
+            <strong className="grow">Trilha sonora</strong>
+            <button className={`music-btn music-btn-sm${help ? ' on' : ''}`} onClick={() => setHelp((h) => !h)}
+              aria-expanded={help} aria-label="Ajuda" title="Ajuda"><Info size={16} /></button>
+            <button className="music-btn music-btn-sm" onClick={toggle} aria-label="Recolher a trilha sonora" title="Recolher"><ChevronDown size={16} /></button>
+          </header>
+          <div className="music-top">
+            <Artwork />
+            {s.loadError && <div className="music-alert">{s.loadError}</div>}
+            <SeekBar />
+            <MiniBar open onToggle={toggle} />
+          </div>
+          <div className="music-body">
+            <LinkBox />
+            <Library />
+          </div>
+          {help && <HelpPanel onClose={() => setHelp(false)} />}
+        </section>
+      ) : (
+        <MiniBar open={false} onToggle={toggle} />
+      )}
     </div>
   );
 }
 
-// ── Barra recolhida ───────────────────────────────────────
+// ── Barra de controles ────────────────────────────────────
 
-/** Clique na barra fora dos controles abre ou fecha o painel. */
+/** Recolhida, fica sozinha no canto; expandida, vai para dentro do painel, logo abaixo da posição na faixa. */
 function MiniBar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const s = usePlayer();
   const prefs = usePrefs();
   const has = Boolean(s.current || s.queue.length);
   const title = s.current?.title || (has ? 'Carregando…' : 'Trilha sonora');
-  const sub = has ? (s.current?.channel || s.source?.name || '') : 'Nada tocando';
+  // Recolhida, cabe só o canal (ou a playlist); expandida, os dois.
+  const channel = s.current?.channel ?? '';
+  const from = s.source?.name ?? '';
+  const sub = !has ? 'Nada tocando' : open ? [channel, from].filter(Boolean).join(' · ') : channel || from;
   const loading = s.buffering && !s.playing;
-  const loopOne = prefs.repeat === 'one';
 
   return (
-    <div className="music-bar" title={open ? 'Recolher' : 'Abrir a trilha sonora'}
-      onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, .music-vol')) onToggle(); }}>
-      {/* Para o teclado: a área do título faz o papel de botão de abrir. */}
-      <div className="music-bar-info" role="button" tabIndex={0} aria-expanded={open} aria-controls="music-panel"
-        aria-label={open ? 'Recolher a trilha sonora' : 'Abrir a trilha sonora'}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}>
+    <div className={`music-bar${open ? ' music-bar-docked' : ''}`} title={open ? undefined : 'Abrir a trilha sonora'}
+      onClick={(e) => { if (!open && !(e.target as HTMLElement).closest('button, input, .music-vol')) onToggle(); }}>
+      {/* Para o teclado: na barra recolhida, a área do título faz o papel de botão de abrir. */}
+      <div className="music-bar-info" {...(open ? {} : {
+        role: 'button', tabIndex: 0, 'aria-expanded': false, 'aria-controls': 'music-panel', 'aria-label': 'Abrir a trilha sonora',
+        onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } },
+      })}>
         <span className="music-cover">
           {s.current ? <img src={thumbUrl(s.current.id)} alt="" /> : <Music size={16} />}
           {s.playing && <span className="music-eq" aria-hidden><i /><i /><i /></span>}
@@ -94,8 +107,8 @@ function MiniBar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
         {loading ? <Loader2 size={18} className="music-spin" /> : s.playing ? <Pause size={18} /> : <Play size={18} />}
       </button>
       <button className="music-btn" onClick={next} disabled={!has} aria-label="Próxima faixa" title="Próxima"><SkipForward size={16} /></button>
-      <button className={`music-btn${loopOne ? ' on' : ''}`} onClick={toggleRepeatOne} aria-pressed={loopOne}
-        aria-label="Recomeçar a faixa quando acabar" title={loopOne ? 'Recomeçando a faixa quando acabar (clique para desligar)' : 'Recomeçar a faixa quando acabar'}>
+      <button className={`music-btn${prefs.loop ? ' on' : ''}`} onClick={toggleLoop} aria-pressed={prefs.loop}
+        aria-label="Recomeçar a faixa quando acabar" title={prefs.loop ? 'Recomeçando a faixa quando acabar' : 'Recomeçar a faixa quando acabar'}>
         <Repeat1 size={16} />
       </button>
       <VolumeControl />
@@ -144,65 +157,73 @@ function VolumeControl() {
 
 // ── Painel expandido ──────────────────────────────────────
 
-const REPEAT_LABEL: Record<RepeatMode, string> = { all: 'Repetir playlist', one: 'Repetir faixa', off: 'Sem repetir' };
-
-function NowPlaying() {
+/** Capa da faixa atual; troca com um esmaecimento, acompanhando a transição do som. */
+function Artwork() {
   const s = usePlayer();
-  const prefs = usePrefs();
-  const where = s.current ? [s.current.channel, s.source?.name].filter(Boolean).join(' · ') : '';
+  const id = s.current?.id;
   return (
-    <div className="music-now">
-      <div className="music-now-title">{s.current ? (s.current.title || 'Carregando…') : 'Nada tocando'}</div>
-      <div className="tiny muted">{s.current ? where : 'Escolha uma playlist abaixo ou cole um link do YouTube.'}</div>
-      <div className="music-seek">
-        <span className="tiny mono muted">{formatTime(s.time)}</span>
-        <input type="range" className="music-range grow" min={0} max={Math.max(1, Math.floor(s.duration))} step={1}
-          value={Math.min(Math.floor(s.time), Math.floor(s.duration))} disabled={!s.current || !s.duration}
-          onChange={(e) => seek(Number(e.target.value))} aria-label="Posição na faixa" />
-        <span className="tiny mono muted">{formatTime(s.duration)}</span>
-      </div>
-      <div className="music-modes">
-        <button className={`music-mode${prefs.shuffle ? ' on' : ''}`} onClick={toggleShuffle} aria-pressed={prefs.shuffle}>
-          <Shuffle size={14} /> Aleatório
-        </button>
-        <button className={`music-mode${prefs.repeat !== 'off' ? ' on' : ''}`} onClick={cycleRepeat} title="Trocar o modo de repetição">
-          {prefs.repeat === 'one' ? <Repeat1 size={14} /> : <Repeat size={14} />} {REPEAT_LABEL[prefs.repeat]}
-        </button>
-        <button className={`music-mode${prefs.crossfade ? ' on' : ''}`} onClick={cycleCrossfade}
-          title="Uma faixa entra enquanto a outra sai, inclusive ao repetir a mesma. Clique para trocar a duração.">
-          <Blend size={14} /> {prefs.crossfade ? `Transição ${prefs.crossfade}s` : 'Sem transição'}
-        </button>
-      </div>
+    <div className="music-art">
+      {id ? <img key={id} src={artUrl(id)} alt="" /> : <Music size={36} />}
+    </div>
+  );
+}
+
+function SeekBar() {
+  const s = usePlayer();
+  return (
+    <div className="music-seek">
+      <span className="tiny mono muted">{formatTime(s.time)}</span>
+      <input type="range" className="music-range grow" min={0} max={Math.max(1, Math.floor(s.duration))} step={1}
+        value={Math.min(Math.floor(s.time), Math.floor(s.duration))} disabled={!s.current || !s.duration}
+        onChange={(e) => seek(Number(e.target.value))} aria-label="Posição na faixa" />
+      <span className="tiny mono muted">{formatTime(s.duration)}</span>
     </div>
   );
 }
 
 /**
- * O player usa a sessão do youtube.com deste navegador (Premium = sem anúncios). O site não consegue
- * saber se essa sessão existe, então o botão fica sempre à mão. Ao voltar para o EVA, o player é
- * recriado para pegar o login novo, continuando a faixa de onde estava.
+ * O player usa a sessão do youtube.com deste navegador (Premium = sem anúncios); o site não tem como
+ * saber se ela existe. Ao voltar para o EVA depois de abrir o YouTube, os players são recriados para
+ * pegar o login novo, continuando a faixa de onde estava.
  */
 let awaitingReturn = false;
 
-function YouTubeLogin() {
-  const open = () => {
-    window.open('https://www.youtube.com/', '_blank', 'noopener,noreferrer');
-    if (awaitingReturn) return;
-    awaitingReturn = true;
-    const back = () => {
-      window.removeEventListener('focus', back);
-      awaitingReturn = false;
-      reloadPlayer();
-      toast('Player recarregado com a sua sessão do YouTube.', 'ok');
-    };
-    // Espera a aba nova roubar o foco antes de escutar a volta.
-    setTimeout(() => window.addEventListener('focus', back), 600);
+function openYouTubeLogin() {
+  window.open('https://www.youtube.com/', '_blank', 'noopener,noreferrer');
+  if (awaitingReturn) return;
+  awaitingReturn = true;
+  const back = () => {
+    window.removeEventListener('focus', back);
+    awaitingReturn = false;
+    reloadPlayer();
+    toast('Player recarregado com a sua sessão do YouTube.', 'ok');
   };
+  // Espera a aba nova roubar o foco antes de escutar a volta.
+  setTimeout(() => window.addEventListener('focus', back), 600);
+}
+
+function HelpPanel({ onClose }: { onClose: () => void }) {
   return (
-    <div className="music-login">
-      <Youtube size={14} />
-      <span className="grow">Com YouTube Premium, entre na sua conta no YouTube neste navegador para tocar sem anúncios.</span>
-      <button className="btn btn-sm" onClick={open} title="Abre o YouTube numa aba nova"><ExternalLink size={13} /> Abrir YouTube</button>
+    <div className="music-help" role="dialog" aria-label="Ajuda da trilha sonora">
+      <div className="music-help-head">
+        <strong className="grow">Como funciona</strong>
+        <button className="music-btn music-btn-sm" onClick={onClose} aria-label="Fechar a ajuda"><X size={16} /></button>
+      </div>
+      <ul>
+        <li><strong>Só você ouve.</strong> A música toca só neste navegador; os jogadores não ouvem nada.</li>
+        <li><strong>Tocar um link:</strong> cole o endereço de um vídeo ou de uma playlist do YouTube. A playlist colada pode virar playlist do sistema pelo botão <em>Salvar</em>, na aba Tocando.</li>
+        <li><strong>Playlists do sistema</strong> ficam salvas neste navegador e não entram no backup da mesa. Crie uma e cole links de vídeos.</li>
+        <li><strong>Recomeçar faixa</strong> (<Repeat1 size={12} /> na barra) repete a música atual. <strong>Repetir playlist</strong> volta ao começo depois da última faixa.</li>
+        <li><strong>Transição:</strong> perto do fim, a próxima música entra enquanto a atual some. Clique no botão para trocar a duração. No iPhone e no iPad a troca é seca.</li>
+        <li>Vídeos que o dono não deixa tocar fora do YouTube são pulados.</li>
+      </ul>
+      <div className="music-help-yt">
+        <p>
+          <strong>Sem anúncios:</strong> com YouTube Premium, basta estar logado no YouTube neste navegador. Se ainda não estiver,
+          clique abaixo, entre na sua conta e volte para cá: o player recarrega sozinho.
+        </p>
+        <button className="btn btn-sm btn-primary" onClick={openYouTubeLogin}><Youtube size={14} /> Entrar no YouTube</button>
+      </div>
     </div>
   );
 }
@@ -219,7 +240,7 @@ function LinkBox() {
   };
   return (
     <form className="music-form" onSubmit={submit}>
-      <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Colar link do YouTube (vídeo ou playlist)" aria-label="Link do YouTube" />
+      <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Link do YouTube (vídeo ou playlist)" aria-label="Link do YouTube" />
       <button className="btn btn-sm" disabled={!text.trim()}><Play size={14} /> Tocar</button>
     </form>
   );
@@ -239,6 +260,18 @@ function Library() {
           { id: 'fila', label: 'Tocando', icon: <ListVideo size={14} />, total: s.queue.length || undefined },
           { id: 'sistema', label: 'Do sistema', icon: <ListMusic size={14} />, total: lists.length },
         ]} />
+      {/* Como a fila anda: junto das playlists. */}
+      <div className="music-modes">
+        <button className={`music-mode${prefs.shuffle ? ' on' : ''}`} onClick={toggleShuffle} aria-pressed={prefs.shuffle}>
+          <Shuffle size={14} /> Aleatório
+        </button>
+        <button className={`music-mode${prefs.repeatList ? ' on' : ''}`} onClick={toggleRepeatList} aria-pressed={prefs.repeatList}>
+          <Repeat size={14} /> Repetir playlist
+        </button>
+        <button className={`music-mode${prefs.crossfade ? ' on' : ''}`} onClick={cycleCrossfade} title="Clique para trocar a duração">
+          <Blend size={14} /> {prefs.crossfade ? `Transição ${prefs.crossfade}s` : 'Sem transição'}
+        </button>
+      </div>
       <div className="music-pane">
         {prefs.tab === 'fila' && <QueueTab onSaved={(id) => { setLocalId(id); prefsStore.patch({ tab: 'sistema' }); }} />}
         {prefs.tab === 'sistema' && <SystemTab lists={lists} openId={localId} setOpenId={setLocalId} />}
@@ -276,18 +309,11 @@ function QueueTab({ onSaved }: { onSaved: (playlistId: string) => void }) {
     toast(`Playlist salva em “Do sistema” com ${faixas(tracks.length)}.`, 'ok');
     onSaved(id);
   };
-  if (!s.queue.length) {
-    return (
-      <div className="music-empty">
-        {s.buffering ? 'Carregando…' : 'Nada na fila. Escolha uma playlist em “Do sistema” ou “Minha conta”, ou cole um link acima.'}
-      </div>
-    );
-  }
+  if (!s.queue.length) return <div className="music-empty">{s.buffering ? 'Carregando…' : 'Nada na fila.'}</div>;
   return (
     <>
       {s.source && (
         <div className="music-pane-head">
-          <span className="tiny muted">Tocando de</span>
           <strong className="small grow music-ellipsis">{s.source.name}</strong>
           {s.source.kind === 'link' && (
             <button className="btn btn-ghost btn-sm" onClick={save} title="Salvar esta fila como playlist do sistema"><ListPlus size={14} /> Salvar</button>
@@ -325,7 +351,7 @@ function SystemTab({ lists, openId, setOpenId }: { lists: LocalPlaylist[]; openI
         <button className="btn btn-sm" disabled={!name.trim()}><Plus size={14} /> Criar</button>
       </form>
       {lists.length === 0 ? (
-        <div className="music-empty">Monte playlists com músicas do YouTube para cada clima da mesa: exploração, tensão, combate… Elas ficam salvas neste navegador.</div>
+        <div className="music-empty">Nenhuma playlist ainda.</div>
       ) : (
         <div className="music-rows">
           {lists.map((p) => {
@@ -381,7 +407,7 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
       </div>
       <AddTracks list={list} />
       {list.tracks.length === 0 ? (
-        <div className="music-empty">Cole acima links de vídeos do YouTube, um por linha ou vários de uma vez.</div>
+        <div className="music-empty">Playlist vazia.</div>
       ) : (
         <div className="music-rows">
           {list.tracks.map((t, i) => (

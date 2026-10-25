@@ -4,7 +4,7 @@
 // Só existe na tela do mestre; nada disto passa pela mesa nem chega aos jogadores.
 import { Store } from '../net/emitter';
 import { toast } from '../components/common/toast';
-import { CROSSFADE_STEPS, fillTrackInfo, prefsStore, type Repeat } from './library';
+import { CROSSFADE_STEPS, fillTrackInfo, prefsStore } from './library';
 import { fetchPlaylistTitle, fetchVideoInfo, loadYouTubeApi, playerErrorText, YTState, type Track, type YTPlayer } from './youtube';
 
 export type QueueSource =
@@ -157,11 +157,11 @@ function fillTitles() {
 function nextIndex(manual: boolean): number | null {
   const { queue, index, failed } = p();
   if (!queue.length) return null;
-  const repeat = prefsStore.get().repeat;
-  if (!manual && repeat === 'one' && !failed.includes(queue[index]?.id)) return index;
+  const { loop, repeatList } = prefsStore.get();
+  if (!manual && loop && !failed.includes(queue[index]?.id)) return index;
   for (let k = 1; k <= queue.length; k++) {
     const i = index + k;
-    if (i >= queue.length && repeat === 'off' && !manual) return null;
+    if (i >= queue.length && !repeatList && !manual) return null;
     const j = i % queue.length;
     if (!failed.includes(queue[j].id)) return j;
   }
@@ -592,14 +592,14 @@ export function toggleMute() {
   decks.forEach(applyVolume);
 }
 
-export function cycleRepeat() {
-  const modes: Repeat[] = ['all', 'one', 'off'];
-  prefsStore.patch({ repeat: modes[(modes.indexOf(prefsStore.get().repeat) + 1) % modes.length] });
+/** Liga ou desliga "voltar ao começo da fila depois da última faixa". */
+export function toggleRepeatList() {
+  prefsStore.patch({ repeatList: !prefsStore.get().repeatList });
 }
 
-/** Liga ou desliga "recomeçar a faixa quando acabar" (desligado volta a repetir a playlist). */
-export function toggleRepeatOne() {
-  prefsStore.patch({ repeat: prefsStore.get().repeat === 'one' ? 'all' : 'one' });
+/** Liga ou desliga "recomeçar a faixa quando acabar". */
+export function toggleLoop() {
+  prefsStore.patch({ loop: !prefsStore.get().loop });
 }
 
 /** Troca a duração da transição entre faixas (desligada, 3, 5, 8 ou 12 segundos). */

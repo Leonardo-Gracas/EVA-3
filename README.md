@@ -40,8 +40,9 @@ Além disso, a mesa tem:
 
 Só o mestre ouve: o player fica na página do mestre e nada passa pela mesa nem pelo servidor de salas.
 Recolhido, mostra tocar/pausar, anterior, próxima, recomeçar a faixa quando acabar e volume; clicar na barra fora dos botões
-abre o painel. Expandido, mostra o vídeo, a posição na faixa, aleatório, repetir (playlist, faixa ou nada), a duração da
-transição, um campo para tocar qualquer link do YouTube (vídeo ou playlist) e duas abas:
+abre o painel. Expandido, mostra a capa (sem vídeo: os players do YouTube ficam fora da tela), a posição na faixa, a mesma
+barra de controles, um campo para tocar qualquer link do YouTube (vídeo ou playlist), os botões Aleatório, Repetir playlist e
+Transição, e duas abas. As explicações e o botão para entrar no YouTube ficam na ajuda (ícone "i"). As abas são:
 
 - **Tocando**: a fila atual, com o nome de cada vídeo. Uma fila aberta por link pode ser salva como playlist do sistema.
 - **Do sistema**: playlists montadas no EVA colando links de vídeos. Ficam no `localStorage` do navegador do mestre
@@ -56,7 +57,7 @@ Títulos e nomes de playlist vêm do oEmbed do YouTube, sem conta nem chave de A
 YouTube (comum em clipes oficiais) são pulados com um aviso.
 
 **Anúncios**: o player incorporado usa a sessão do youtube.com do navegador. Com YouTube Premium e logado no youtube.com,
-não há anúncios. O botão **Abrir YouTube** abre o site para entrar na conta; ao voltar para o EVA, o player é recarregado para
+não há anúncios. O botão **Entrar no YouTube**, na ajuda, abre o site para entrar na conta; ao voltar para o EVA, o player é recarregado para
 usar a sessão nova, continuando a faixa de onde estava. Navegadores que bloqueiam cookies de outros sites (Safari, Brave,
 Firefox estrito) podem mostrar anúncios mesmo com Premium.
 

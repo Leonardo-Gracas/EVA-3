@@ -10,13 +10,15 @@ export interface LocalPlaylist {
   createdAt: number;
 }
 
-export type Repeat = 'all' | 'one' | 'off';
 export type MusicTab = 'fila' | 'sistema';
 
 export interface MusicPrefs {
   volume: number;
   muted: boolean;
-  repeat: Repeat;
+  /** Recomeçar a faixa quando ela acabar. */
+  loop: boolean;
+  /** Voltar ao começo da fila depois da última faixa. */
+  repeatList: boolean;
   shuffle: boolean;
   tab: MusicTab;
   /** Segundos de transição entre faixas (0 = corte seco). */
@@ -27,7 +29,7 @@ export const CROSSFADE_STEPS = [0, 3, 5, 8, 12];
 
 const LIB_KEY = 'eva3.music.playlists';
 const PREFS_KEY = 'eva3.music.prefs';
-const DEFAULT_PREFS: MusicPrefs = { volume: 60, muted: false, repeat: 'all', shuffle: false, tab: 'sistema', crossfade: 5 };
+const DEFAULT_PREFS: MusicPrefs = { volume: 60, muted: false, loop: false, repeatList: true, shuffle: false, tab: 'sistema', crossfade: 5 };
 
 function read<T>(key: string): T | null {
   try {
@@ -49,8 +51,14 @@ function validPlaylists(v: unknown): LocalPlaylist[] {
 }
 
 export const libraryStore = new Store<LocalPlaylist[]>(validPlaylists(read(LIB_KEY)));
-function validPrefs(v: Partial<MusicPrefs> | null): MusicPrefs {
-  const prefs = { ...DEFAULT_PREFS, ...v };
+function validPrefs(v: (Partial<MusicPrefs> & { repeat?: string }) | null): MusicPrefs {
+  const { repeat, ...rest } = v ?? {};
+  const prefs: MusicPrefs = { ...DEFAULT_PREFS, ...rest };
+  // Versão anterior: um só modo de repetição ('all' | 'one' | 'off').
+  if (repeat && v?.loop === undefined) {
+    prefs.loop = repeat === 'one';
+    prefs.repeatList = repeat !== 'off';
+  }
   if (prefs.tab !== 'fila' && prefs.tab !== 'sistema') prefs.tab = DEFAULT_PREFS.tab;
   if (!CROSSFADE_STEPS.includes(prefs.crossfade)) prefs.crossfade = DEFAULT_PREFS.crossfade;
   return prefs;
