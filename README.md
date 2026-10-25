@@ -34,6 +34,34 @@ Além disso, a mesa tem:
 - **Descanso**: o mestre escolhe quais personagens descansam.
 - **Avatares**: criador de avatar dos personagens, no estilo picrew.
 - **Exportar e importar fichas**: fichas saem e entram como `.json`, como personagem de jogador ou como NPC; o mestre também pode excluir jogadores da mesa.
+- **Trilha sonora**: player do YouTube no canto inferior direito da tela do mestre (veja abaixo).
+
+## Trilha sonora
+
+Só o mestre ouve: o player é um iframe do YouTube na página do mestre e nada passa pela mesa nem pelo servidor de salas.
+Recolhido, mostra tocar/pausar, anterior, próxima e volume. Expandido, mostra o vídeo, a posição na faixa, aleatório,
+repetir (playlist, faixa ou nada), um campo para tocar qualquer link do YouTube e três abas:
+
+- **Tocando**: a fila atual.
+- **Do sistema**: playlists montadas no EVA colando links de vídeos. Ficam no `localStorage` do navegador do mestre
+  (não entram no backup da mesa).
+- **Minha conta**: as playlists da conta do YouTube do mestre (login Google, só leitura). Dá para copiá-las para "Do sistema".
+
+Vídeos cujo dono proíbe tocar fora do YouTube (comum em clipes oficiais) são pulados com um aviso.
+
+**Anúncios**: o player incorporado usa a sessão do youtube.com do navegador. Com YouTube Premium e logado no youtube.com
+neste navegador, não há anúncios. Conectar a conta na aba "Minha conta" serve para listar as playlists; não muda os anúncios.
+Navegadores que bloqueiam cookies de outros sites (Safari, Brave, Firefox estrito) podem mostrar anúncios mesmo com Premium.
+
+**Configurar o login da conta** (uma vez; sem isto o resto funciona, só a aba "Minha conta" fica desligada):
+
+1. No [Google Cloud Console](https://console.cloud.google.com/), crie um projeto e ative a **YouTube Data API v3**.
+2. Em **Tela de consentimento OAuth**, escolha "Externo", mantenha em modo de teste e adicione seu e-mail como usuário de teste.
+3. Em **Credenciais → Criar credenciais → ID do cliente OAuth**, tipo "Aplicativo da Web", com as origens JavaScript
+   `https://eva-3.netlify.app` e `http://localhost:5173`.
+4. Copie o ID do cliente para `VITE_GOOGLE_CLIENT_ID` (no Netlify, em variáveis de ambiente; localmente, num `.env`) e publique de novo.
+
+A CSP do `netlify.toml` libera só o necessário: player e miniaturas do YouTube, login do Google e a API de playlists.
 
 ## Desenvolvimento
 

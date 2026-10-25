@@ -27,6 +27,7 @@ import PermissionsPanel from '../components/gm/PermissionsPanel';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
+import MusicDock from '../components/music/MusicDock';
 
 /** Abas na ordem do preparo à mesa: o caderno da campanha, quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
 type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'npcs' | 'admin' | 'regras';
@@ -175,6 +176,8 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
         <Modal open={invite} onClose={() => setInvite(false)} title="Convidar jogadores" width={600}>
           <RoomInvite code={table.roomCode} />
         </Modal>
+        {/* Só na tela do mestre: a música toca neste navegador e não passa pela mesa. */}
+        <MusicDock />
       </div>
     </ActProvider>
   );

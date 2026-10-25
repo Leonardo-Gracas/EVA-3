@@ -22,11 +22,13 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 # A CSP é a principal barreira contra XSS: o navegador só executa script do
-# próprio site e só conecta ao servidor de salas.
+# próprio site e só conecta ao servidor de salas. Exceções da trilha sonora do mestre:
+# player do YouTube (www.youtube.com, miniaturas em ytimg/ggpht), login do Google
+# (accounts.google.com/gsi) e a API de playlists (www.googleapis.com).
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://eva3-salas.leo-gracas.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/ https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://*.googleusercontent.com; frame-src https://www.youtube.com https://accounts.google.com/gsi/; connect-src 'self' wss://eva3-salas.leo-gracas.workers.dev https://www.youtube.com/oembed https://www.googleapis.com/youtube/ https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
