@@ -99,6 +99,18 @@ const A: Ability[] = [
 
   // ── OCULTISTA ──────────────────────────────────────────────────────────────
   {
+    id: 'combusto', classId: 'ocultista', name: 'Combusto', minClassLevel: 1, passive: false, peCost: 2,
+    text: 'Gaste 2 PE para causar uma explosão de chamas de 2d6 de dano ao alcance de toque.\n\nPode gastar mais 1 PE para aumentar o dano em mais 1d6. Não cumulativo.\n\nPode realizar um truque, removendo o custo, o dano e aumentando o alcance para curto. Essa pequena explosão pode acender velas ou itens altamente inflamáveis. O objeto deve estar visível ao conjurador.',
+  },
+  {
+    id: 'figre', classId: 'ocultista', name: 'Figre', minClassLevel: 1, passive: false, peCost: 2,
+    text: 'Gaste 2 PE para convocar raízes em alcance curto e controlá-las por um instante antes de se solidificarem. Caso acerte um alvo, o AFUGENTA FISICAMENTE.\n\nPode gastar mais 2 PE para realizar uma manobra de combate com as raízes somando seu INT ao teste.\n\nPode gastar mais 1 PE para aumentar o alcance para médio.\n\nPode realizar um truque, removendo custo mudando o alcance para alcance médio. Pode movimentar plantas levemente à sua vontade, podendo abrir caminho entre matas fechadas ou chamar atenção.',
+  },
+  {
+    id: 'cliostra', classId: 'ocultista', name: 'Cliostra', minClassLevel: 1, passive: false, peCost: 2,
+    text: 'Gaste 2 PE para manipular um objeto metálico ao alcance médio. Se o objeto pertencer a uma criatura, ela pode realizar um teste oposto para resistir. Pode mover o objeto por 1.5m e mais 1.5m para cada 5 pontos acima da CD do teste. Objetos pesados têm CD maior. Objetos que não puderem se mover na direção ordenada sofrem 1d4 de dano para cada 1.5m aplicados.\n\nGaste 3 PE para potencializar, recebendo +5 no teste.\n\nGaste 2 PE para pressionar, aumentando o dano a objetos para 1d6.\n\nPode realizar um truque, removendo custos. Pode movimentar objetos em seu próprio eixo, sem deslocamento. Útil para fechar uma porta com trinco de ferro ou derrubar uma chave.',
+  },
+  {
     id: 'estudo', classId: 'ocultista', name: 'Estudo', minClassLevel: 3, passive: true,
     text: '2 + INT de PE.',
     effect: { peMax: { base: 2, attr: 'INT' } },
@@ -110,18 +122,6 @@ const A: Ability[] = [
   {
     id: 'aplicacao', classId: 'ocultista', name: 'Aplicação', minClassLevel: 3, passive: true,
     text: '+2 em todos os testes de conjurações mágicas.',
-  },
-  {
-    id: 'combusto', classId: 'ocultista', name: 'Combusto', minClassLevel: 1, passive: false, peCost: 2,
-    text: 'Gaste 2 PE para causar uma explosão de chamas de 2d6 de dano ao alcance de toque.\n\nPode gastar mais 1 PE para aumentar o dano em mais 1d6. Não cumulativo.\n\nPode realizar um truque, removendo o custo, o dano e aumentando o alcance para curto. Essa pequena explosão pode acender velas ou itens altamente inflamáveis. O objeto deve estar visível ao conjurador.',
-  },
-  {
-    id: 'figre', classId: 'ocultista', name: 'Figre', minClassLevel: 1, passive: false, peCost: 2,
-    text: 'Gaste 2 PE para convocar raízes em alcance curto e controlá-las por um instante antes de se solidificarem. Caso acerte um alvo, o AFUGENTA FISICAMENTE.\n\nPode gastar mais 2 PE para realizar uma manobra de combate com as raízes somando seu INT ao teste.\n\nPode gastar mais 1 PE para aumentar o alcance para médio.\n\nPode realizar um truque, removendo custo mudando o alcance para alcance médio. Pode movimentar plantas levemente à sua vontade, podendo abrir caminho entre matas fechadas ou chamar atenção.',
-  },
-  {
-    id: 'cliostra', classId: 'ocultista', name: 'Cliostra', minClassLevel: 1, passive: false, peCost: 2,
-    text: 'Gaste 2 PE para manipular um objeto metálico ao alcance médio. Se o objeto pertencer a uma criatura, ela pode realizar um teste oposto para resistir. Pode mover o objeto por 1.5m e mais 1.5m para cada 5 pontos acima da CD do teste. Objetos pesados têm CD maior. Objetos que não puderem se mover na direção ordenada sofrem 1d4 de dano para cada 1.5m aplicados.\n\nGaste 3 PE para potencializar, recebendo +5 no teste.\n\nGaste 2 PE para pressionar, aumentando o dano a objetos para 1d6.\n\nPode realizar um truque, removendo custos. Pode movimentar objetos em seu próprio eixo, sem deslocamento. Útil para fechar uma porta com trinco de ferro ou derrubar uma chave.',
   },
   {
     id: 'termodrium', classId: 'ocultista', name: 'Termodrium', minClassLevel: 6, passive: false, peCost: 5,
