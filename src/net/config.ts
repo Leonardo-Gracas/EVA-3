@@ -1,10 +1,7 @@
-// Salas: código curto ditado na mesa + id do PeerJS derivado dele.
-// Adaptado do EVA S (client/src/online/config.ts).
+// Salas: código curto ditado na mesa. Adaptado do EVA S (client/src/online/config.ts).
+import { SERVER_URL } from './socket';
 
-const PEER_PREFIX = 'eva3-sala-';
-export const peerIdFor = (code: string) => `${PEER_PREFIX}${code.toUpperCase()}`;
-
-// Sem 0/O, 1/I/L: o código é ditado em voz alta.
+// Sem 0/O, 1/I/L: o código é ditado em voz alta. O servidor (server/src/index.ts) usa o mesmo alfabeto.
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
 
@@ -32,27 +29,9 @@ export function codeFromPath(): string | null {
   return isValidCode(c) ? c : null;
 }
 
-function iceServers(): RTCIceServer[] | undefined {
-  const raw = import.meta.env.VITE_ICE_SERVERS;
-  if (!raw) return undefined;
-  try { return JSON.parse(raw); } catch { return undefined; }
+/** Endereço WebSocket da sala no servidor de salas. */
+export function roomUrl(code: string, params: Record<string, string>): string {
+  return `${SERVER_URL}/sala/${encodeURIComponent(code.toUpperCase())}?${new URLSearchParams(params)}`;
 }
 
-/**
- * Opções do PeerJS. Por padrão usa o servidor público gratuito (0.peerjs.com),
- * que só apresenta mestre e jogadores — os dados vão direto de navegador para
- * navegador. Dá para apontar para um servidor próprio via variáveis VITE_PEER_*.
- */
-export function peerOptions(): Record<string, unknown> {
-  const env = import.meta.env;
-  const opts: Record<string, unknown> = { debug: 1 };
-  if (env.VITE_PEER_HOST) {
-    opts.host = env.VITE_PEER_HOST;
-    if (env.VITE_PEER_PORT) opts.port = Number(env.VITE_PEER_PORT);
-    if (env.VITE_PEER_PATH) opts.path = env.VITE_PEER_PATH;
-    opts.secure = env.VITE_PEER_SECURE ? env.VITE_PEER_SECURE === '1' : window.location.protocol === 'https:';
-  }
-  const ice = iceServers();
-  if (ice) opts.config = { iceServers: ice };
-  return opts;
-}
+export const serverConfigured = () => SERVER_URL !== '';

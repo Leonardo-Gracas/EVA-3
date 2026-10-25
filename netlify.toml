@@ -1,5 +1,8 @@
-# EVA 3 — site estático. O navegador do mestre é o servidor da mesa e os
-# jogadores conectam por P2P (PeerJS). Nenhum dado de jogo passa pelo Netlify.
+# EVA 3 — site estático. O navegador do mestre é o servidor da mesa e todos
+# conectam ao servidor de salas (Cloudflare Worker, pasta server/), que só repassa
+# as mensagens. Nenhum dado de jogo passa pelo Netlify.
+# O endereço do servidor (wss://eva3-salas.leo-gracas.workers.dev) já vem no código
+# (src/net/socket.ts); VITE_SERVER_URL no Netlify só serve para trocá-lo.
 [build]
   command = "npm run build"
   publish = "dist"
@@ -19,12 +22,11 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 # A CSP é a principal barreira contra XSS: o navegador só executa script do
-# próprio site. Se usar servidor PeerJS próprio (VITE_PEER_HOST), acrescente o
-# host dele em connect-src.
+# próprio site e só conecta ao servidor de salas.
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://eva3-salas.leo-gracas.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"

@@ -1,6 +1,6 @@
 # EVA 3
 
-Gerenciador de campanhas online para o sistema de RPG **EVA 3**. O navegador do mestre é o servidor da mesa: guarda tudo, aplica as regras e conversa com os jogadores por P2P (PeerJS). O site é estático e pode ser publicado no Netlify; nenhum dado de jogo passa pelo servidor.
+Gerenciador de campanhas online para o sistema de RPG **EVA 3**. O navegador do mestre é o servidor da mesa: guarda tudo, aplica as regras e conversa com os jogadores através de um servidor de salas na Cloudflare, que só repassa as mensagens. O site é estático e fica no Netlify.
 
 **Acesse o app:** https://eva-3.netlify.app/
 
@@ -11,7 +11,7 @@ Gerenciador de campanhas online para o sistema de RPG **EVA 3**. O navegador do 
 3. **Entrar com código**: vira jogador, monta a ficha no assistente e envia para o mestre aprovar.
 4. Durante o jogo, cada ação do jogador segue as permissões que o mestre definiu: **livre**, **solicitar** (vira pedido na aba Pedidos) ou **bloqueada**. Há permissão global e exceções por jogador.
 
-A mesa fica salva no IndexedDB do navegador do mestre (salvamento automático) e pode ser exportada e importada como `.json` pelo botão **Backup** e pelo lobby. Se o mestre recarregar a página, a sala reabre com o mesmo código e os jogadores reconectam sozinhos.
+A mesa fica salva no IndexedDB do navegador do mestre (salvamento automático) e pode ser exportada e importada como `.json` pelo botão **Backup** e pelo lobby. Se o mestre recarregar a página ou voltar outro dia, a sala reabre com o mesmo código e os jogadores reconectam sozinhos.
 
 ## Regras no código
 
@@ -44,34 +44,45 @@ npm test         # regras e motor da mesa
 npm run build    # gera dist/
 ```
 
+Em modo dev o app usa o servidor de salas local (`ws://localhost:8787`). Rode os dois:
+
+```bash
+npm install --prefix server   # uma vez
+npm run server                # servidor de salas em ws://localhost:8787
+npm run dev                   # em outro terminal
+```
+
 Para testar mestre e jogador na mesma máquina, abra duas janelas (uma anônima) ou dois navegadores.
 
-### Servidor PeerJS próprio (opcional)
+## Servidor de salas
 
-Por padrão a apresentação entre navegadores usa o servidor público `0.peerjs.com`. Para usar outro, defina no build:
+Mestre e jogadores abrem uma conexão WebSocket (`wss://`, porta 443) com o servidor de salas (pasta `server/`:
+Cloudflare Worker + um Durable Object por sala). Como ninguém precisa receber conexões, funciona atrás de qualquer
+roteador, CGNAT ou rede móvel. O servidor não guarda nem lê a mesa: tudo o que um jogador manda vai só para o mestre, e o
+mestre manda a cada jogador só a visão dele. O código da sala fica reservado ao navegador do mestre (por uma chave salva
+nele) por até 30 dias sem uso; se a mesa for importada em outro navegador, ela ganha um código novo.
 
-```
-VITE_PEER_HOST=meu-servidor.com
-VITE_PEER_PORT=443
-VITE_PEER_PATH=/
-VITE_PEER_SECURE=1
-VITE_ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"}]
-```
+## Publicação
 
-e acrescente o host em `connect-src` no `netlify.toml`.
+- **Servidor de salas (Cloudflare)**: na primeira vez e sempre que mudar `server/`, rode `publicar.cmd` (dois cliques).
+  Ele instala as dependências do servidor, faz login na Cloudflare se precisar e roda `wrangler deploy`, que mostra o
+  endereço `https://eva3-salas.leo-gracas.workers.dev`. `ALLOWED_ORIGINS` em `server/wrangler.toml` limita quais sites
+  podem abrir salas.
+- **Site (Netlify)**: publicado a cada `git push` na `main`. O endereço do servidor (`wss://eva3-salas.leo-gracas.workers.dev`)
+  já vem em `src/net/socket.ts` e na CSP do `netlify.toml`; se ele mudar, troque nos dois (ou defina `VITE_SERVER_URL` no Netlify).
 
-## Deploy no Netlify
-
-O `netlify.toml` já define build (`npm run build`), pasta `dist`, redirecionamento SPA e cabeçalhos de segurança. Basta conectar o repositório no Netlify.
+Custo: o plano grátis da Cloudflare (100 mil requisições por dia; cada 20 mensagens recebidas contam como 1) cobre com
+folga sessões longas de uma mesa. Acima disso, o plano Workers Paid custa US$ 5/mês.
 
 ## Estrutura
 
 ```
+server/       servidor de salas (Cloudflare Worker + Durable Object)
 src/
   rules/       regras estáticas (testadas em rules.test.ts)
   model/       tipos da mesa, ações e permissões
   store/       motor (engine.ts), visão do jogador, persistência e backup
-  net/         sala P2P: host (mestre), guest (jogador), identidade
+  net/         sala: host (mestre), guest (jogador), conexão com o servidor, identidade
   components/  ficha, assistente de criação, painéis do mestre, dados
   pages/       nome, lobby, mestre, jogador
 ```

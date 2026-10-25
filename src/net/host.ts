@@ -1,15 +1,16 @@
 // O mestre como servidor: guarda a mesa em memória, aplica as ações pelo motor,
-// salva no IndexedDB e abre a sala no PeerJS. Cada jogador recebe só a sua visão.
+// salva no IndexedDB e abre a sala no servidor de salas (Cloudflare). Cada jogador recebe só a sua visão.
+// O servidor só repassa mensagens: as dos jogadores chegam aqui como `ID\nJSON` e as nossas saem do mesmo jeito.
 // Estrutura de reconexão e limites adaptados do EVA S (online/host/hostRuntime.ts).
-import Peer, { type DataConnection } from 'peerjs';
 import type { Actor, GameAction, TableState } from '../model/types';
 import { dispatch, defaultCtx, type DispatchResult } from '../store/engine';
 import { buildPlayerView } from '../store/views';
 import { saveTable, requestPersistentStorage } from '../store/persistence';
-import { newRoomCode, peerIdFor, peerOptions } from './config';
-import { sha256 } from './identity';
+import { newRoomCode, roomUrl, serverConfigured } from './config';
+import { hostKeyFor, sha256 } from './identity';
 import { Store } from './emitter';
-import { MAX_MESSAGE_CHARS, PROTOCOL_VERSION, type GuestMsg, type HostMsg } from './protocol';
+import { RelaySocket } from './socket';
+import { MAX_MESSAGE_CHARS, PROTOCOL_VERSION, type GuestMsg, type HostMsg, type RelayToHost } from './protocol';
 import { LIMITS } from '../rules/validate';
 
 export type HostStatus = 'idle' | 'opening' | 'online' | 'reconnecting' | 'error';
@@ -37,14 +38,10 @@ interface ConnInfo {
   lastView?: string;
 }
 
-let peer: Peer | null = null;
+let relay: RelaySocket | null = null;
 let stopped = true;
-let idTakenRetries = 0;
-let signalTimer: ReturnType<typeof setTimeout> | null = null;
-let signalRetries = 0;
-const SIGNAL_RETRY_BASE = 1500;
-const SIGNAL_RETRY_MAX = 15000;
-const conns = new Map<DataConnection, ConnInfo>();
+/** Conexões dos jogadores, pelo id que o servidor de salas deu a cada uma. */
+const conns = new Map<string, ConnInfo>();
 
 // ── Estado + persistência ────────────────────────────────────────────────────
 
@@ -87,10 +84,14 @@ export async function flush(): Promise<void> {
   }
 }
 
-function send(conn: DataConnection, msg: HostMsg) {
-  if (conn.open) {
-    try { conn.send(msg); } catch { /* canal fechando */ }
-  }
+function send(conn: string, msg: HostMsg) {
+  relay?.send(`${conn}\n${JSON.stringify(msg)}`);
+}
+
+/** Pede ao servidor para fechar a conexão de um jogador (depois de avisá-lo). */
+function closeConn(conn: string) {
+  conns.delete(conn);
+  setTimeout(() => { relay?.send(JSON.stringify({ t: '$close', to: conn })); }, 300);
 }
 
 function broadcastNow() {
@@ -114,9 +115,9 @@ function scheduleBroadcast() {
   broadcastTimer = setTimeout(broadcastNow, 30);
 }
 
-function sendRemoved(conn: DataConnection) {
+function sendRemoved(conn: string) {
   send(conn, { t: 'removed' });
-  setTimeout(() => conn.close(), 300);
+  closeConn(conn);
 }
 
 function withoutMark(t: TableState, ids: string[]): TableState {
@@ -163,11 +164,7 @@ function rateLimiter() {
   };
 }
 
-function size(msg: unknown): number {
-  try { return JSON.stringify(msg)?.length ?? 0; } catch { return Infinity; }
-}
-
-async function handleHello(conn: DataConnection, info: ConnInfo, msg: Extract<GuestMsg, { t: 'hello' }>) {
+async function handleHello(conn: string, info: ConnInfo, msg: Extract<GuestMsg, { t: 'hello' }>) {
   if (msg.v !== PROTOCOL_VERSION) {
     send(conn, { t: 'denied', reason: 'Versão do app diferente da do mestre. Recarregue a página.' });
     return;
@@ -190,7 +187,7 @@ async function handleHello(conn: DataConnection, info: ConnInfo, msg: Extract<Gu
   }
   if (existing && existing.secretHash !== hash) {
     send(conn, { t: 'denied', reason: 'Esse jogador já está registrado nesta mesa com outro navegador.' });
-    setTimeout(() => conn.close(), 300);
+    closeConn(conn);
     return;
   }
   const now = Date.now();
@@ -214,133 +211,99 @@ async function handleHello(conn: DataConnection, info: ConnInfo, msg: Extract<Gu
   send(conn, { t: 'welcome', playerId: clientId });
 }
 
-function attach(conn: DataConnection) {
-  const info: ConnInfo = { playerId: null, allow: rateLimiter() };
-
-  conn.on('open', () => {
-    conns.set(conn, info);
-  });
-
-  conn.on('data', (raw: unknown) => {
-    const msg = raw as GuestMsg;
-    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
-    if (msg.t === 'ping') { send(conn, { t: 'pong' }); return; }
-    if (!info.allow()) {
-      if (msg.t === 'action') send(conn, { t: 'ack', id: Number(msg.id) || 0, ok: false, error: 'Muitas ações seguidas. Espere um pouco.' });
-      return;
+function onPlayerMessage(conn: string, raw: string) {
+  let info = conns.get(conn);
+  if (!info) { info = { playerId: null, allow: rateLimiter() }; conns.set(conn, info); }
+  if (!info.allow()) {
+    if (raw.includes('"action"')) {
+      try {
+        const m = JSON.parse(raw) as GuestMsg;
+        if (m?.t === 'action') send(conn, { t: 'ack', id: Number(m.id) || 0, ok: false, error: 'Muitas ações seguidas. Espere um pouco.' });
+      } catch { /* ignore */ }
     }
-    if (size(msg) > MAX_MESSAGE_CHARS) return;
-    if (msg.t === 'hello') { void handleHello(conn, info, msg); return; }
-    if (msg.t === 'action') {
-      const id = Number(msg.id);
-      if (!Number.isSafeInteger(id)) return;
-      if (!info.playerId) { send(conn, { t: 'ack', id, ok: false, error: 'Conexão não identificada.' }); return; }
-      const t = table();
-      const player = t.players[info.playerId];
-      const actor: Actor = { role: 'player', playerId: info.playerId, name: player?.name ?? 'Jogador' };
-      const res = dispatch(t, actor, msg.action, defaultCtx);
-      if (res.ok) {
-        commit(res.state);
-        // A visão nova chega antes do ack (canal ordenado): a tela já tem o resultado.
-        broadcastNow();
-        send(conn, { t: 'ack', id, ok: true, requested: res.requested, message: res.message });
-      } else {
-        send(conn, { t: 'ack', id, ok: false, error: res.error });
-      }
+    return;
+  }
+  if (raw.length > MAX_MESSAGE_CHARS) return;
+  let msg: GuestMsg;
+  try { msg = JSON.parse(raw) as GuestMsg; } catch { return; }
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
+  if (msg.t === 'hello') { void handleHello(conn, info, msg); return; }
+  if (msg.t === 'action') {
+    const id = Number(msg.id);
+    if (!Number.isSafeInteger(id)) return;
+    if (!info.playerId) { send(conn, { t: 'ack', id, ok: false, error: 'Conexão não identificada.' }); return; }
+    const t = table();
+    const player = t.players[info.playerId];
+    const actor: Actor = { role: 'player', playerId: info.playerId, name: player?.name ?? 'Jogador' };
+    const res = dispatch(t, actor, msg.action, defaultCtx);
+    if (res.ok) {
+      commit(res.state);
+      // A visão nova chega antes do ack (o WebSocket é ordenado): a tela já tem o resultado.
+      broadcastNow();
+      send(conn, { t: 'ack', id, ok: true, requested: res.requested, message: res.message });
+    } else {
+      send(conn, { t: 'ack', id, ok: false, error: res.error });
     }
-  });
+  }
+}
 
-  const drop = () => {
-    if (!conns.delete(conn)) return;
-    hostStore.patch({ online: [...onlineIds()] });
-    scheduleBroadcast();
-  };
-  conn.on('close', drop);
-  conn.on('error', drop);
+function dropConn(conn: string) {
+  if (!conns.delete(conn)) return;
+  hostStore.patch({ online: [...onlineIds()] });
+  scheduleBroadcast();
 }
 
 // ── Sala ─────────────────────────────────────────────────────────────────────
 
-/**
- * Reconecta só ao servidor de salas (sinalização). Os canais com os jogadores são P2P e
- * continuam vivos sem ele: recriar o Peer aqui derrubaria a mesa inteira a cada oscilação.
- */
-function retrySignal(p: Peer) {
-  if (signalTimer) return;
-  const delay = Math.min(SIGNAL_RETRY_MAX, SIGNAL_RETRY_BASE * 2 ** signalRetries);
-  signalRetries += 1;
-  signalTimer = setTimeout(() => {
-    signalTimer = null;
-    if (stopped || peer !== p) return;
-    if (p.destroyed) openPeer();
-    else if (p.disconnected) p.reconnect();
-  }, delay);
+function onFrame(raw: string) {
+  if (stopped) return;
+  const nl = raw.indexOf('\n');
+  if (nl > 0 && raw[0] !== '{') { onPlayerMessage(raw.slice(0, nl), raw.slice(nl + 1)); return; }
+  let msg: RelayToHost;
+  try { msg = JSON.parse(raw) as RelayToHost; } catch { return; }
+  switch (msg?.t) {
+    case '$ready':
+      // Conexão (re)aberta: quem já estava na sala manda o hello de novo e é reidentificado.
+      conns.clear();
+      for (const id of msg.peers) conns.set(id, { playerId: null, allow: rateLimiter() });
+      hostStore.patch({ status: 'online', message: 'Sala aberta', online: [] });
+      break;
+    case '$join':
+      conns.set(msg.id, { playerId: null, allow: rateLimiter() });
+      break;
+    case '$leave':
+      dropConn(msg.id);
+      break;
+    default:
+      break;
+  }
 }
 
-function signalLost() {
-  const players = onlineIds().size;
-  hostStore.patch({
-    status: 'reconnecting',
-    message: players ? 'Reconectando ao servidor de salas... (quem já está na mesa continua conectado)' : 'Reconectando ao servidor de salas...',
-  });
+function onDown() {
+  conns.clear();
+  hostStore.patch({ status: 'reconnecting', message: 'Reconectando ao servidor de salas...', online: [] });
 }
 
-function openPeer() {
-  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
-  peer?.destroy();
-  const code = table().roomCode;
-  const p = new Peer(peerIdFor(code), peerOptions());
-  peer = p;
-  /** Já registrou o código no servidor: dali em diante o PeerJS só desconecta, não destrói. */
-  let opened = false;
-
-  p.on('open', () => {
-    if (peer !== p) return;
-    opened = true;
-    idTakenRetries = 0;
-    signalRetries = 0;
-    hostStore.patch({ status: 'online', message: 'Sala aberta' });
-  });
-  p.on('connection', attach);
-  p.on('disconnected', () => {
-    // Antes de abrir, quem cuida é o handler de erro (recria o Peer).
-    if (peer !== p || stopped || !opened) return;
-    signalLost();
-    retrySignal(p);
-  });
-  p.on('error', (err: { type?: string }) => {
-    if (peer !== p || stopped) return;
-    const type = err?.type;
-    if (type === 'peer-unavailable') return;
-    if (type === 'browser-incompatible') {
-      hostStore.patch({ status: 'error', message: 'Este navegador não suporta WebRTC.' });
-      return;
-    }
-    // Sala já aberta e só a sinalização caiu: reconecta sem tocar nos jogadores.
-    // Inclui `unavailable-id` ao reconectar, enquanto o servidor ainda segura o socket antigo.
-    if (opened && !p.destroyed) {
-      signalLost();
-      retrySignal(p);
-      return;
-    }
-    if (type === 'unavailable-id') {
-      // Após um F5 o servidor ainda segura o código antigo por alguns segundos.
-      if (idTakenRetries < 4) {
-        idTakenRetries += 1;
-        hostStore.patch({ status: 'reconnecting', message: 'Recuperando o código da sala...' });
-        setTimeout(() => { if (!stopped) openPeer(); }, 2500);
-      } else {
-        idTakenRetries = 0;
-        const t = table();
-        commit({ ...t, roomCode: newRoomCode() });
-        hostStore.patch({ status: 'opening', message: 'Código ocupado. Gerando outro...' });
-        openPeer();
-      }
-      return;
-    }
-    hostStore.patch({ status: 'reconnecting', message: 'Sem conexão com o servidor de salas. Tentando de novo...' });
-    setTimeout(() => { if (!stopped && peer === p) openPeer(); }, 4000);
-  });
+function onEnd(reason: string): boolean {
+  conns.clear();
+  hostStore.patch({ online: [] });
+  if (reason === 'taken') {
+    // O código está reservado para outro mestre (por exemplo, a mesa veio de um backup de outro navegador).
+    const t = table();
+    commit({ ...t, roomCode: newRoomCode() });
+    hostStore.patch({ status: 'opening', message: 'Código ocupado. Gerando outro...' });
+    return true;
+  }
+  if (reason === 'replaced') {
+    hostStore.patch({ status: 'error', message: 'Esta mesa foi aberta em outra aba ou navegador. Recarregue a página para trazê-la de volta para cá.' });
+    return false;
+  }
+  if (reason === 'invalid') {
+    hostStore.patch({ status: 'error', message: 'O servidor de salas recusou a conexão. Recarregue a página.' });
+    return false;
+  }
+  hostStore.patch({ status: 'reconnecting', message: 'Reconectando ao servidor de salas...' });
+  return true;
 }
 
 function beforeUnload(e: BeforeUnloadEvent) {
@@ -359,7 +322,13 @@ export function startHost(t: TableState): void {
   void requestPersistentStorage();
   void flush();
   window.addEventListener('beforeunload', beforeUnload);
-  openPeer();
+  if (!serverConfigured()) {
+    hostStore.patch({ status: 'error', message: 'Servidor de salas não configurado (VITE_SERVER_URL).' });
+    return;
+  }
+  const key = hostKeyFor(t.id);
+  relay = new RelaySocket(() => roomUrl(table().roomCode, { modo: 'host', chave: key }), { onFrame, onDown, onEnd });
+  relay.start();
 }
 
 export function stopHost(): void {
@@ -367,11 +336,8 @@ export function stopHost(): void {
   stopped = true;
   void flush();
   window.removeEventListener('beforeunload', beforeUnload);
-  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
-  signalRetries = 0;
-  for (const c of conns.keys()) c.close();
+  relay?.stop();
+  relay = null;
   conns.clear();
-  peer?.destroy();
-  peer = null;
   hostStore.set({ table: null, status: 'idle', message: '', online: [], lastSavedAt: null, saveError: null });
 }

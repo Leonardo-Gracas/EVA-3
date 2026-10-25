@@ -9,3 +9,5 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+.wrangler/
+vite.config.ts.timestamp-*

@@ -1,11 +1,11 @@
-// Jogador: conecta no navegador do mestre por P2P, recebe a sua visão da mesa e
-// envia ações. Reconexão adaptada do EVA S (online/guestRuntime.ts).
-import Peer, { type DataConnection } from 'peerjs';
+// Jogador: conecta à sala pelo servidor de salas (Cloudflare), recebe a sua visão da mesa e
+// envia ações ao mestre. Reconexão adaptada do EVA S (online/guestRuntime.ts).
 import type { GameAction, PlayerView } from '../model/types';
-import { peerIdFor, peerOptions } from './config';
+import { roomUrl, serverConfigured } from './config';
 import type { Identity } from './identity';
 import { Store } from './emitter';
-import { PROTOCOL_VERSION, type HostMsg } from './protocol';
+import { RelaySocket } from './socket';
+import { PROTOCOL_VERSION, type GuestMsg, type HostMsg, type RelayToGuest } from './protocol';
 
 export type GuestStatus = 'idle' | 'connecting' | 'online' | 'host-offline' | 'reconnecting' | 'denied' | 'removed' | 'error';
 
@@ -26,19 +26,10 @@ export interface Ack { ok: boolean; error?: string; requested?: boolean; message
 
 const ACK_TIMEOUT = 15000;
 
-let peer: Peer | null = null;
-let conn: DataConnection | null = null;
+let relay: RelaySocket | null = null;
 let identity: Identity | null = null;
 let seq = 0;
 let stopped = true;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let pingTimer: ReturnType<typeof setInterval> | null = null;
-let signalTimer: ReturnType<typeof setTimeout> | null = null;
-let signalRetries = 0;
-/** O Peer atual já pegou um id no servidor (só então `reconnect()` serve). */
-let peerOpened = false;
-const SIGNAL_RETRY_BASE = 1500;
-const SIGNAL_RETRY_MAX = 15000;
 const pending = new Map<number, { resolve: (a: Ack) => void; timer: ReturnType<typeof setTimeout> }>();
 
 function failPending(error: string) {
@@ -49,8 +40,13 @@ function failPending(error: string) {
   }
 }
 
+function send(msg: GuestMsg): boolean {
+  // JSON.stringify já descarta campos `undefined`.
+  return relay?.send(JSON.stringify(msg)) ?? false;
+}
+
 export function sendAction(action: GameAction): Promise<Ack> {
-  if (!conn?.open || guestStore.get().status !== 'online') {
+  if (!relay?.open || guestStore.get().status !== 'online') {
     return Promise.resolve({ ok: false, error: 'Sem conexão com o mestre.' });
   }
   const id = ++seq;
@@ -60,179 +56,111 @@ export function sendAction(action: GameAction): Promise<Ack> {
       resolve({ ok: false, error: 'O mestre demorou para responder.' });
     }, ACK_TIMEOUT);
     pending.set(id, { resolve, timer });
-    // A serialização binária do PeerJS transforma campos `undefined` em `null`; o JSON os remove.
-    conn!.send({ t: 'action', id, action: JSON.parse(JSON.stringify(action)) as GameAction });
+    if (!send({ t: 'action', id, action })) {
+      clearTimeout(timer);
+      pending.delete(id);
+      resolve({ ok: false, error: 'Sem conexão com o mestre.' });
+    }
   });
 }
 
-function scheduleReconnect(delay = 2500) {
-  if (stopped || reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, delay);
+function hostAway() {
+  failPending('A conexão com o mestre caiu.');
+  guestStore.patch({
+    status: 'host-offline',
+    message: guestStore.get().everConnected
+      ? 'O mestre saiu da sala. Aguardando ele voltar...'
+      : 'O mestre ainda não está na sala. Aguardando ele abrir...',
+  });
 }
 
-/**
- * Reconecta só ao servidor de salas (sinalização). O canal com o mestre é P2P e continua vivo
- * sem ele: fechá-lo a cada oscilação do servidor fazia a conexão cair e voltar à toa.
- */
-function retrySignal(p: Peer) {
-  if (signalTimer) return;
-  const delay = Math.min(SIGNAL_RETRY_MAX, SIGNAL_RETRY_BASE * 2 ** signalRetries);
-  signalRetries += 1;
-  signalTimer = setTimeout(() => {
-    signalTimer = null;
-    if (stopped || peer !== p) return;
-    if (p.destroyed || !peerOpened) openPeer();
-    else if (p.disconnected) p.reconnect();
-  }, delay);
-}
-
-function connect() {
+function onFrame(raw: string) {
   if (stopped) return;
-  if (!peer || peer.destroyed) { openPeer(); return; }
-  // O `open` do Peer chama connect() de novo quando a sinalização voltar.
-  if (peer.disconnected) { retrySignal(peer); return; }
-  if (!peer.open) return;
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  conn?.close();
-  const code = guestStore.get().code;
-  const c = peer.connect(peerIdFor(code), { reliable: true });
-  conn = c;
-
-  c.on('open', () => {
-    if (conn !== c || !identity) return;
-    c.send({ t: 'hello', v: PROTOCOL_VERSION, clientId: identity.clientId, secret: identity.secret, name: identity.name });
-  });
-
-  c.on('data', (raw: unknown) => {
-    if (conn !== c) return;
-    const msg = raw as HostMsg;
-    if (!msg || typeof msg !== 'object') return;
-    switch (msg.t) {
-      case 'welcome':
-        guestStore.patch({ status: 'online', message: 'Conectado', everConnected: true, playerId: msg.playerId });
-        break;
-      case 'denied':
-        stopped = true;
-        guestStore.patch({ status: 'denied', message: msg.reason });
-        break;
-      case 'removed':
-        stopped = true;
-        failPending('O mestre removeu você desta mesa.');
-        guestStore.patch({ status: 'removed', message: 'O mestre removeu você desta mesa.', playerId: null, view: null });
-        break;
-      case 'view':
-        guestStore.patch({ view: msg.view });
-        break;
-      case 'ack': {
-        const p = pending.get(msg.id);
-        if (!p) return;
-        clearTimeout(p.timer);
-        pending.delete(msg.id);
-        p.resolve({ ok: msg.ok, error: msg.error, requested: msg.requested, message: msg.message });
-        break;
+  let msg: HostMsg | RelayToGuest;
+  try { msg = JSON.parse(raw) as HostMsg | RelayToGuest; } catch { return; }
+  if (!msg || typeof msg !== 'object') return;
+  switch (msg.t) {
+    case '$host':
+      if (msg.on && identity) {
+        guestStore.patch({ status: 'connecting', message: 'Conectando ao mestre...' });
+        send({ t: 'hello', v: PROTOCOL_VERSION, clientId: identity.clientId, secret: identity.secret, name: identity.name });
+      } else if (!msg.on) {
+        hostAway();
       }
-      default:
-        break;
+      break;
+    case 'welcome':
+      guestStore.patch({ status: 'online', message: 'Conectado', everConnected: true, playerId: msg.playerId });
+      break;
+    case 'denied':
+      stopped = true;
+      relay?.stop();
+      guestStore.patch({ status: 'denied', message: msg.reason });
+      break;
+    case 'removed':
+      stopped = true;
+      relay?.stop();
+      failPending('O mestre removeu você desta mesa.');
+      guestStore.patch({ status: 'removed', message: 'O mestre removeu você desta mesa.', playerId: null, view: null });
+      break;
+    case 'view':
+      guestStore.patch({ view: msg.view });
+      break;
+    case 'ack': {
+      const p = pending.get(msg.id);
+      if (!p) return;
+      clearTimeout(p.timer);
+      pending.delete(msg.id);
+      p.resolve({ ok: msg.ok, error: msg.error, requested: msg.requested, message: msg.message });
+      break;
     }
-  });
+    default:
+      break;
+  }
+}
 
-  const lost = () => {
-    if (conn !== c) return;
-    conn = null;
-    failPending('A conexão com o mestre caiu.');
-    if (!stopped) {
-      guestStore.patch({ status: 'reconnecting', message: 'Conexão perdida. Reconectando...' });
-      scheduleReconnect();
-    }
-  };
-  c.on('close', lost);
-  c.on('error', lost);
+function onDown() {
+  failPending('A conexão com o mestre caiu.');
+  guestStore.patch({ status: 'reconnecting', message: 'Conexão perdida. Reconectando...' });
+}
+
+function onEnd(reason: string): boolean {
+  failPending('A conexão com o mestre caiu.');
+  if (reason === 'nohost' || reason === 'expired') {
+    guestStore.patch({
+      status: 'host-offline',
+      message: guestStore.get().everConnected
+        ? 'O mestre saiu da sala. Aguardando ele voltar...'
+        : 'Sala não encontrada. Confira o código ou peça para o mestre abrir a sala.',
+    });
+    return true;
+  }
+  if (reason === 'full') {
+    guestStore.patch({ status: 'error', message: 'A sala está cheia.' });
+    return false;
+  }
+  guestStore.patch({ status: 'reconnecting', message: 'Conexão perdida. Reconectando...' });
+  return true;
 }
 
 export function startGuest(code: string, id: Identity): void {
   const cur = guestStore.get();
-  if (!stopped && cur.code === code) return; // StrictMode monta duas vezes
+  if (!stopped && cur.code === code) return; // monta duas vezes em dev
   stopGuest();
   stopped = false;
   identity = id;
-  guestStore.set({ code, status: 'connecting', message: 'Conectando ao mestre...', everConnected: false, playerId: null, view: null });
-  openPeer();
-
-  // Mantém o canal vivo em redes móveis que derrubam conexões ociosas.
-  pingTimer = setInterval(() => { if (conn?.open) conn.send({ t: 'ping' }); }, 20000);
-  window.addEventListener('online', resume);
-  document.addEventListener('visibilitychange', resume);
-}
-
-/** Voltou a rede ou a aba: se o canal caiu enquanto isso, tenta já, sem esperar o timer. */
-function resume() {
-  if (stopped || document.visibilityState === 'hidden' || conn?.open) return;
-  const s = guestStore.get().status;
-  if (s === 'denied' || s === 'removed' || s === 'error') return;
-  signalRetries = 0;
-  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
-  connect();
-}
-
-function openPeer() {
-  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
-  conn = null;
-  peer?.destroy();
-  peerOpened = false;
-  const p = new Peer(peerOptions());
-  peer = p;
-  p.on('open', () => {
-    if (peer !== p || stopped) return;
-    peerOpened = true;
-    signalRetries = 0;
-    // Sinalização voltou com o canal ainda aberto: nada a refazer.
-    if (!conn?.open) connect();
-  });
-  p.on('disconnected', () => {
-    if (peer === p && !stopped) retrySignal(p);
-  });
-  p.on('error', (err: { type?: string }) => {
-    if (peer !== p || stopped) return;
-    const type = err?.type;
-    if (type === 'browser-incompatible') {
-      guestStore.patch({ status: 'error', message: 'Este navegador não suporta WebRTC.' });
-      return;
-    }
-    // Erro do servidor de salas com o canal do mestre aberto: segue jogando e reconecta por trás.
-    if (conn?.open && type !== 'peer-unavailable') {
-      retrySignal(p);
-      return;
-    }
-    if (type === 'peer-unavailable') {
-      guestStore.patch({
-        status: 'host-offline',
-        message: guestStore.get().everConnected
-          ? 'O mestre saiu da sala. Aguardando ele voltar...'
-          : 'Sala não encontrada. Confira o código ou peça para o mestre abrir a sala.',
-      });
-      scheduleReconnect(3000);
-      return;
-    }
-    guestStore.patch({ status: 'reconnecting', message: 'Problema de rede. Tentando de novo...' });
-    scheduleReconnect(4000);
-  });
+  guestStore.set({ code, status: 'connecting', message: 'Conectando à sala...', everConnected: false, playerId: null, view: null });
+  if (!serverConfigured()) {
+    guestStore.patch({ status: 'error', message: 'Servidor de salas não configurado (VITE_SERVER_URL).' });
+    return;
+  }
+  relay = new RelaySocket(() => roomUrl(code, { modo: 'player' }), { onFrame, onDown, onEnd });
+  relay.start();
 }
 
 export function stopGuest(): void {
   stopped = true;
-  window.removeEventListener('online', resume);
-  document.removeEventListener('visibilitychange', resume);
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (signalTimer) { clearTimeout(signalTimer); signalTimer = null; }
-  signalRetries = 0;
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+  relay?.stop();
+  relay = null;
   failPending('Você saiu da sala.');
-  conn?.close();
-  peer?.destroy();
-  conn = null;
-  peer = null;
   guestStore.set({ code: '', status: 'idle', message: '', everConnected: false, playerId: null, view: null });
 }

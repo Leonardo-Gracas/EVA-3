@@ -1,0 +1,19 @@
+# Servidor de salas do EVA 3: um Worker que encaminha cada sala para um Durable Object.
+name = "eva3-salas"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+# Conta do Leo (leonardo240504@gmail.com): o deploy falha se o login for de outra conta.
+account_id = "fd97ba1b9dbc6d86e20b9e810f56b0ad"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# O plano grátis só aceita Durable Objects com SQLite.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+# Endereços autorizados a abrir salas, separados por vírgula (vazio = qualquer um).
+ALLOWED_ORIGINS = "https://eva-3.netlify.app,http://localhost:5173,http://localhost:4173"

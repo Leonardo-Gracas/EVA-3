@@ -61,3 +61,21 @@ export function setRoom(r: RoomSession | null): void {
 export function lastJoinCode(): string {
   try { return localStorage.getItem(LAST_JOIN) ?? ''; } catch { return ''; }
 }
+
+// Chave de mestre de cada mesa: reserva o código da sala no servidor só para este navegador.
+const HOST_KEY = 'eva3_hostkey_';
+const memKeys = new Map<string, string>();
+
+export function hostKeyFor(tableId: string): string {
+  try {
+    const saved = localStorage.getItem(HOST_KEY + tableId);
+    if (saved && /^[0-9a-f]{64}$/.test(saved)) return saved;
+    const key = rand(32);
+    localStorage.setItem(HOST_KEY + tableId, key);
+    return key;
+  } catch {
+    let key = memKeys.get(tableId);
+    if (!key) { key = rand(32); memKeys.set(tableId, key); }
+    return key;
+  }
+}
