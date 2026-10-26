@@ -1,7 +1,7 @@
 // Combate visto pelo jogador: a ordem (sem números dos outros), de quem é a vez,
 // atalhos da própria ficha e o botão de encerrar o turno.
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Hourglass, Play, Swords } from 'lucide-react';
+import { ChevronDown, ChevronUp, Hourglass, Map as MapIcon, Play, Swords } from 'lucide-react';
 import type { PlayerCombat, PlayerCombatant, PlayerView } from '../../model/types';
 import { deriveStats } from '../../rules/derive';
 import { useAct } from '../act';
@@ -67,7 +67,7 @@ export function useCombatAlerts(view: PlayerView | null, onCombatTab: boolean, o
   }, [view, onCombatTab]);
 }
 
-export default function CombatView({ view }: { view: PlayerView }) {
+export default function CombatView({ view, onOpenMap }: { view: PlayerView; onOpenMap?: () => void }) {
   const { act } = useAct();
   const root = useRef<HTMLDivElement>(null);
   useTopbarHeight(root);
@@ -119,6 +119,9 @@ export default function CombatView({ view }: { view: PlayerView }) {
             </>
           )}
         </div>
+        {onOpenMap && (
+          <button className="btn btn-icon" onClick={onOpenMap} title="Ver o mapa" aria-label="Ver o mapa"><MapIcon size={16} /></button>
+        )}
         {mine && (
           <button className="btn btn-primary combat-endturn" disabled={busy} onClick={() => void endTurn()}>
             Encerrar meu turno

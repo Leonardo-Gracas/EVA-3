@@ -1,6 +1,6 @@
 import { Check, X } from 'lucide-react';
 import type { PendingRequest, TableState } from '../../model/types';
-import { PERMISSION_LABELS } from '../../model/permissions';
+import { REQUEST_LABELS } from '../../model/permissions';
 import { useAct } from '../act';
 
 function when(at: number) {
@@ -29,7 +29,7 @@ export default function RequestsPanel({ table }: { table: TableState }) {
             <div key={r.id} className="log-entry">
               <div className="row-wrap">
                 <div className="grow">
-                  <div><strong>{name(r.playerId)}</strong> <span className="badge">{PERMISSION_LABELS[r.permission].label}</span></div>
+                  <div><strong>{name(r.playerId)}</strong> <span className="badge">{REQUEST_LABELS[r.permission].label}</span></div>
                   <div className="secondary">{r.summary}</div>
                   <div className="tiny muted">{when(r.createdAt)}</div>
                 </div>

@@ -221,6 +221,8 @@ export interface ThreatData {
   von: number;
   rdPhysical: number;
   rdMagic: number;
+  /** Deslocamento em metros. */
+  movement: number;
   attacks: ThreatAttack[];
   abilities: ThreatAbility[];
   notes: string;
@@ -277,11 +279,194 @@ export interface Combat {
   turn: number;
   order: Combatant[];
   startedAt: number;
+  /** Mapa onde o combate acontece (modo de locomoção por turno usa esta fila). */
+  mapId: string | null;
+  /**
+   * Quanto quem está agindo já andou neste turno. Só vale se `combatantId` e
+   * `round` forem os do turno atual; senão o turno é outro e conta como zero.
+   */
+  moved?: CombatMoved;
+}
+
+export interface CombatMoved {
+  combatantId: string;
+  round: number;
+  /** Quadrados gastos. */
+  squares: number;
+  /** 1 = a próxima diagonal custa 2. */
+  parity: 0 | 1;
 }
 
 export type CombatSide = 'pc' | 'npc' | 'threat';
 export type CombatHealth = 'ileso' | 'ferido' | 'muito-ferido' | 'abatido' | 'inconsciente' | 'morto';
 export type GroupDamageOp = 'phys' | 'mag' | 'direct' | 'heal';
+
+// ── Mapas ────────────────────────────────────────────────────────────────────
+// Grid quadriculado: terreno por quadrado, paredes nas linhas entre os vértices,
+// objetos (portas nas linhas, móveis nos quadrados) e tokens dos personagens.
+
+/** Cada quadrado vale 1,5 m de deslocamento. */
+export const MAP_CELL_M = 1.5;
+/** Lados do mapa, em quadrados. */
+export const MAP_LIMITS = { min: 4, max: 80 };
+
+/** Escada é marcação visual e custa como terreno difícil. */
+export type Terrain = 'floor' | 'void' | 'difficult' | 'stairs';
+
+/** Caractere de cada terreno em `BattleMap.cells`. */
+export const TERRAIN_CHAR: Record<Terrain, string> = { floor: '.', void: '#', difficult: '~', stairs: '>' };
+
+export const TERRAINS: Record<Terrain, { label: string; hint: string }> = {
+  floor: { label: 'Piso', hint: 'Movimento normal.' },
+  void: { label: 'Vazio', hint: 'Rocha ou fora do mapa: ninguém entra.' },
+  difficult: { label: 'Terreno difícil', hint: 'Custa o dobro.' },
+  stairs: { label: 'Escada', hint: 'Custa como terreno difícil.' },
+};
+
+export type MoveMode = 'livre' | 'turno' | 'permissao';
+
+export const MOVE_MODES: Record<MoveMode, { label: string; hint: string }> = {
+  livre: { label: 'Livre', hint: 'Todos se movem quando quiserem, até o deslocamento a cada movimento.' },
+  turno: { label: 'Por turno', hint: 'Segue a fila do combate vinculado. Quem está fora da fila pede ao mestre.' },
+  permissao: { label: 'Permissionado', hint: 'Todo movimento de jogador vira um pedido ao mestre.' },
+};
+
+export type DoorState = 'open' | 'closed' | 'locked';
+
+export const DOOR_STATES: Record<DoorState, string> = { open: 'Aberta', closed: 'Fechada', locked: 'Trancada' };
+
+/**
+ * Segmento de linha do grid. `h`: linha horizontal y (0..h), do vértice (x,y)
+ * ao (x+1,y). `v`: linha vertical x (0..w), do vértice (x,y) ao (x,y+1).
+ */
+export interface EdgeRef { o: 'h' | 'v'; x: number; y: number }
+
+export type PropKind =
+  | 'mesa' | 'cadeira' | 'cama' | 'estante' | 'barril' | 'caixa' | 'pilar' | 'estatua' | 'pedras' | 'arvore'
+  | 'sofa' | 'fogao' | 'banheira' | 'bau' | 'altar' | 'banco' | 'arbusto' | 'outro';
+
+/** none = só decoração; difficult = terreno difícil; block = ninguém passa. */
+export type PropEffect = 'none' | 'difficult' | 'block';
+
+export const PROP_EFFECTS: Record<PropEffect, string> = { none: 'Decoração', difficult: 'Terreno difícil', block: 'Bloqueia' };
+
+export const PROP_KINDS: Record<PropKind, { label: string; effect: PropEffect }> = {
+  mesa: { label: 'Mesa', effect: 'difficult' },
+  cadeira: { label: 'Cadeira', effect: 'difficult' },
+  cama: { label: 'Cama', effect: 'difficult' },
+  estante: { label: 'Estante', effect: 'block' },
+  barril: { label: 'Barril', effect: 'block' },
+  caixa: { label: 'Caixas', effect: 'difficult' },
+  pilar: { label: 'Pilar', effect: 'block' },
+  estatua: { label: 'Estátua', effect: 'block' },
+  pedras: { label: 'Escombros', effect: 'difficult' },
+  arvore: { label: 'Árvore', effect: 'block' },
+  sofa: { label: 'Sofá', effect: 'difficult' },
+  fogao: { label: 'Fogão', effect: 'block' },
+  banheira: { label: 'Banheira', effect: 'block' },
+  bau: { label: 'Baú', effect: 'difficult' },
+  altar: { label: 'Altar', effect: 'block' },
+  banco: { label: 'Banco', effect: 'difficult' },
+  arbusto: { label: 'Arbusto', effect: 'difficult' },
+  outro: { label: 'Outro', effect: 'block' },
+};
+
+export interface MapDoor {
+  id: string;
+  kind: 'door';
+  edge: EdgeRef;
+  state: DoorState;
+  /** Porta secreta: para os jogadores é só parede. */
+  hidden: boolean;
+}
+
+export interface MapProp {
+  id: string;
+  kind: 'prop';
+  prop: PropKind;
+  label: string;
+  /** Canto superior esquerdo e tamanho, em quadrados. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  effect: PropEffect;
+  hidden: boolean;
+}
+
+export type MapObject = MapDoor | MapProp;
+
+/** Ficha (PJ/NPC) ou combatente da fila (ameaças só existem como instância em combate). */
+export type TokenRef = { kind: 'character' | 'combatant'; id: string };
+
+/** O que dá para pôr no mapa: token já existente ou molde do livro de ameaças (vira instância no combate). */
+export type PlaceRef = TokenRef | { kind: 'threat'; id: string };
+
+export interface MapToken {
+  id: string;
+  ref: TokenRef;
+  x: number;
+  y: number;
+  hidden: boolean;
+  /** Caminho do último movimento (para todos verem o token andar por ele). */
+  trail?: Array<{ x: number; y: number }>;
+}
+
+export interface BattleMap {
+  id: string;
+  name: string;
+  /** Largura e altura, em quadrados. */
+  w: number;
+  h: number;
+  /** w*h caracteres de TERRAIN_CHAR, índice y*w+x. */
+  cells: string;
+  /** Paredes nas linhas horizontais: (h+1)*w caracteres '0'/'1', índice y*w+x. */
+  wallsH: string;
+  /** Paredes nas linhas verticais: h*(w+1) caracteres '0'/'1', índice y*(w+1)+x. */
+  wallsV: string;
+  objects: Record<string, MapObject>;
+  tokens: Record<string, MapToken>;
+  mode: MoveMode;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Tipo de mapa do gerador. */
+export type MapPreset = 'dungeon' | 'house' | 'temple' | 'outdoor';
+
+export const MAP_PRESETS: Record<MapPreset, { label: string; hint: string }> = {
+  dungeon: { label: 'Masmorra', hint: 'Salas soltas na rocha, ligadas por corredores.' },
+  house: { label: 'Casa', hint: 'Planta fechada no formato escolhido, cômodos ao longo dos corredores.' },
+  temple: { label: 'Templo', hint: 'Nave simétrica, santuário com degraus, capelas e sacristias.' },
+  outdoor: { label: 'Cenário aberto', hint: 'Campo com mato, rochas, rio, trilha e construções.' },
+};
+
+/** Formato geral da casa. */
+export type HouseShape = 'random' | 'square' | 'long' | 'L' | 'T' | 'U';
+
+export const HOUSE_SHAPES: Record<HouseShape, string> = {
+  random: 'Aleatório', square: 'Quadrada', long: 'Comprida', L: 'Em L', T: 'Em T', U: 'Em U',
+};
+
+/** Parâmetros do gerador de mapas. */
+export interface MapGenParams {
+  /** Ausente nas ações antigas: masmorra. */
+  preset: MapPreset;
+  /** Só para casa. */
+  shape: HouseShape;
+  /** Põe móveis conforme o tipo de cada cômodo. */
+  furnish: boolean;
+  w: number;
+  h: number;
+  /** Masmorra: salas. Cenário aberto: construções. Casa e templo não usam. */
+  rooms: number;
+  roomMin: number;
+  roomMax: number;
+  /** Largura dos corredores, em quadrados. */
+  corridor: number;
+  /** Chance (0 a 1) de cada entrada de sala ganhar porta. */
+  doors: number;
+}
 
 // ── Investigação ─────────────────────────────────────────────────────────────
 // Mural de cada caso: cartões de evidência e fato soltos num quadro, ligados por fios.
@@ -475,11 +660,14 @@ export interface PermissionState {
 
 export type RequestStatus = 'pending' | 'approved' | 'denied';
 
+/** O que um pedido pede: uma permissão do painel ou algo decidido pelo próprio jogo (mover no mapa). */
+export type RequestKind = PermissionKey | 'map_move';
+
 export interface PendingRequest {
   id: string;
   playerId: string;
   characterId: string;
-  permission: PermissionKey;
+  permission: RequestKind;
   action: GameAction;
   summary: string;
   status: RequestStatus;
@@ -540,6 +728,9 @@ export interface TableState {
   requests: PendingRequest[];
   log: LogEntry[];
   combat: Combat | null;
+  maps: Record<string, BattleMap>;
+  /** Mapa que os jogadores veem (e onde podem se mover). */
+  activeMapId: string | null;
 }
 
 // ── Ações ────────────────────────────────────────────────────────────────────
@@ -641,7 +832,46 @@ export type GameAction =
   | { type: 'campaign/sessionDelete'; sessionId: string }
   | { type: 'table/rename'; name: string }
   | { type: 'table/startLevel'; level: number }
-  | { type: 'log/clear' };
+  | { type: 'log/clear' }
+  | MapAction;
+
+/** O desenho do mapa sem tokens: o que o editor desfaz e refaz. */
+export type MapLayout = Pick<BattleMap, 'w' | 'h' | 'cells' | 'wallsH' | 'wallsV' | 'objects'>;
+
+export type MapAction =
+  /** walls: parede em volta de todo o piso. */
+  | { type: 'map/create'; name: string; w: number; h: number; fill?: Terrain; walls?: boolean }
+  /** Campos ausentes não mudam. */
+  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode }
+  | { type: 'map/delete'; mapId: string }
+  | { type: 'map/duplicate'; mapId: string }
+  /** dx/dy: quanto o conteúdo anda (para crescer à esquerda ou em cima). O que sair do mapa some; o que entra ganha `fill` (padrão: vazio). */
+  | { type: 'map/resize'; mapId: string; w: number; h: number; dx?: number; dy?: number; fill?: Terrain }
+  /** Índices y*w+x. */
+  | { type: 'map/paint'; mapId: string; terrain: Terrain; cells: number[] }
+  | { type: 'map/walls'; mapId: string; edges: EdgeRef[]; on: boolean }
+  /** id desconhecido: cria o objeto. Porta liga a parede da linha. */
+  | { type: 'map/objectUpsert'; mapId: string; object: MapObject }
+  | { type: 'map/objectRemove'; mapId: string; objectIds: string[] }
+  | { type: 'map/door'; mapId: string; objectId: string; state: DoorState }
+  /** Troca terreno, paredes e portas pelo resultado do gerador (mesma seed = mesmo mapa). */
+  | { type: 'map/generate'; mapId: string; params: MapGenParams; seed: number }
+  /** Desfazer/refazer do editor. */
+  | { type: 'map/restore'; mapId: string; layout: MapLayout }
+  /** Mapa do combate aberto; null desvincula. */
+  | { type: 'map/link'; mapId: string | null }
+  /** Mostra o mapa aos jogadores; null esconde. */
+  | { type: 'map/activate'; mapId: string | null }
+  /** Sem x/y: o piso livre mais próximo do centro. */
+  | { type: 'map/tokenPlace'; mapId: string; refs: PlaceRef[]; x?: number; y?: number }
+  | { type: 'map/tokenRemove'; mapId: string; tokenIds: string[] }
+  | { type: 'map/tokenHidden'; mapId: string; tokenIds: string[]; hidden: boolean }
+  /** Mestre: tokenId, sem limite. Jogador: characterId, dentro do deslocamento e do modo de locomoção. */
+  | {
+    type: 'map/move'; mapId: string; x: number; y: number; tokenId?: string; characterId?: string;
+    /** Caminho exato, quadrado a quadrado, da posição atual ao destino (inclusive). Sem: o mais curto. */
+    path?: Array<{ x: number; y: number }>;
+  };
 
 export type Actor = { role: 'gm'; name: string } | { role: 'player'; playerId: string; name: string };
 
@@ -680,6 +910,55 @@ export interface PlayerCombat {
   order: PlayerCombatant[];
 }
 
+export interface PlayerMapToken {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  side: CombatSide;
+  /** Só fichas têm avatar; ameaças usam o ícone da categoria. */
+  avatar?: AvatarConfig;
+  category?: ThreatCategory;
+  /** Ficha do próprio jogador. */
+  mine: boolean;
+  characterId?: string;
+  /** É a vez dele no combate vinculado. */
+  turn: boolean;
+  /** Caminho do último movimento, se o jogador consegue enxergá-lo inteiro. */
+  trail?: Array<{ x: number; y: number }>;
+}
+
+/** Livre / pedir ao mestre / bloqueado, para mover agora. */
+export type MoveGateKind = 'free' | 'request' | 'blocked';
+
+/** O que uma ficha do jogador pode andar agora. */
+export interface PlayerMapMove {
+  characterId: string;
+  tokenId: string;
+  /** Deslocamento inteiro, em quadrados. */
+  squares: number;
+  /** O que ainda dá para andar (no modo por turno, desconta o já andado). */
+  remaining: number;
+  parity: 0 | 1;
+  gate: MoveGateKind;
+  reason?: string;
+}
+
+export interface PlayerMap {
+  id: string;
+  name: string;
+  w: number;
+  h: number;
+  cells: string;
+  wallsH: string;
+  wallsV: string;
+  mode: MoveMode;
+  /** Sem os ocultos: porta secreta some e fica a parede. */
+  objects: MapObject[];
+  tokens: PlayerMapToken[];
+  moves: PlayerMapMove[];
+}
+
 export interface PlayerView {
   table: { id: string; name: string; gmName: string; startLevel: number };
   me: { id: string; name: string };
@@ -695,4 +974,6 @@ export interface PlayerView {
   combat: PlayerCombat | null;
   /** Casos publicados e não arquivados, na versão que o mestre publicou por último. */
   cases: InvestigationCase[];
+  /** Mapa que o mestre está mostrando. */
+  map: PlayerMap | null;
 }

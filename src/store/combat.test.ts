@@ -18,7 +18,7 @@ const draft: CharacterDraft = {
 
 const goblin: ThreatData = {
   name: 'Goblin', concept: '', category: 'etereo', attributes: emptyAttributes(), pvMax: 10, peMax: 0, def: 12, von: 10,
-  rdPhysical: 2, rdMagic: 0, attacks: [], abilities: [], notes: '',
+  rdPhysical: 2, rdMagic: 0, movement: 9, attacks: [], abilities: [], notes: '',
 };
 
 function ok(s: TableState, actor: Actor, a: GameAction): TableState {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Eye, EyeOff, Flag, GripVertical, Heart, Play,
-  Plus, Skull, Swords, Tag, Users, X, Zap,
+  Map as MapIcon, Plus, Skull, Swords, Tag, Users, X, Zap,
 } from 'lucide-react';
 import type { Combat, Combatant, TableState } from '../../model/types';
 import {
@@ -20,7 +20,7 @@ import { ConditionChips, HealthBadge, pct, sideClass, useTopbarHeight, type Chip
 
 interface Entry { cb: Combatant; info: CombatantInfo }
 
-export default function CombatPanel({ table }: { table: TableState }) {
+export default function CombatPanel({ table, onOpenMap }: { table: TableState; onOpenMap?: (mapId: string) => void }) {
   const { act } = useAct();
   const combat = table.combat;
 
@@ -51,10 +51,37 @@ export default function CombatPanel({ table }: { table: TableState }) {
       </div>
     );
   }
-  return <CombatBoard table={table} combat={combat} />;
+  return <CombatBoard table={table} combat={combat} onOpenMap={onOpenMap} />;
 }
 
-function CombatBoard({ table, combat }: { table: TableState; combat: Combat }) {
+/** Mapa do combate: abre o vinculado ou escolhe um para vincular. */
+function CombatMapButton({ table, combat, onOpenMap }: { table: TableState; combat: Combat; onOpenMap?: (mapId: string) => void }) {
+  const { act } = useAct();
+  const linked = combat.mapId ? table.maps[combat.mapId] : undefined;
+  const maps = Object.values(table.maps).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  if (linked) {
+    return (
+      <button className="btn btn-icon" onClick={() => onOpenMap?.(linked.id)} title={`Abrir o mapa do combate: ${linked.name}`} aria-label="Abrir o mapa do combate">
+        <MapIcon size={16} />
+      </button>
+    );
+  }
+  if (!maps.length) return null;
+  return (
+    <select className="input combat-map-pick" value="" title="Vincular um mapa ao combate" aria-label="Vincular um mapa ao combate"
+      onChange={async (e) => {
+        const id = e.target.value;
+        if (!id) return;
+        const r = await act({ type: 'map/link', mapId: id }, 'Combate vinculado ao mapa.');
+        if (r.ok) onOpenMap?.(id);
+      }}>
+      <option value="">Mapa…</option>
+      {maps.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+    </select>
+  );
+}
+
+function CombatBoard({ table, combat, onOpenMap }: { table: TableState; combat: Combat; onOpenMap?: (mapId: string) => void }) {
   const { act } = useAct();
   const root = useRef<HTMLDivElement>(null);
   useTopbarHeight(root);
@@ -199,6 +226,7 @@ function CombatBoard({ table, combat }: { table: TableState; combat: Combat }) {
             {started ? <>Próximo turno <ChevronRight size={16} /></> : <><Play size={15} /> Iniciar combate</>}
             <kbd className="desktop-only">N</kbd>
           </button>
+          <CombatMapButton table={table} combat={combat} onOpenMap={onOpenMap} />
           <button className="btn btn-icon btn-ghost" onClick={() => setEnding(true)} title="Encerrar combate" aria-label="Encerrar combate"><Flag size={16} /></button>
         </div>
       </div>

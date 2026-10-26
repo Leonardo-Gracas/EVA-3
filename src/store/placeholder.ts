@@ -3,7 +3,7 @@
 // Tudo entra pelo motor (library/upsert, threat/upsert), então passa pelas
 // mesmas validações de uma mesa jogada de verdade.
 import type { Actor, ItemData, ItemEffects, ItemSlot, ItemType, TableState, ThreatAbility, ThreatAttack, ThreatData } from '../model/types';
-import { DEFAULT_DURABILITY, DEFAULT_SLOT, NO_EFFECTS } from '../model/types';
+import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, NO_EFFECTS } from '../model/types';
 import type { Attributes } from '../rules/attributes';
 import { defaultCtx, dispatch, newTable, type EngineCtx } from './engine';
 
@@ -148,7 +148,7 @@ function threat(
   return {
     name, concept: `${tier} · ${concept}`, category: 'humano', attributes,
     pvMax: stats.pv, peMax: stats.pe ?? 0, def: stats.def, von: stats.von ?? 10 + attributes.FE,
-    rdPhysical: stats.rd ?? 0, rdMagic: stats.rdm ?? 0,
+    rdPhysical: stats.rd ?? 0, rdMagic: stats.rdm ?? 0, movement: DEFAULT_MOVEMENT,
     attacks, abilities, notes,
   };
 }

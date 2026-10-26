@@ -206,7 +206,7 @@ describe('motor', () => {
     const data = {
       name: 'Possuído', concept: 'Corpo tomado', notes: '', category: 'demoniaco' as const,
       attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
-      pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0,
+      pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0, movement: 9,
       attacks: [{ id: 'a1', name: 'Garras', bonus: 6, damage: '2d6+8', notes: '' }],
       abilities: [{ id: 'h1', name: 'Grito', cost: '3 PE', text: 'Atordoa.' }],
     };
@@ -234,7 +234,7 @@ describe('motor', () => {
     const data = {
       name: 'Possuído', concept: '', notes: '', category: 'demoniaco' as const,
       attributes: { FOR: 8, CON: 6, DES: 2, FE: -3, INT: 0, PRE: 5 },
-      pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0, attacks: [], abilities: [],
+      pvMax: 60, peMax: 10, def: 14, von: 9, rdPhysical: 2, rdMagic: 0, movement: 9, attacks: [], abilities: [],
     };
     let s = dispatch(s0, gm, { type: 'threat/upsert', data }, ctx).state;
     const t = Object.values(s.threats)[0];

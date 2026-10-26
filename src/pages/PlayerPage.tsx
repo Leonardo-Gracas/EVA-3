@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Plus, Search, Swords, Upload, UserX, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Map as MapIcon, Plus, Search, Swords, Upload, UserX, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { setRoom } from '../net/identity';
 import { ActProvider, type ActApi, useAct } from '../components/act';
@@ -17,8 +17,9 @@ import { deriveStats } from '../rules/derive';
 import { PlayerNotifications, useRollToasts } from '../components/Notifications';
 import CombatView, { myTurnIn, useCombatAlerts } from '../components/combat/CombatView';
 import CasesView from '../components/investigation/CasesView';
+import PlayerMapView from '../components/map/PlayerMapView';
 
-type Tab = 'ficha' | 'combate' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
+type Tab = 'ficha' | 'combate' | 'mapa' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
 
 export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
@@ -31,8 +32,10 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   useRollToasts(view?.log ?? null,(e) => tab !== 'registro' && e.playerId === view?.me.id, (e) => !!e.secret || !e.playerId);
   useCombatAlerts(view, tab === 'combate', () => { window.scrollTo({ top: 0 }); setTab('combate'); });
 
-  // Combate encerrado com a aba aberta: volta para a ficha.
+  // Combate encerrado (ou mapa fechado) com a aba aberta: volta para a ficha.
   useEffect(() => { if (!inCombat && tab === 'combate') setTab('ficha'); }, [inCombat, tab]);
+  const hasMap = !!view?.map;
+  useEffect(() => { if (!hasMap && tab === 'mapa') setTab('ficha'); }, [hasMap, tab]);
 
   // Excluído pelo mestre: esquece a sala e o link, para um F5 não entrar de novo sozinho.
   const removed = snap.status === 'removed';
@@ -79,6 +82,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           tabs={[
             { id: 'ficha', label: 'Minha ficha', short: 'Ficha', icon: <ClipboardList size={14} /> },
             ...(inCombat ? [{ id: 'combate' as const, label: myTurn ? 'Combate · sua vez' : 'Combate', short: myTurn ? 'Sua vez' : 'Combate', icon: <Swords size={14} /> }] : []),
+            ...(hasMap ? [{ id: 'mapa' as const, label: 'Mapa', icon: <MapIcon size={14} /> }] : []),
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} /> },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
             { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
@@ -110,7 +114,8 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
         )}
         <main className="page">
           {tab === 'ficha' && <MySheets view={view} />}
-          {tab === 'combate' && view.combat && <CombatView view={view} />}
+          {tab === 'combate' && view.combat && <CombatView view={view} onOpenMap={view.map ? () => setTab('mapa') : undefined} />}
+          {tab === 'mapa' && view.map && <PlayerMapView view={view} />}
           {tab === 'investigacao' && <CasesView view={view} />}
           {tab === 'mesa' && <TableInfo view={view} />}
           {tab === 'pedidos' && <MyRequests view={view} />}

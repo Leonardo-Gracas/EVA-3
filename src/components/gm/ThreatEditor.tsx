@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { THREAT_CATEGORIES, type ThreatAbility, type ThreatAttack, type ThreatCategory, type ThreatData } from '../../model/types';
+import { DEFAULT_MOVEMENT, MAP_CELL_M, THREAT_CATEGORIES, type ThreatAbility, type ThreatAttack, type ThreatCategory, type ThreatData } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES } from '../../rules/attributes';
 import { LIMITS } from '../../rules/validate';
 import Modal from '../common/Modal';
@@ -17,6 +17,7 @@ export const EMPTY_THREAT: ThreatData = {
   von: 10,
   rdPhysical: 0,
   rdMagic: 0,
+  movement: DEFAULT_MOVEMENT,
   attacks: [],
   abilities: [],
   notes: '',
@@ -35,9 +36,9 @@ function Num({ value, onChange, width = 70 }: { value: string; onChange: (v: str
 
 const n = (v: string) => parseInt(v, 10) || 0;
 
-type Draft = Omit<ThreatData, 'attributes' | 'pvMax' | 'peMax' | 'def' | 'von' | 'rdPhysical' | 'rdMagic' | 'attacks'> & {
+type Draft = Omit<ThreatData, 'attributes' | 'pvMax' | 'peMax' | 'def' | 'von' | 'rdPhysical' | 'rdMagic' | 'movement' | 'attacks'> & {
   attributes: Record<string, string>;
-  pvMax: string; peMax: string; def: string; von: string; rdPhysical: string; rdMagic: string;
+  pvMax: string; peMax: string; def: string; von: string; rdPhysical: string; rdMagic: string; movement: string;
   attacks: Array<Omit<ThreatAttack, 'bonus'> & { bonus: string }>;
 };
 
@@ -46,6 +47,7 @@ function toDraft(d: ThreatData): Draft {
     ...d,
     attributes: Object.fromEntries(ATTR_KEYS.map((k) => [k, String(d.attributes[k])])),
     pvMax: String(d.pvMax), peMax: String(d.peMax), def: String(d.def), von: String(d.von), rdPhysical: String(d.rdPhysical), rdMagic: String(d.rdMagic),
+    movement: String(d.movement ?? DEFAULT_MOVEMENT),
     attacks: d.attacks.map((a) => ({ ...a, bonus: String(a.bonus) })),
   };
 }
@@ -56,6 +58,7 @@ function fromDraft(d: Draft): ThreatData {
     name: d.name.trim(),
     attributes: Object.fromEntries(ATTR_KEYS.map((k) => [k, n(d.attributes[k])])) as ThreatData['attributes'],
     pvMax: n(d.pvMax), peMax: n(d.peMax), def: n(d.def), von: n(d.von), rdPhysical: n(d.rdPhysical), rdMagic: n(d.rdMagic),
+    movement: Math.max(0, n(d.movement)),
     attacks: d.attacks.map((a) => ({ ...a, bonus: n(a.bonus) })),
   };
 }
@@ -129,6 +132,9 @@ export default function ThreatEditor({ title, initial, onSave, onClose }: {
             <label className="field small secondary">Vontade<Num value={d.von} onChange={(v) => up({ von: v })} /></label>
             <label className="field small secondary">RD física<Num value={d.rdPhysical} onChange={(v) => up({ rdPhysical: v })} /></label>
             <label className="field small secondary">RD mágica<Num value={d.rdMagic} onChange={(v) => up({ rdMagic: v })} /></label>
+            <label className="field small secondary" title={`${Math.floor(Math.max(0, n(d.movement)) / MAP_CELL_M)} quadrados no mapa`}>
+              Desloc. (m)<Num value={d.movement} onChange={(v) => up({ movement: v })} />
+            </label>
           </div>
         </div>
 

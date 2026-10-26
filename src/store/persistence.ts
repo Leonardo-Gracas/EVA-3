@@ -5,6 +5,7 @@ import { DEFAULT_PERMISSIONS } from '../model/permissions';
 import { deriveStats } from '../rules/derive';
 import { equipBlock } from '../rules/equipment';
 import { snapshotOf } from '../model/cases';
+import { fixMap } from '../model/map';
 import { emptyCampaign, emptySessionData } from '../model/campaign';
 
 const DB_NAME = 'eva3';
@@ -225,9 +226,22 @@ export function migrate(t: TableState): TableState {
     th.rdPhysical ??= legacy.rd ?? 0;
     th.rdMagic ??= 0;
     th.category ??= 'humano';
+    th.movement ??= DEFAULT_MOVEMENT;
     delete legacy.rd;
   }
-  for (const cb of t.combat?.order ?? []) if (cb.threat) cb.threat.category ??= 'humano';
+  for (const cb of t.combat?.order ?? []) {
+    if (!cb.threat) continue;
+    cb.threat.category ??= 'humano';
+    cb.threat.movement ??= DEFAULT_MOVEMENT;
+  }
+  t.maps ??= {};
+  for (const m of Object.values(t.maps)) fixMap(m);
+  t.activeMapId ??= null;
+  if (t.activeMapId && !t.maps[t.activeMapId]) t.activeMapId = null;
+  if (t.combat) {
+    t.combat.mapId ??= null;
+    if (t.combat.mapId && !t.maps[t.combat.mapId]) t.combat.mapId = null;
+  }
   migrateCampaign(t);
   return t;
 }

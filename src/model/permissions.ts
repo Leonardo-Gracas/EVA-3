@@ -1,4 +1,4 @@
-import type { ActionPermission, GameAction, PermissionKey, PermissionState, Permissions } from './types';
+import type { ActionPermission, GameAction, PermissionKey, PermissionState, Permissions, RequestKind } from './types';
 
 export const PERMISSION_KEYS: PermissionKey[] = [
   'resource_change',
@@ -28,7 +28,13 @@ export const PERMISSION_LABELS: Record<PermissionKey, { label: string; hint: str
   notes_update: { label: 'Editar anotações', hint: 'Texto livre da ficha.' },
 };
 
-export const PERMISSION_VALUES: Array<{ value: ActionPermission; label: string }> = [
+/** Rótulo de qualquer pedido: as permissões do painel e os pedidos que o jogo cria sozinho. */
+export const REQUEST_LABELS: Record<RequestKind, { label: string; hint: string }> = {
+  ...PERMISSION_LABELS,
+  map_move: { label: 'Mover no mapa', hint: 'Movimento que depende do modo de locomoção do mapa.' },
+};
+
+export const PERMISSION_VALUES:Array<{ value: ActionPermission; label: string }> = [
   { value: 'free', label: 'Livre' },
   { value: 'request', label: 'Solicitar' },
   { value: 'blocked', label: 'Bloqueada' },

@@ -26,8 +26,16 @@ export interface BoardView {
   trackPointer: (cx: number, cy: number) => void;
 }
 
-/** `onPinchStart`: dois dedos tocaram o quadro (o arraste de um dedo em curso deve parar). */
-export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string, measure: () => Rect | null, onPinchStart?: () => void): BoardView {
+/**
+ * `onPinchStart`: dois dedos tocaram o quadro (o arraste de um dedo em curso deve parar).
+ * `size`: tamanho do quadro sem zoom (o mural usa o fixo; o mapa, o do grid).
+ */
+export function useBoardView(
+  wrapRef: RefObject<HTMLDivElement>, fitKey: string, measure: () => Rect | null, onPinchStart?: () => void,
+  size: { w: number; h: number } = BOARD_SIZE,
+): BoardView {
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
   const [zoom, setZoom] = useState(() => (window.innerWidth < 640 ? 0.6 : 1));
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -62,7 +70,7 @@ export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string,
   const viewCenter = useCallback((): Point => {
     const w = wrapRef.current;
     const z = zoomRef.current;
-    if (!w) return { x: BOARD_SIZE.w / 2, y: BOARD_SIZE.h / 2 };
+    if (!w) return { x: sizeRef.current.w / 2, y: sizeRef.current.h / 2 };
     return { x: (w.scrollLeft + w.clientWidth / 2) / z, y: (w.scrollTop + w.clientHeight / 2) / z };
   }, [wrapRef]);
 
@@ -89,7 +97,7 @@ export function useBoardView(wrapRef: RefObject<HTMLDivElement>, fitKey: string,
     const box = measureRef.current();
     const target: Rect = box
       ? { x: box.x - FIT_MARGIN, y: box.y - FIT_MARGIN, w: box.w + FIT_MARGIN * 2, h: box.h + FIT_MARGIN * 2 }
-      : { x: BOARD_SIZE.w / 2 - w.clientWidth / 2, y: BOARD_SIZE.h / 2 - w.clientHeight / 2, w: w.clientWidth, h: w.clientHeight };
+      : { x: sizeRef.current.w / 2 - w.clientWidth / 2, y: sizeRef.current.h / 2 - w.clientHeight / 2, w: w.clientWidth, h: w.clientHeight };
     const next = clamp(Math.min(w.clientWidth / target.w, w.clientHeight / target.h, FIT_MAX), ZOOM_MIN, ZOOM_MAX);
     flushSync(() => setZoom(next));
     zoomRef.current = next;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Moon, Package, ScrollText, Search, Settings, Shield, Skull, Swords, Upload, UserPlus, UserX, Users,
+  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Map as MapIcon, Moon, Package, ScrollText, Search, Settings, Shield, Skull, Swords, Upload, UserPlus, UserX, Users,
   VenetianMask,
 } from 'lucide-react';
 import CampaignPanel from '../components/campaign/CampaignPanel';
@@ -10,6 +10,7 @@ import NpcsPanel from '../components/gm/NpcsPanel';
 import ThreatsPanel from '../components/gm/ThreatsPanel';
 import CharRow from '../components/gm/CharRow';
 import CombatPanel from '../components/combat/CombatPanel';
+import MapsPanel from '../components/map/MapsPanel';
 import { ActProvider, type ActApi } from '../components/act';
 import type { Character, PlayerRecord, TableState } from '../model/types';
 import { downloadTable } from '../store/persistence';
@@ -30,7 +31,7 @@ import { GmInbox, GmNotifications, useRollToasts } from '../components/Notificat
 import MusicDock from '../components/music/MusicDock';
 
 /** Abas na ordem do preparo à mesa: o caderno da campanha, quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
-type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'npcs' | 'admin' | 'regras';
+type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'mapas' | 'npcs' | 'admin' | 'regras';
 type CastView = 'npcs' | 'ameacas';
 type AdminView = 'pedidos' | 'registro' | 'permissoes';
 
@@ -53,6 +54,8 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const [npcOpen, setNpcOpen] = useState(false);
   const [threatOpen, setThreatOpen] = useState(false);
   const [campOpen, setCampOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState<string | null>(null);
+  const openMap = (id: string) => { setMapOpen(id); setTab('mapas'); };
   const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('jogadores'); };
   const openRequests = () => { setAdminView('pedidos'); setTab('admin'); };
   const logOpen = tab === 'admin' && adminView === 'registro';
@@ -100,6 +103,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             if (t === 'campanha') setCampOpen(false);
             if (t === 'jogadores') setSheetOpen(false);
             if (t === 'npcs') { setNpcOpen(false); setThreatOpen(false); }
+            if (t === 'mapas') setMapOpen(null);
           }}
           mobileBar
           tabs={[
@@ -108,6 +112,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
             { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
             { id: 'combate', label: table.combat?.round ? `Combate · rodada ${table.combat.round}` : 'Combate', short: 'Combate', icon: <Swords size={14} /> },
+            { id: 'mapas', label: 'Mapas', icon: <MapIcon size={14} /> },
             { id: 'npcs', label: 'NPCs e Ameaças', short: 'NPCs', icon: <VenetianMask size={14} /> },
             { id: 'admin', label: 'Admin', icon: <Settings size={14} />, count: pending },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
@@ -144,7 +149,8 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           {tab === 'jogadores' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
           {tab === 'investigacao' && <CasesPanel table={table} />}
-          {tab === 'combate' && <CombatPanel table={table} />}
+          {tab === 'combate' && <CombatPanel table={table} onOpenMap={openMap} />}
+          {tab === 'mapas' && <MapsPanel table={table} openId={mapOpen} setOpenId={setMapOpen} />}
           {tab === 'npcs' && (
             <div className="section">
               <SubTabs<CastView> label="NPCs e Ameaças" value={castView} onChange={setCastView}

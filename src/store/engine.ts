@@ -2,8 +2,8 @@
 // Jogador nunca altera estado direto — manda uma GameAction, o motor confere
 // dono da ficha, regra e permissão (livre / solicitar / bloqueada) e aplica.
 import type {
-  Actor, Character, CharacterDraft, CharacterKind, ClueCard, ClueKind, Combat, Combatant, CombatThreat, GameAction, InventoryItem,
-  InvestigationCase, ItemData, ItemSlot, ItemType, LogEntry, PendingRequest, TableState, Threat, ThreatCategory, ThreatData,
+  ActionPermission, Actor, Character, MapAction, RequestKind, CharacterDraft, CharacterKind, ClueCard, ClueKind, Combat, Combatant, GameAction, InventoryItem,
+  InvestigationCase, ItemData, ItemSlot, ItemType, PendingRequest, TableState, Threat, ThreatCategory, ThreatData,
   ArcStatus, CampaignArc, CampaignCheck, CampaignSession, CampaignSessionData, SessionCastRef, SessionReport,
 } from '../model/types';
 import { caseChanges, snapshotOf } from '../model/cases';
@@ -23,7 +23,12 @@ import { getAbility } from '../rules/abilities';
 import { deriveStats } from '../rules/derive';
 import { LIMITS, validateDraft, validateLevelPick } from '../rules/validate';
 import { cryptoRng, rollExpr, type Rng } from '../rules/dice';
-import { combatantInfo, conditionExpired, GROUP_OPS, groupDamageResult, rdFor } from './combat';
+import {
+  combatantInfo, conditionExpired, GROUP_OPS, groupDamageResult, MAX_COMBATANTS, nameInstances, rdFor, threatInstance,
+} from './combat';
+import { Fail, fail, int, log, record, str } from './guard';
+import { applyMapAction, describeMapMove, dropTokens, getMap } from './mapActions';
+import { moveGate } from './maps';
 
 export interface EngineCtx {
   now: () => number;
@@ -46,7 +51,6 @@ export type DispatchResult =
   | { ok: true; state: TableState; requested?: boolean; message?: string; id?: string }
   | { ok: false; state: TableState; error: string };
 
-const MAX_LOG = 400;
 const MAX_REQUESTS_KEPT = 200;
 const MAX_PENDING_PER_PLAYER = 20;
 const MAX_CHARACTERS_PER_PLAYER = 10;
@@ -57,7 +61,6 @@ const MAX_LIBRARY = 500;
 const MAX_NPCS = 200;
 const MAX_THREATS = 300;
 const MAX_GOLD = 9_999_999;
-const MAX_COMBATANTS = 60;
 const MAX_CONDITIONS = 12;
 const MAX_SPAWN = 20;
 const MAX_CASES = 30;
@@ -90,27 +93,12 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     requests: [],
     log: [],
     combat: null,
+    maps: {},
+    activeMapId: null,
   };
 }
 
 // ── Utilidades ───────────────────────────────────────────────────────────────
-
-class Fail extends Error {}
-const fail = (msg: string): never => { throw new Fail(msg); };
-
-function str(v: unknown, max: number, field: string, required = false): string {
-  if (typeof v !== 'string') return fail(`${field} inválido.`);
-  const s = v.trim();
-  if (required && !s) fail(`${field} é obrigatório.`);
-  if (s.length > max) fail(`${field} longo demais.`);
-  return s;
-}
-
-function int(v: unknown, min: number, max: number, field: string): number {
-  if (typeof v !== 'number' || !Number.isFinite(v) || !Number.isInteger(v)) return fail(`${field} inválido.`);
-  if (v < min || v > max) fail(`${field} fora do limite (${min} a ${max}).`);
-  return v;
-}
 
 function cleanItem(raw: unknown): ItemData {
   if (!raw || typeof raw !== 'object') return fail('Item inválido.');
@@ -241,8 +229,6 @@ function fillResources(c: Character) {
   c.current = { pv: d.pvMax, pe: d.peMax, clareza: d.clarezaMax };
 }
 
-const record = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? v as Record<string, unknown> : {});
-
 /**
  * Ficha vinda de um arquivo exportado: mesmas regras da criação (sem exigir o
  * nível inicial da mesa), com inventário, ouro, ajustes do mestre e PV/PE/Clareza
@@ -326,6 +312,7 @@ function cleanThreat(raw: unknown, ctx: EngineCtx): ThreatData {
     von: int(r.von, 0, 99, 'Vontade'),
     rdPhysical: int(r.rdPhysical ?? r.rd ?? 0, 0, 99, 'RD física'),
     rdMagic: int(r.rdMagic ?? 0, 0, 99, 'RD mágica'),
+    movement: int(r.movement ?? DEFAULT_MOVEMENT, 0, 999, 'Deslocamento'),
     attacks: list(r.attacks, 'Ataques').map((a) => ({
       id: id(a.id),
       name: str(a.name, LIMITS.itemName, 'Nome do ataque', true),
@@ -419,11 +406,6 @@ function getSession(s: TableState, id: unknown): CampaignSession {
   return x ?? fail('Sessão não encontrada.');
 }
 
-function log(s: TableState, ctx: EngineCtx, e: Omit<LogEntry, 'id' | 'at'>) {
-  s.log.push({ id: ctx.newId(), at: ctx.now(), ...e });
-  if (s.log.length > MAX_LOG) s.log.splice(0, s.log.length - MAX_LOG);
-}
-
 function clampCurrent(c: Character) {
   const d = deriveStats(c);
   c.current.pv = Math.max(d.deathAt, Math.min(d.pvMax, c.current.pv));
@@ -472,6 +454,8 @@ function keepTurn(c: Combat, currentId: string | undefined, fallback: number) {
 
 /** Ao começar um turno, encerra as condições cujo ponto final a vez alcançou. */
 function startTurn(s: TableState, c: Combat, ctx: EngineCtx) {
+  // Turno novo, deslocamento inteiro.
+  c.moved = undefined;
   for (const cb of c.order) {
     const ended = cb.conditions.filter((x) => conditionExpired(c, x));
     if (!ended.length) continue;
@@ -503,30 +487,6 @@ function reanchorConditions(before: Combatant[], removed: Set<string>) {
         if (cond.endsAtRound !== null) cond.endsAtRound += 1;
       }
     }
-  }
-}
-
-/** Nova instância de ameaça a partir do molde do livro, com PV/PE cheios. */
-function threatInstance(t: Threat, name: string): CombatThreat {
-  const { id: _id, current: _c, visible: _v, createdAt: _a, updatedAt: _u, ...data } = structuredClone(t);
-  return { ...data, name: name.slice(0, LIMITS.name), current: { pv: t.pvMax, pe: t.peMax } };
-}
-
-/**
- * Numera as instâncias de um mesmo molde: uma só fica "Goblin"; a partir de
- * duas, "Goblin 1", "Goblin 2"... sem renumerar quem já tinha número.
- */
-function nameInstances(c: Combat, templateId: string, base: string) {
-  const group = c.order.filter((x) => x.ref.kind === 'threat' && x.ref.id === templateId && x.threat);
-  if (group.length < 2) return;
-  const re = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (\\d+)$`);
-  const used = new Set(group.map((x) => Number(re.exec(x.threat!.name)?.[1])).filter((n) => n > 0));
-  let next = 1;
-  for (const x of group) {
-    if (re.test(x.threat!.name)) continue;
-    while (used.has(next)) next += 1;
-    x.threat!.name = `${base} ${next}`.slice(0, LIMITS.name);
-    used.add(next);
   }
 }
 
@@ -565,8 +525,11 @@ function removeCombatants(s: TableState, ctx: EngineCtx, drop: (cb: Combatant) =
   const removedBefore = c.order.slice(0, c.turn).filter(drop).length;
   const curRemoved = !!cur && drop(cur);
   const before = c.order;
+  const removed = new Set(before.filter(drop).map((x) => x.id));
   c.order = c.order.filter((x) => !drop(x));
-  reanchorConditions(before, new Set(before.filter(drop).map((x) => x.id)));
+  reanchorConditions(before, removed);
+  // Ameaça que sai da fila sai do mapa (a instância deixa de existir).
+  dropTokens(s, (t) => t.ref.kind === 'combatant' && removed.has(t.ref.id));
   keepTurn(c, curRemoved ? undefined : cur?.id, c.turn - removedBefore);
   if (!curRemoved || !c.round || !c.order.length) return;
   if (combatantInfo(s, c.order[c.turn])?.down) {
@@ -577,9 +540,10 @@ function removeCombatants(s: TableState, ctx: EngineCtx, drop: (cb: Combatant) =
   }
 }
 
-/** Ficha excluída sai da fila. (Ameaças não: a instância independe do molde.) */
+/** Ficha excluída sai da fila e dos mapas. (Ameaças não: a instância independe do molde.) */
 function dropCharacterFromCombat(s: TableState, ctx: EngineCtx, characterId: string) {
   removeCombatants(s, ctx, (x) => x.ref.kind === 'character' && x.ref.id === characterId);
+  dropTokens(s, (t) => t.ref.kind === 'character' && t.ref.id === characterId);
 }
 
 /** "A", "A e B", "A, B e C". */
@@ -645,9 +609,14 @@ const GM_ONLY = new Set<GameAction['type']>([
   'campaign/update', 'campaign/arcUpsert', 'campaign/arcDelete', 'campaign/arcMove', 'campaign/sessionUpsert', 'campaign/sessionDelete',
 ]);
 
+const isMapAction = (a: GameAction): a is MapAction => typeof a.type === 'string' && a.type.startsWith('map/');
+
 function authorize(s: TableState, actor: Actor, a: GameAction) {
   if (actor.role === 'gm') return;
   if (GM_ONLY.has(a.type)) fail('Apenas o mestre pode fazer isso.');
+  // Do mapa, o jogador só move a própria ficha.
+  if (isMapAction(a) && a.type !== 'map/move') fail('Apenas o mestre pode fazer isso.');
+  if (a.type === 'map/move' && typeof a.characterId !== 'string') fail('Escolha a ficha que vai se mover.');
   if (a.type === 'roll' && (a.threatId || a.combatantId)) fail('Apenas o mestre rola pelas ameaças.');
   // Ações antigas (ou montadas à mão) podem trazer `null` no lugar de `undefined`: os dois significam "sem ficha".
   if ('characterId' in a && a.characterId != null) {
@@ -661,6 +630,7 @@ function authorize(s: TableState, actor: Actor, a: GameAction) {
 // ── Aplicação ────────────────────────────────────────────────────────────────
 
 function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): string | undefined {
+  if (isMapAction(a)) return applyMapAction(s, actor, a, ctx);
   const now = ctx.now();
   const who = actor.name;
 
@@ -1172,7 +1142,7 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
 
     case 'combat/create': {
       if (s.combat) fail('Já existe um combate aberto.');
-      s.combat = { id: ctx.newId(), round: 0, turn: 0, order: [], startedAt: now };
+      s.combat = { id: ctx.newId(), round: 0, turn: 0, order: [], startedAt: now, mapId: null };
       return;
     }
 
@@ -1185,6 +1155,8 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
           text: `encerrou o combate após ${c.round} rodada${c.round > 1 ? 's' : ''}${down ? ` (${down} fora de combate)` : ''}.`,
         });
       }
+      // As ameaças eram instâncias deste combate: saem dos mapas junto.
+      dropTokens(s, (t) => t.ref.kind === 'combatant');
       s.combat = null;
       return;
     }
@@ -1669,7 +1641,62 @@ export function describeAction(s: TableState, a: GameAction): string {
     }
     case 'notes/update': return `${n}: editar anotações`;
     case 'character/avatar': return `${n}: mudar aparência`;
+    case 'map/move': return describeMapMove(s, a);
     default: return a.type;
+  }
+}
+
+// ── Portão do jogador (livre / pedir / bloqueado) ───────────────────────────
+
+interface PlayerGate {
+  kind: RequestKind;
+  perm: ActionPermission;
+  /** Mensagem quando bloqueado. */
+  blocked: string;
+}
+
+/** Como a ação do jogador passa: pelas permissões do painel. null = não depende de permissão. */
+function playerGate(s: TableState, actor: Extract<Actor, { role: 'player' }>, a: GameAction): PlayerGate | null {
+  if (a.type === 'map/move') {
+    // No mapa, quem decide é o modo de locomoção (e a fila do combate), não o painel.
+    const g = moveGate(s, getMap(s, a.mapId), a.characterId!);
+    return { kind: 'map_move', perm: g.gate === 'free' ? 'free' : g.gate, blocked: g.reason ?? 'Você não pode se mover agora.' };
+  }
+  const key = permissionFor(a);
+  if (!key) return null;
+  return {
+    kind: key,
+    perm: effectivePermissions(s.permissions, actor.playerId)[key],
+    blocked: `O mestre bloqueou: ${PERMISSION_LABELS[key].label}.`,
+  };
+}
+
+/** Põe a ação na fila do mestre. Antes, ensaia num clone para não enfileirar pedido que daria erro. */
+function enqueueRequest(s: TableState, actor: Extract<Actor, { role: 'player' }>, action: GameAction, kind: RequestKind, ctx: EngineCtx) {
+  apply(structuredClone(s), actor, action, ctx);
+  // Um movimento pedido de novo substitui o anterior da mesma ficha (o jogador mudou de ideia).
+  if (action.type === 'map/move') {
+    s.requests = s.requests.filter((r) => !(r.status === 'pending' && r.playerId === actor.playerId
+      && r.action.type === 'map/move' && r.characterId === action.characterId));
+  }
+  const pending = s.requests.filter((r) => r.playerId === actor.playerId && r.status === 'pending');
+  if (pending.length >= MAX_PENDING_PER_PLAYER) fail('Muitos pedidos pendentes. Aguarde o mestre.');
+  const req: PendingRequest = {
+    id: ctx.newId(),
+    playerId: actor.playerId,
+    characterId: (action as { characterId: string }).characterId,
+    permission: kind,
+    action: structuredClone(action),
+    summary: describeAction(s, action),
+    status: 'pending',
+    createdAt: ctx.now(),
+  };
+  s.requests.push(req);
+  // Mantém todos os pendentes e só os resolvidos mais recentes.
+  const resolved = s.requests.filter((r) => r.status !== 'pending');
+  if (resolved.length > MAX_REQUESTS_KEPT) {
+    const drop = new Set(resolved.slice(0, resolved.length - MAX_REQUESTS_KEPT).map((r) => r.id));
+    s.requests = s.requests.filter((r) => !drop.has(r.id));
   }
 }
 
@@ -1684,35 +1711,12 @@ export function dispatch(state: TableState, actor: Actor, action: GameAction, ct
     authorize(draft, actor, action);
 
     if (actor.role === 'player') {
-      const key = permissionFor(action);
-      if (key) {
-        const perm = effectivePermissions(draft.permissions, actor.playerId)[key];
-        if (perm === 'blocked') fail(`O mestre bloqueou: ${PERMISSION_LABELS[key].label}.`);
-        if (perm === 'request') {
-          // Ensaia num clone para não enfileirar pedido que daria erro.
-          apply(structuredClone(draft), actor, action, ctx);
-          const pending = draft.requests.filter((r) => r.playerId === actor.playerId && r.status === 'pending');
-          if (pending.length >= MAX_PENDING_PER_PLAYER) fail('Muitos pedidos pendentes. Aguarde o mestre.');
-          const req: PendingRequest = {
-            id: ctx.newId(),
-            playerId: actor.playerId,
-            characterId: (action as { characterId: string }).characterId,
-            permission: key,
-            action: structuredClone(action),
-            summary: describeAction(draft, action),
-            status: 'pending',
-            createdAt: ctx.now(),
-          };
-          draft.requests.push(req);
-          // Mantém todos os pendentes e só os resolvidos mais recentes.
-          const resolved = draft.requests.filter((r) => r.status !== 'pending');
-          if (resolved.length > MAX_REQUESTS_KEPT) {
-            const drop = new Set(resolved.slice(0, resolved.length - MAX_REQUESTS_KEPT).map((r) => r.id));
-            draft.requests = draft.requests.filter((r) => !drop.has(r.id));
-          }
-          draft.updatedAt = ctx.now();
-          return { ok: true, state: draft, requested: true, message: 'Pedido enviado ao mestre.' };
-        }
+      const gate = playerGate(draft, actor, action);
+      if (gate?.perm === 'blocked') fail(gate.blocked);
+      if (gate?.perm === 'request') {
+        enqueueRequest(draft, actor, action, gate.kind, ctx);
+        draft.updatedAt = ctx.now();
+        return { ok: true, state: draft, requested: true, message: 'Pedido enviado ao mestre.' };
       }
     }
 

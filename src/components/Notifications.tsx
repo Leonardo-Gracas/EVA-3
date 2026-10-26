@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell, Check, CheckCheck, ClipboardList, Dices, Eye, X } from 'lucide-react';
 import type { Character, LogEntry, PendingRequest, TableState } from '../model/types';
-import { PERMISSION_LABELS } from '../model/permissions';
+import { REQUEST_LABELS } from '../model/permissions';
 import { useAct } from './act';
 import { dismissTag, notify } from './common/toast';
 import { claimRollEntry, playRollFx } from './RollFx';
@@ -111,7 +111,7 @@ export function GmNotifications({ table, onOpenSheet }: { table: TableState; onO
       kind: 'request',
       tag: `req:${r.id}`,
       duration: 0,
-      title: <>{requestTitle(table, r)} <span className="badge badge-warn">{PERMISSION_LABELS[r.permission].label}</span></>,
+      title: <>{requestTitle(table, r)} <span className="badge badge-warn">{REQUEST_LABELS[r.permission].label}</span></>,
       text: r.summary,
       actions: [
         { label: <><Check size={13} /> Aprovar</>, className: 'btn btn-sm btn-primary', run: () => resolve(r.id, true) },
@@ -196,7 +196,7 @@ export function GmInbox({ table, onOpenSheet, onOpenRequests }: { table: TableSt
             {pending.map((r) => (
               <div key={r.id} className="inbox-item">
                 <div className="grow">
-                  <div><strong>{requestTitle(table, r)}</strong> <span className="badge">{PERMISSION_LABELS[r.permission].label}</span></div>
+                  <div><strong>{requestTitle(table, r)}</strong> <span className="badge">{REQUEST_LABELS[r.permission].label}</span></div>
                   <div className="small secondary">{r.summary}</div>
                 </div>
                 <button className="btn btn-sm btn-primary" onClick={() => resolve(r.id, true)} title="Aprovar"><Check size={13} /></button>
