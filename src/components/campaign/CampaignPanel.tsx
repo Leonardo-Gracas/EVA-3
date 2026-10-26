@@ -8,7 +8,7 @@ import { LIMITS } from '../../rules/validate';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
-import { AutoTextarea, CheckList, SaveBadge, Section, useAutosave } from './parts';
+import { AutoTextarea, CheckList, RichText, SaveBadge, Section, useAutosave } from './parts';
 import SessionEditor from './SessionEditor';
 
 /** 'geral' = visão geral; senão, o id da sessão aberta. */
@@ -219,7 +219,7 @@ function Overview({ table, onOpen, onNewSession, onEditArc }: {
                         <span className="arc-sub">
                           {ARC_STATUS[a.status]} · {items.length === 0 ? 'nenhuma sessão' : `${done} de ${items.length} ${items.length === 1 ? 'sessão jogada' : 'sessões jogadas'}`}
                         </span>
-                        {a.summary && <span className="arc-summary">{a.summary}</span>}
+                        {a.summary && <span className="arc-summary"><RichText text={a.summary} /></span>}
                         {items.length > 0 && <span className="bar bar-dur arc-bar"><span style={{ width: `${(done / items.length) * 100}%` }} /></span>}
                       </button>
                       <span className="arc-actions">
@@ -253,7 +253,7 @@ function Overview({ table, onOpen, onNewSession, onEditArc }: {
                 <span className="camp-spot-sub">
                   {formatSessionDate(next.date) || 'Sem data marcada'}{arcOf(next) && ` · ${arcOf(next)!.title}`}
                 </span>
-                {next.plan.goal && <span className="camp-spot-text">{next.plan.goal}</span>}
+                {next.plan.goal && <span className="camp-spot-text"><RichText text={next.plan.goal} /></span>}
                 <PrepProgress s={next} />
               </button>
             ) : (
@@ -268,7 +268,7 @@ function Overview({ table, onOpen, onNewSession, onEditArc }: {
                 <span className="camp-spot-label"><History size={13} /> Onde paramos</span>
                 <span className="camp-spot-title">#{last.number} · {sessionLabel(last)}</span>
                 <span className="camp-spot-sub">{formatSessionDate(last.date) || 'Sem data'}{arcOf(last) && ` · ${arcOf(last)!.title}`}</span>
-                <span className="camp-spot-text clamp">{last.report.recap || last.report.hooks || 'Sem resumo ainda.'}</span>
+                <span className="camp-spot-text clamp"><RichText text={last.report.recap || last.report.hooks || 'Sem resumo ainda.'} /></span>
               </button>
             )}
           </div>

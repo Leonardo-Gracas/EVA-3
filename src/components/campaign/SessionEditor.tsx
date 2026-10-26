@@ -12,7 +12,7 @@ import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import { SubTabs } from '../room/TopBar';
 import { ThreatGlyph } from '../gm/ThreatIcon';
-import { ArcPicker, AutoTextarea, CheckList, DatePill, SaveBadge, Section, tmpId, useAutosave } from './parts';
+import { ArcPicker, AutoTextarea, CheckList, DatePill, RichLine, SaveBadge, Section, tmpId, useAutosave } from './parts';
 
 type Phase = 'plano' | 'conclusao';
 
@@ -86,7 +86,7 @@ export default function SessionEditor({ table, session, onDeleted }: {
         <div className="camp-cols">
           <div className="camp-col">
             <Section icon={<Target size={15} />} title="Objetivo" hint="Em uma frase: o que esta sessão precisa entregar.">
-              <input className="input" value={d.plan.goal} maxLength={LIMITS.campaignLine} placeholder="Ex.: os personagens descobrem quem mandou matar o padre"
+              <RichLine bar className="input" value={d.plan.goal} maxLength={LIMITS.campaignLine} placeholder="Ex.: os personagens descobrem quem mandou matar o padre"
                 onChange={(e) => upPlan({ goal: e.target.value })} />
             </Section>
             <Section icon={<Flag size={15} />} title="Abertura" hint="A primeira cena: comece perto da ação.">
@@ -102,13 +102,13 @@ export default function SessionEditor({ table, session, onDeleted }: {
           <div className="camp-col">
             <Section icon={<KeyRound size={15} />} title="Segredos e pistas" hint="O que os jogadores podem descobrir. Marque quando for revelado."
               aside={secrets.length > 0 && <span className="camp-count">{revealed}/{secrets.length}</span>}>
-              <CheckList items={secrets} onChange={(secrets) => upPlan({ secrets })} placeholder="Novo segredo ou pista" doneLabel="revelado" />
+              <CheckList items={secrets} onChange={(secrets) => upPlan({ secrets })} placeholder="Novo segredo ou pista" doneLabel="revelado" sortable />
             </Section>
             <Section icon={<VenetianMask size={15} />} title="NPCs e ameaças" hint="Quem pode aparecer, direto das abas de NPCs e Ameaças.">
               <CastPicker table={table} cast={d.plan.cast} onChange={(cast) => upPlan({ cast })} />
             </Section>
             <Section icon={<ListChecks size={15} />} title="Preparativos" hint="O que deixar pronto antes de jogar.">
-              <CheckList items={d.plan.prep} onChange={(prep) => upPlan({ prep })} placeholder="Ex.: imprimir o mapa da mansão" doneLabel="pronto" />
+              <CheckList items={d.plan.prep} onChange={(prep) => upPlan({ prep })} placeholder="Ex.: imprimir o mapa da mansão" doneLabel="pronto" sortable />
             </Section>
           </div>
         </div>
@@ -135,7 +135,7 @@ export default function SessionEditor({ table, session, onDeleted }: {
                 aside={secrets.length > 0 && <span className="camp-count">{revealed}/{secrets.length}</span>}>
                 {secrets.length === 0
                   ? <p className="camp-hint">Nenhum segredo no planejamento.</p>
-                  : <CheckList items={secrets} onChange={(secrets) => upPlan({ secrets })} placeholder="Pista que surgiu no jogo" doneLabel="revelado" />}
+                  : <CheckList items={secrets} onChange={(secrets) => upPlan({ secrets })} placeholder="Pista que surgiu no jogo" doneLabel="revelado" sortable />}
               </Section>
             </div>
             <div className="camp-col">

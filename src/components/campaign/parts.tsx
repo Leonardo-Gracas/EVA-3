@@ -1,10 +1,14 @@
-// Peças do caderno de campanha: salvamento automático, texto que cresce,
-// lista com marcação, o cartão de seção e os seletores de data e de arco.
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type TextareaHTMLAttributes } from 'react';
-import { CalendarDays, Check, ChevronDown, Milestone, Plus, X } from 'lucide-react';
+// Peças do caderno de campanha: salvamento automático, texto que cresce (com negrito e
+// itálico), lista com marcação, o cartão de seção e os seletores de data e de arco.
+import {
+  Fragment, useEffect, useLayoutEffect, useRef, useState,
+  type InputHTMLAttributes, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type TextareaHTMLAttributes,
+} from 'react';
+import { Bold, CalendarDays, Check, ChevronDown, GripVertical, Italic, Milestone, Plus, X } from 'lucide-react';
 import { ARC_STATUS, type CampaignArc, type CampaignCheck } from '../../model/types';
 import { formatSessionDate } from '../../model/campaign';
 import { LIMITS } from '../../rules/validate';
+import { hasRich, parseRich, toggleMark, type Mark, type RichNode } from './format';
 
 export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -59,16 +63,99 @@ export function SaveBadge({ state }: { state: SaveState }) {
   );
 }
 
-/** Caixa de texto que cresce com o conteúdo. */
-export function AutoTextarea({ value, minRows = 2, className = '', ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string; minRows?: number }) {
+// ── Negrito e itálico ────────────────────────────────────────────────────────
+
+type Field = HTMLInputElement | HTMLTextAreaElement;
+
+function renderRich(nodes: RichNode[]): ReactNode[] {
+  return nodes.map((n, k) => (typeof n === 'string'
+    ? <Fragment key={k}>{n}</Fragment>
+    : n.kind === 'b' ? <strong key={k}>{renderRich(n.children)}</strong> : <em key={k}>{renderRich(n.children)}</em>));
+}
+
+/** Texto da campanha com **negrito** e *itálico* já aplicados. */
+export function RichText({ text }: { text: string }) {
+  return <>{renderRich(parseRich(text))}</>;
+}
+
+/** Liga/desliga a marca na seleção do campo como se fosse digitado: avisa o React e mantém o Ctrl+Z. */
+function applyMark(el: Field, mark: Mark) {
+  const ed = toggleMark(el.value, el.selectionStart ?? 0, el.selectionEnd ?? 0, mark);
+  const next = el.value.slice(0, ed.from) + ed.insert + el.value.slice(ed.to);
+  if (el.maxLength > 0 && next.length > el.maxLength) return;
+  el.focus();
+  el.setSelectionRange(ed.from, ed.to);
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, ed.insert); } catch { ok = false; }
+  if (!ok || el.value !== next) {
+    // Navegador sem insertText: troca o valor direto (perde só o desfazer).
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, next);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  el.setSelectionRange(ed.selStart, ed.selEnd);
+}
+
+/** Ctrl+B / Ctrl+I (Cmd no Mac). Devolve true se tratou a tecla. */
+function markKey(e: KeyboardEvent<Field>): boolean {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return false;
+  const k = e.key.toLowerCase();
+  if (k !== 'b' && k !== 'i') return false;
+  e.preventDefault();
+  applyMark(e.currentTarget, k === 'b' ? '**' : '*');
+  return true;
+}
+
+/** Botões B e I (para o celular, sem atalho). Não tiram o foco do campo. */
+function MarkButtons({ target, className = '' }: { target: (btn: HTMLElement) => Field | null | undefined; className?: string }) {
+  const press = (btn: HTMLElement, mark: Mark) => { const el = target(btn); if (el) applyMark(el, mark); };
+  return (
+    <span className={`mark-bar ${className}`} onMouseDown={(e) => e.preventDefault()}>
+      <button type="button" tabIndex={-1} title="Negrito (Ctrl+B)" aria-label="Negrito" onClick={(e) => press(e.currentTarget, '**')}><Bold size={13} /></button>
+      <button type="button" tabIndex={-1} title="Itálico (Ctrl+I)" aria-label="Itálico" onClick={(e) => press(e.currentTarget, '*')}><Italic size={13} /></button>
+    </span>
+  );
+}
+
+/**
+ * Caixa de texto que cresce com o conteúdo, com negrito e itálico. Fora da edição, uma cópia
+ * formatada fica por cima do campo, com as mesmas medidas; ao tocar, volta o texto cru.
+ */
+export function AutoTextarea({ value, minRows = 2, className = '', onKeyDown, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string; minRows?: number }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const view = useRef<HTMLDivElement>(null);
+  const rich = hasRich(value);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight + 2}px`;
+    // O negrito é mais largo e pode quebrar uma linha a mais: cabe o maior dos dois.
+    el.style.height = `${Math.max(el.scrollHeight + 2, view.current?.offsetHeight ?? 0)}px`;
   }, [value]);
-  return <textarea ref={ref} rows={minRows} className={`textarea camp-text ${className}`} value={value} {...rest} />;
+  return (
+    <div className={`rich-field${rich ? ' has-rich' : ''}`}>
+      <textarea ref={ref} rows={minRows} className={`textarea camp-text ${className}`} value={value}
+        onKeyDown={(e) => { if (!markKey(e)) onKeyDown?.(e); }} {...rest} />
+      {rich && <div ref={view} className={`textarea camp-text ${className} rich-view`} aria-hidden><RichText text={value} /></div>}
+      <MarkButtons target={() => ref.current} />
+    </div>
+  );
+}
+
+/**
+ * Campo de uma linha com negrito e itálico (mesma ideia da caixa de texto). Com `bar`, traz
+ * os próprios botões B e I; sem, quem usa põe os botões ao lado (como nas listas).
+ */
+export function RichLine({ value, className = '', onKeyDown, bar = false, ...rest }: InputHTMLAttributes<HTMLInputElement> & { value: string; bar?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const rich = hasRich(value);
+  return (
+    <span className={`rich-line${rich ? ' has-rich' : ''}`}>
+      <input ref={ref} className={className} value={value} onKeyDown={(e) => { if (!markKey(e)) onKeyDown?.(e); }} {...rest} />
+      {rich && <span className={`${className} rich-view`} aria-hidden><RichText text={value} /></span>}
+      {bar && <MarkButtons target={() => ref.current} />}
+    </span>
+  );
 }
 
 /** Cartão de seção: título, uma dica curta e o conteúdo. */
@@ -180,14 +267,23 @@ export function ArcPicker({ arcs, value, onChange }: { arcs: CampaignArc[]; valu
 let tmp = 0;
 export const tmpId = () => `c${Date.now().toString(36)}${(tmp++).toString(36)}`;
 
+/** O campo de texto da linha em que está o botão (para os botões B e I). */
+const rowInput = (btn: HTMLElement) => btn.closest('.check-row, .check-add')?.querySelector<HTMLInputElement>('input.check-text');
+
 /**
  * Lista com marcação: cada linha se edita no lugar; Enter no campo de baixo acrescenta.
  * `doneLabel` explica o que a marca quer dizer ("revelado", "pronto", "resolvido").
+ * Com `sortable`, cada linha ganha uma alça à esquerda para arrastar (ou mover pelas setas).
  */
-export function CheckList({ items, onChange, placeholder, doneLabel, max = 80 }: {
-  items: CampaignCheck[]; onChange: (items: CampaignCheck[]) => void; placeholder: string; doneLabel: string; max?: number;
+export function CheckList({ items, onChange, placeholder, doneLabel, max = 80, sortable = false }: {
+  items: CampaignCheck[]; onChange: (items: CampaignCheck[]) => void; placeholder: string; doneLabel: string; max?: number; sortable?: boolean;
 }) {
   const [draft, setDraft] = useState('');
+  const list = useRef<HTMLDivElement>(null);
+  // Arrasto: `geo` guarda as medidas do início; `drag` só desenha.
+  const geo = useRef<{ startY: number; mids: number[]; from: number; to: number } | null>(null);
+  const [drag, setDrag] = useState<{ from: number; to: number; dy: number; h: number } | null>(null);
+
   const add = () => {
     const text = draft.trim();
     if (!text || items.length >= max) return;
@@ -195,27 +291,83 @@ export function CheckList({ items, onChange, placeholder, doneLabel, max = 80 }:
     setDraft('');
   };
   const set = (id: string, p: Partial<CampaignCheck>) => onChange(items.map((x) => (x.id === id ? { ...x, ...p } : x)));
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= items.length || to === from) return;
+    const next = [...items];
+    const [it] = next.splice(from, 1);
+    next.splice(to, 0, it);
+    onChange(next);
+  };
+
+  const startDrag = (e: ReactPointerEvent<HTMLButtonElement>, idx: number) => {
+    if (e.button !== 0 || items.length < 2) return;
+    e.preventDefault();
+    const rows = [...(list.current?.querySelectorAll<HTMLElement>(':scope > .check-row') ?? [])];
+    const rects = rows.map((r) => r.getBoundingClientRect());
+    if (!rects[idx]) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    geo.current = { startY: e.clientY, mids: rects.map((r) => r.top + r.height / 2), from: idx, to: idx };
+    setDrag({ from: idx, to: idx, dy: 0, h: rects[idx].height });
+  };
+  const moveDrag = (e: ReactPointerEvent) => {
+    const g = geo.current;
+    if (!g) return;
+    const { mids, from } = g;
+    // Não sai da lista: no máximo até a primeira ou a última linha.
+    const dy = Math.max(mids[0] - mids[from], Math.min(mids[mids.length - 1] - mids[from], e.clientY - g.startY));
+    const center = mids[from] + dy;
+    g.to = mids.filter((m, i) => i !== from && m < center).length;
+    setDrag((d) => d && { ...d, dy, to: g.to });
+  };
+  const endDrag = (commit: boolean) => {
+    const g = geo.current;
+    geo.current = null;
+    setDrag(null);
+    if (commit && g) move(g.from, g.to);
+  };
+  // Enquanto arrasta, a linha segue o dedo e as do caminho abrem espaço.
+  const shift = (idx: number): string | undefined => {
+    if (!drag) return undefined;
+    if (idx === drag.from) return `translateY(${drag.dy}px)`;
+    if (drag.from < drag.to && idx > drag.from && idx <= drag.to) return `translateY(${-drag.h}px)`;
+    if (drag.to < drag.from && idx >= drag.to && idx < drag.from) return `translateY(${drag.h}px)`;
+    return undefined;
+  };
+
   return (
-    <div className="checklist">
-      {items.map((x) => (
-        <div key={x.id} className={`check-row${x.done ? ' done' : ''}`}>
+    <div ref={list} className={`checklist${sortable ? ' sortable' : ''}${drag ? ' is-dragging' : ''}`}>
+      {items.map((x, idx) => (
+        <div key={x.id} className={`check-row${x.done ? ' done' : ''}${drag?.from === idx ? ' dragging' : ''}`} style={{ transform: shift(idx) }}>
+          {sortable && (
+            <button type="button" className="check-grip" title="Arraste para reordenar" aria-label={`Mover "${x.text}" (setas para cima e para baixo)`}
+              onPointerDown={(e) => startDrag(e, idx)} onPointerMove={moveDrag}
+              onPointerUp={() => endDrag(true)} onPointerCancel={() => endDrag(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp') { e.preventDefault(); move(idx, idx - 1); }
+                else if (e.key === 'ArrowDown') { e.preventDefault(); move(idx, idx + 1); }
+              }}>
+              <GripVertical size={14} />
+            </button>
+          )}
           <button type="button" className="check-box" aria-pressed={x.done} title={x.done ? `Desmarcar (${doneLabel})` : `Marcar como ${doneLabel}`}
             onClick={() => set(x.id, { done: !x.done })}>
             {x.done && <Check size={12} />}
           </button>
-          <input className="check-text" value={x.text} maxLength={LIMITS.campaignLine} aria-label="Texto"
+          <RichLine className="check-text" value={x.text} maxLength={LIMITS.campaignLine} aria-label="Texto"
             onChange={(e) => set(x.id, { text: e.target.value })}
             onBlur={(e) => { if (!e.target.value.trim()) onChange(items.filter((y) => y.id !== x.id)); }} />
+          <MarkButtons target={rowInput} />
           <button type="button" className="check-del" title="Remover" onClick={() => onChange(items.filter((y) => y.id !== x.id))}><X size={13} /></button>
         </div>
       ))}
       {items.length < max && (
         <div className="check-add">
           <Plus size={13} className="muted" />
-          <input className="check-text" value={draft} maxLength={LIMITS.campaignLine} placeholder={placeholder} enterKeyHint="done"
+          <RichLine className="check-text" value={draft} maxLength={LIMITS.campaignLine} placeholder={placeholder} enterKeyHint="done"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
             onBlur={add} />
+          <MarkButtons target={rowInput} />
         </div>
       )}
     </div>

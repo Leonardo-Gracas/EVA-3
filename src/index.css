@@ -1822,6 +1822,56 @@ button.camp-pill { min-height: 36px; }
 .check-add { padding-left: 4px; }
 @media (hover: none) { .check-del { opacity: 1; } }
 
+/* Reordenar: a alça à esquerda de cada linha. */
+.check-row { position: relative; }
+.check-grip {
+  flex-shrink: 0; align-self: stretch; display: grid; place-items: center; width: 18px; margin-right: -2px;
+  color: var(--text-disabled); cursor: grab; touch-action: none; border-radius: 4px; transition: color var(--transition);
+}
+.check-row:hover .check-grip, .check-grip:focus-visible { color: var(--text-muted); }
+.check-grip:hover { color: var(--gold); }
+.checklist.sortable .check-add { padding-left: 28px; }
+.checklist.is-dragging { user-select: none; }
+.checklist.is-dragging .check-row { transition: transform 140ms ease; }
+.checklist.is-dragging .check-row.dragging {
+  transition: none; z-index: 2; border-radius: var(--radius); border-bottom-color: transparent;
+  background: var(--bg-elevated); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.check-row.dragging .check-grip { color: var(--gold); cursor: grabbing; }
+@media (hover: none) { .check-grip { color: var(--text-muted); width: 24px; } .checklist.sortable .check-add { padding-left: 34px; } }
+
+/* Negrito e itálico: fora da edição, uma cópia formatada cobre o campo, com as mesmas medidas. */
+.rich-field, .rich-line { position: relative; }
+.rich-line { flex: 1; min-width: 0; display: flex; }
+.rich-line > input { flex: 1; min-width: 0; width: 100%; }
+.rich-view { pointer-events: none; }
+:where(.rich-view) { font-size: 14px; }
+.rich-field > .rich-view {
+  position: absolute; top: 0; left: 0; right: 0; background: transparent; border-color: transparent;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.rich-line > .rich-view {
+  position: absolute; inset: 0; background: transparent; border-color: transparent; line-height: normal;
+  white-space: pre; overflow: hidden; text-overflow: ellipsis;
+}
+.rich-field:focus-within > .rich-view, .rich-line:focus-within > .rich-view { visibility: hidden; }
+.rich-field.has-rich:not(:focus-within) > textarea, .rich-line.has-rich:not(:focus-within) > input { color: transparent; }
+.rich-view strong { font-weight: 700; color: var(--text-primary); }
+.check-row.done .rich-view strong { color: inherit; }
+
+/* Botões B e I: aparecem enquanto se edita. Na caixa de texto, presos na borda de baixo. */
+.mark-bar { display: none; flex-shrink: 0; align-items: center; gap: 1px; }
+.rich-field:focus-within > .mark-bar, .rich-line:focus-within > .mark-bar, .rich-line:focus-within + .mark-bar { display: flex; }
+.mark-bar button {
+  display: grid; place-items: center; width: 26px; height: 24px; border-radius: 6px; color: var(--text-muted);
+}
+.mark-bar button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.rich-field > .mark-bar, .rich-line > .mark-bar {
+  position: absolute; right: 8px; bottom: 0; transform: translateY(50%); z-index: 2; padding: 2px;
+  background: var(--bg-elevated); border: 1px solid var(--border-light); border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+@media (hover: none) { .mark-bar button { width: 32px; height: 30px; } }
+
 /* Visão geral: primeiros passos, próxima sessão, onde paramos, arcos */
 .camp-spots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
 .camp-start { padding: 18px 20px; border: 1px dashed var(--border-light); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
