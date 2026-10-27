@@ -124,6 +124,7 @@ function buildPlayerCombat(s: TableState, playerId: string): PlayerCombat | null
       id: cb.id,
       name: info.name,
       ...(info.character ? { avatar: avatarFor(info.character) } : {}),
+      ...(cb.threat ? { category: cb.threat.category } : {}),
       side: info.side,
       mine,
       ...(mine ? { characterId: info.character!.id } : {}),

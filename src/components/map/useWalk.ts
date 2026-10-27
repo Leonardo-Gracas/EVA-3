@@ -19,6 +19,10 @@ const MS_PER_CELL = 130;
 const MIN_MS = 180;
 const MAX_MS = 3000;
 
+/**
+ * Com "reduzir animações" (comum no celular em economia de bateria) a caminhada continua:
+ * ela mostra por onde o token foi, não é enfeite. Só fica mais rápida.
+ */
 const reduced = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function makeWalk(points: Point[], now: number): Walk | null {
@@ -27,7 +31,8 @@ function makeWalk(points: Point[], now: number): Walk | null {
   for (let i = 1; i < points.length; i++) lens.push(lens[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
   const total = lens[lens.length - 1];
   if (!total) return null;
-  return { points, lens, total, start: now, duration: Math.max(MIN_MS, Math.min(MAX_MS, total * MS_PER_CELL)) };
+  const speed = reduced() ? 0.5 : 1;
+  return { points, lens, total, start: now, duration: Math.max(MIN_MS, Math.min(MAX_MS * speed, total * MS_PER_CELL * speed)) };
 }
 
 /** Posição na caminhada e índice do próximo ponto. */
@@ -69,7 +74,7 @@ export function useWalk(tokens: WalkToken[], route?: RouteFn): WalkState {
       if (t.dragging) { walks.current.delete(t.id); continue; }
       const p = prev.current.get(t.id);
       prev.current.set(t.id, { x: t.x, y: t.y });
-      if (!p || (p.x === t.x && p.y === t.y) || reduced()) continue;
+      if (!p || (p.x === t.x && p.y === t.y)) continue;
       // Se já estava andando, recomeça de onde parou (arredondado ao quadrado).
       const cur = walks.current.get(t.id);
       const here = cur ? at(cur, now) : null;

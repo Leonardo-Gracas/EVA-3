@@ -140,6 +140,31 @@ describe('mapas: edição', () => {
     expect(run(s, gm, { type: 'map/restore', mapId, layout: { ...layout, cells: 'x' } })).toMatchObject({ ok: false });
   });
 
+  it('combate com todos do mapa: abre, vincula e põe na fila quem falta, sem repetir', () => {
+    let { s, mapId, ana, beto } = setup();
+    const betoTok = Object.values(s.maps[mapId].tokens).find((t) => t.ref.id === beto)!;
+    s = ok(s, gm, { type: 'map/tokenHidden', mapId, tokenIds: [betoTok.id], hidden: true });
+    s = ok(s, gm, { type: 'map/combat', mapId });
+    expect(s.combat!.mapId).toBe(mapId);
+    expect(s.combat!.order.map((x) => x.ref.id).sort()).toEqual([ana, beto].sort());
+    // Token oculto entra oculto na fila.
+    expect(s.combat!.order.find((x) => x.ref.id === beto)!.hidden).toBe(true);
+    // Uma ameaça colocada já entra na fila; chamar de novo não duplica ninguém.
+    s = ok(s, gm, { type: 'threat/upsert', data: goblin });
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: Object.keys(s.threats)[0] }], x: 5, y: 5 });
+    s = ok(s, gm, { type: 'map/combat', mapId });
+    expect(s.combat!.order).toHaveLength(3);
+    // Só o mestre.
+    expect(run(s, p1, { type: 'map/combat', mapId })).toMatchObject({ ok: false });
+  });
+
+  it('combate com todos do mapa: sem ninguém no mapa, não abre', () => {
+    const s = newTable('Mesa', 'Mestre', 'ABCDEF', ctx);
+    const r = dispatch(s, gm, { type: 'map/create', name: 'Vazio', w: 5, h: 5 }, ctx);
+    if (!r.ok) throw new Error(r.error);
+    expect(run(r.state, gm, { type: 'map/combat', mapId: r.id! })).toMatchObject({ ok: false, error: /Ninguém/ });
+  });
+
   it('excluir limpa o mapa aberto, o vínculo e os pedidos', () => {
     let { s, mapId, ana } = setup();
     s = ok(s, gm, { type: 'map/update', mapId, mode: 'permissao' });
@@ -175,6 +200,27 @@ describe('mapas: locomoção', () => {
     const tok = Object.values(s.maps[mapId].tokens).find((t) => t.ref.id === ana)!;
     s = ok(s, gm, { type: 'map/move', mapId, tokenId: tok.id, x: 0, y: 9 });
     expect(pos(s, mapId, ana)).toEqual({ x: 0, y: 9 });
+  });
+
+  it('quem atravessa uma porta destrancada a deixa aberta; trancada continua bloqueando', () => {
+    let { s, mapId, ana } = setup();
+    const wall = Array.from({ length: 10 }, (_, y) => ({ o: 'v' as const, x: 2, y }));
+    s = ok(s, gm, { type: 'map/walls', mapId, edges: wall, on: true });
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'door', edge: { o: 'v', x: 2, y: 0 }, state: 'closed', hidden: false } });
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'door', edge: { o: 'v', x: 2, y: 5 }, state: 'locked', hidden: false } });
+    const door = (y: number) => Object.values(s.maps[mapId].objects).find((o) => o.kind === 'door' && o.edge.y === y) as { state: string };
+    // Jogador passa pela fechada: ela abre.
+    s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 3, y: 0 });
+    expect(door(0).state).toBe('open');
+    // A trancada não deixa passar e não muda.
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 1, y: 5, path: [{ x: 3, y: 0 }, { x: 3, y: 1 }, { x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }, { x: 3, y: 5 }, { x: 2, y: 5 }, { x: 1, y: 5 }] }))
+      .toMatchObject({ ok: false });
+    expect(door(5).state).toBe('locked');
+    // Mestre fecha de novo e passa com o token: abre também.
+    s = ok(s, gm, { type: 'map/door', mapId, objectId: Object.values(s.maps[mapId].objects).find((o) => o.kind === 'door' && o.edge.y === 0)!.id, state: 'closed' });
+    const tok = Object.values(s.maps[mapId].tokens).find((t) => t.ref.id === ana)!;
+    s = ok(s, gm, { type: 'map/move', mapId, tokenId: tok.id, x: 0, y: 0 });
+    expect(door(0).state).toBe('open');
   });
 
   it('porta secreta é parede para o jogador', () => {

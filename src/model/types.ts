@@ -860,6 +860,8 @@ export type MapAction =
   | { type: 'map/restore'; mapId: string; layout: MapLayout }
   /** Mapa do combate aberto; null desvincula. */
   | { type: 'map/link'; mapId: string | null }
+  /** Combate com todos que estão no mapa: abre (ou usa o aberto), vincula e põe na fila quem falta. */
+  | { type: 'map/combat'; mapId: string }
   /** Mostra o mapa aos jogadores; null esconde. */
   | { type: 'map/activate'; mapId: string | null }
   /** Sem x/y: o piso livre mais próximo do centro. */
@@ -895,6 +897,8 @@ export interface PlayerCombatant {
   name: string;
   /** Só fichas (PJ e NPC) têm avatar. */
   avatar?: AvatarConfig;
+  /** Ameaças: o ícone da categoria (o mesmo do token). */
+  category?: ThreatCategory;
   side: CombatSide;
   /** Ficha do próprio jogador. */
   mine: boolean;

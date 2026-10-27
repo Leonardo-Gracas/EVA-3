@@ -15,11 +15,11 @@ import Reference from '../components/Reference';
 import { RequestStatus } from '../components/gm/RequestsPanel';
 import { deriveStats } from '../rules/derive';
 import { PlayerNotifications, useRollToasts } from '../components/Notifications';
-import CombatView, { myTurnIn, useCombatAlerts } from '../components/combat/CombatView';
+import { CombatStrip, myTurnIn, useCombatAlerts } from '../components/combat/playerCombat';
 import CasesView from '../components/investigation/CasesView';
 import PlayerMapView from '../components/map/PlayerMapView';
 
-type Tab = 'ficha' | 'combate' | 'mapa' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
+type Tab = 'ficha' | 'mapa' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
 
 export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
@@ -30,12 +30,11 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   // As próprias rolagens aparecem como aviso, exceto com o registro aberto.
   // As abertas do mestre (livres ou por uma entidade) rodam a animação; das ocultas, só um 20 ou 1 natural.
   useRollToasts(view?.log ?? null,(e) => tab !== 'registro' && e.playerId === view?.me.id, (e) => !!e.secret || !e.playerId);
-  // O mapa mostra a fila e o turno: com ele aberto, não precisa do aviso de "sua vez".
+  // A fila fica numa faixa em todas as abas; o aviso de "sua vez" leva ao mapa (se houver).
+  // Com o mapa aberto, ele já mostra o turno: só vibra.
   const hasMap = !!view?.map;
-  useCombatAlerts(view, tab === 'combate' || (tab === 'mapa' && hasMap), () => { window.scrollTo({ top: 0 }); setTab('combate'); });
-
-  // Combate encerrado com a aba aberta: volta para a ficha. (Sem mapa, a aba do mapa avisa e fica.)
-  useEffect(() => { if (!inCombat && tab === 'combate') setTab('ficha'); }, [inCombat, tab]);
+  const onMap = tab === 'mapa' && hasMap;
+  useCombatAlerts(view, onMap, () => { window.scrollTo({ top: 0 }); if (hasMap) setTab('mapa'); }, hasMap ? 'Ver mapa' : 'Ver fila');
 
   // Excluído pelo mestre: esquece a sala e o link, para um F5 não entrar de novo sozinho.
   const removed = snap.status === 'removed';
@@ -81,8 +80,10 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           mobileBar
           tabs={[
             { id: 'ficha', label: 'Minha ficha', short: 'Ficha', icon: <ClipboardList size={14} /> },
-            ...(inCombat ? [{ id: 'combate' as const, label: myTurn ? 'Combate · sua vez' : 'Combate', short: myTurn ? 'Sua vez' : 'Combate', icon: <Swords size={14} /> }] : []),
-            { id: 'mapa', label: 'Mapa', icon: <MapIcon size={14} /> },
+            {
+              id: 'mapa', label: myTurn && hasMap ? 'Mapa · sua vez' : 'Mapa', short: myTurn && hasMap ? 'Sua vez' : 'Mapa',
+              icon: inCombat ? <Swords size={14} /> : <MapIcon size={14} />,
+            },
             // No celular, o lugar dos dados na barra é do mapa: eles ficam em "Mais".
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} />, mobileMore: true },
             { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
@@ -108,14 +109,10 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           )}
         />
         <PlayerNotifications requests={view.myRequests} characters={view.myCharacters} />
-        {myTurn && tab !== 'combate' && !(tab === 'mapa' && hasMap) && (
-          <button className="turn-banner" onClick={() => { window.scrollTo({ top: 0 }); setTab('combate'); }}>
-            <Swords size={15} /> <span>Sua vez, <strong>{myTurn.name}</strong>!</span> <span className="turn-banner-cta">Abrir combate</span>
-          </button>
-        )}
         <main className="page">
+          {/* No mapa, a fila vai dentro dele; nas outras abas, no topo. */}
+          {view.combat && !onMap && <div className="page-strip"><CombatStrip combat={view.combat} endTurn /></div>}
           {tab === 'ficha' && <MySheets view={view} />}
-          {tab === 'combate' && view.combat && <CombatView view={view} onOpenMap={view.map ? () => setTab('mapa') : undefined} />}
           {tab === 'mapa' && (view.map ? <PlayerMapView view={view} /> : (
             <div className="card combat-empty">
               <MapIcon size={28} className="muted" />

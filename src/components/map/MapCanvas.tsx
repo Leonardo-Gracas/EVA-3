@@ -36,6 +36,8 @@ export interface CanvasToken {
   dragging?: boolean;
   /** Caminho do último movimento (o token anda por ele). */
   trail?: Point[];
+  /** Dá para pegar e arrastar: no toque, o gesto que começa nele não rola o mapa. */
+  grab?: boolean;
 }
 
 export interface MapPointer {
@@ -321,7 +323,7 @@ export default function MapCanvas(props: Props) {
               const at = walk.pos.get(t.id);
               return (
               <div key={t.id} title={t.name}
-                className={`map-token side-${t.side}${t.mine ? ' mine' : ''}${t.turn ? ' turn' : ''}${t.hidden ? ' is-hidden' : ''}${props.selectedTokenId === t.id ? ' selected' : ''}${at || t.dragging ? ' walking' : ''}`}
+                className={`map-token side-${t.side}${t.mine ? ' mine' : ''}${t.turn ? ' turn' : ''}${t.hidden ? ' is-hidden' : ''}${t.grab ? ' grab' : ''}${props.selectedTokenId === t.id ? ' selected' : ''}${at || t.dragging ? ' walking' : ''}`}
                 style={{ left: (at?.x ?? t.x) * CELL, top: (at?.y ?? t.y) * CELL, width: CELL, height: CELL }}>
                 {t.category
                   ? <span className={`map-token-threat threat-cat-${t.category}`}><ThreatGlyph category={t.category} size={18} /></span>

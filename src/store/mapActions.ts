@@ -132,6 +132,29 @@ function tokenIds(m: BattleMap, v: unknown): string[] {
 
 const refKey = (r: TokenRef) => `${r.kind}:${r.id}`;
 
+/** Linha cruzada por um passo reto de `a` para `b` (diagonal não atravessa porta). */
+function stepEdge(a: Point, b: Point): EdgeRef | null {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (dx && dy) return null;
+  if (dx === 1) return { o: 'v', x: a.x + 1, y: a.y };
+  if (dx === -1) return { o: 'v', x: a.x, y: a.y };
+  if (dy === 1) return { o: 'h', x: a.x, y: a.y + 1 };
+  if (dy === -1) return { o: 'h', x: a.x, y: a.y };
+  return null;
+}
+
+/** Quem passa por uma porta fechada (destrancada) a deixa aberta. */
+export function openDoorsAlong(m: BattleMap, cells: Point[]) {
+  const doors = Object.values(m.objects).filter((o): o is MapDoor => o.kind === 'door' && o.state === 'closed');
+  if (!doors.length) return;
+  for (let i = 1; i < cells.length; i++) {
+    const e = stepEdge(cells[i - 1], cells[i]);
+    if (!e) continue;
+    for (const d of doors) if (sameEdge(d.edge, e)) d.state = 'open';
+  }
+}
+
 export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: EngineCtx): string | undefined {
   const now = ctx.now();
   const who = actor.name;
@@ -338,6 +361,29 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       return;
     }
 
+    case 'map/combat': {
+      const m = getMap(s, a.mapId);
+      const chars = Object.values(m.tokens)
+        .flatMap((t) => (t.ref.kind === 'character' && s.characters[t.ref.id]?.status === 'approved' ? [{ t, ch: s.characters[t.ref.id] }] : []));
+      // Ameaças só existem dentro de um combate: sem combate, só fichas podem estar no mapa.
+      if (!s.combat && !chars.length) fail('Ninguém no mapa para lutar.');
+      const c = s.combat ??= { id: ctx.newId(), round: 0, turn: 0, order: [], startedAt: now, mapId: m.id };
+      if (c.mapId !== m.id) { c.mapId = m.id; c.moved = undefined; }
+      // Jogadores primeiro, depois NPCs; quem já está na fila fica onde está.
+      const rank = (k: string) => (k === 'pc' ? 0 : 1);
+      const fresh = chars
+        .filter(({ ch }) => !c.order.some((x) => x.ref.kind === 'character' && x.ref.id === ch.id))
+        .sort((x, y) => rank(x.ch.kind) - rank(y.ch.kind) || x.ch.name.localeCompare(y.ch.name, 'pt-BR'));
+      if (c.order.length + fresh.length > MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
+      // Token oculto entra oculto na fila.
+      for (const { t, ch } of fresh) c.order.push({ id: ctx.newId(), hidden: t.hidden, conditions: [], ref: { kind: 'character', id: ch.id } });
+      if (c.round > 0 && fresh.length) {
+        const names = fresh.map(({ ch }) => ch.name);
+        log(s, ctx, { kind: 'system', actorName: who, text: `${names.join(', ')} ${names.length > 1 ? 'entraram' : 'entrou'} no combate.`, hidden: true });
+      }
+      return c.id;
+    }
+
     case 'map/activate': {
       if (a.mapId === null) {
         s.activeMapId = null;
@@ -447,7 +493,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         if (turn && p) c!.moved = { combatantId: cb!.id, round: c!.round, squares: (before?.squares ?? 0) + p.cost, parity: p.parity };
         tok.x = x;
         tok.y = y;
-        if (p) tok.trail = p.cells; else delete tok.trail;
+        if (p) { tok.trail = p.cells; openDoorsAlong(m, p.cells); } else delete tok.trail;
         return;
       }
 
@@ -459,6 +505,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       token.x = x;
       token.y = y;
       token.trail = path.cells;
+      openDoorsAlong(m, path.cells);
       const c = s.combat;
       const cb = tokenCombatant(s, token);
       if (accumulate && c && cb) {

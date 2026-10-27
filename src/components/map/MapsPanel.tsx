@@ -7,6 +7,7 @@ import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
 import MapEditor from './MapEditor';
+import { CombatTracker, TurnBar } from '../combat/CombatTracker';
 
 export default function MapsPanel({ table, openId, setOpenId }: {
   table: TableState; openId: string | null; setOpenId: (id: string | null) => void;
@@ -18,15 +19,40 @@ export default function MapsPanel({ table, openId, setOpenId }: {
 
   if (open) return <MapEditor table={table} map={open} onBack={() => setOpenId(null)} />;
 
+  const combat = table.combat;
+  const combatMap = combat?.mapId ? table.maps[combat.mapId] : undefined;
+  const pcs = Object.values(table.characters).filter((c) => c.kind === 'pc' && c.status === 'approved');
+  /** Combate sem mapa (na imaginação): a fila já vem com os personagens dos jogadores. */
+  const freeCombat = async () => {
+    const r = await act({ type: 'combat/create' });
+    if (r.ok && pcs.length) await act({ type: 'combat/add', refs: pcs.map((c) => ({ kind: 'character' as const, id: c.id })) });
+  };
+
   return (
     <div className="col gap-lg">
       <div className="row-wrap">
         <div className="grow">
           <div className="card-title" style={{ marginBottom: 2 }}><MapIcon size={14} /> Mapas</div>
-          <div className="tiny muted">Grid de quadrados de {MAP_CELL_M.toLocaleString('pt-BR')} m. Os jogadores só veem o mapa que você mostrar.</div>
+          <div className="tiny muted">Grid de quadrados de {MAP_CELL_M.toLocaleString('pt-BR')} m. Os jogadores só veem o mapa que você mostrar. O combate fica no mapa, na Mesa.</div>
         </div>
+        {!combat && (
+          <button className="btn btn-ghost btn-sm" onClick={() => void freeCombat()} title="Fila de combate sem mapa, com os personagens dos jogadores">
+            <Swords size={14} /> Combate sem mapa
+          </button>
+        )}
         <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus size={14} /> Novo mapa</button>
       </div>
+
+      {combat && (
+        <div className="card col ct-card ct-card-wide">
+          <div className="row-wrap">
+            <div className="card-title grow" style={{ margin: 0 }}><Swords size={14} /> Combate{combatMap ? ` · ${combatMap.name}` : ' sem mapa'}</div>
+            {combatMap && <button className="btn btn-sm btn-primary" onClick={() => setOpenId(combatMap.id)}><MapIcon size={13} /> Abrir o mapa</button>}
+          </div>
+          <TurnBar table={table} combat={combat} />
+          <CombatTracker table={table} combat={combat} />
+        </div>
+      )}
       {maps.length === 0 && (
         <div className="empty col" style={{ alignItems: 'center' }}>
           <p>Nenhum mapa ainda.</p>

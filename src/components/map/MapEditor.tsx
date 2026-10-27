@@ -11,13 +11,15 @@ import type {
 import { DOOR_STATES, MAP_CELL_M, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS } from '../../model/types';
 import { cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt } from '../../model/map';
 import { costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point } from '../../rules/grid';
-import { fullGrid, isTokenTurn, moveBudget, occupiedCells } from '../../store/maps';
+import { fullGrid, isTokenTurn, moveBudget, occupiedCells, tokenCombatant } from '../../store/maps';
+import { currentCombatant } from '../../store/combat';
 import { hostStore } from '../../net/host';
 import { useAct } from '../act';
 import Modal from '../common/Modal';
 import { SubTabs } from '../room/TopBar';
 import { useUndo } from '../investigation/useUndo';
-import MapCanvas, { PROP_ICONS, type MapPointer, type PointerKind } from './MapCanvas';
+import { CombatTracker, TurnBar } from '../combat/CombatTracker';
+import MapCanvas, { PROP_ICONS, type MapFocus, type MapPointer, type PointerKind } from './MapCanvas';
 import MapGenerateModal from './MapGenerateModal';
 import { edgesBetween, lineCells, rectCells } from './mapRender';
 import { gmTokens } from './tokens';
@@ -104,9 +106,57 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   }, [act, map.id, undo]);
 
   const objects = useMemo(() => Object.values(map.objects), [map.objects]);
-  const tokens = useMemo(() => gmTokens(table, map), [table, map]);
+  // Na mesa, todo token se pega com o dedo (o gesto que começa nele não rola o mapa).
+  const tokens = useMemo(() => gmTokens(table, map).map((t) => (mode === 'play' ? { ...t, grab: true } : t)), [table, map, mode]);
   const selected = selObj ? map.objects[selObj] : undefined;
   const selToken = selTok ? map.tokens[selTok] : undefined;
+
+  // ── Combate ligado ao mapa: a linha aberta na fila acompanha o token escolhido. ──
+  const combat = table.combat;
+  /** O combate é deste mapa (ou de nenhum): a fila fica aqui. */
+  const combatHere = !!combat && (!combat.mapId || linked);
+  const tokenOfCb = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const t of Object.values(map.tokens)) { const cb = tokenCombatant(table, t); if (cb) out.set(cb.id, t.id); }
+    return out;
+  }, [table, map.tokens]);
+  /** Linha aberta na fila; null = segue quem está agindo. */
+  const [focusCb, setFocusCb] = useState<string | null>(null);
+  const [camera, setCamera] = useState<MapFocus | null>(null);
+  const cameraN = useRef(0);
+  const lookAt = useCallback((tokenId: string) => {
+    const t = mapRef.current.tokens[tokenId];
+    if (!t) return;
+    cameraN.current += 1;
+    setCamera({ x: t.x, y: t.y, n: cameraN.current, ping: true, smooth: true });
+  }, []);
+  useEffect(() => {
+    const cb = selToken ? tokenCombatant(table, selToken) : undefined;
+    if (cb) setFocusCb(cb.id);
+    // Só quando o mestre escolhe outro token.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selTok]);
+  // Turno novo: quem age fica escolhido no mapa (alcance à vista, pronto para mover).
+  const turnId = currentCombatant(combat)?.id;
+  useEffect(() => {
+    setFocusCb(null);
+    if (!turnId || !linked || mode !== 'play') return;
+    const tok = tokenOfCb.get(turnId);
+    if (tok) { setSelTok(tok); lookAt(tok); }
+    // Só quando a vez muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnId, combat?.round]);
+  const focusFromTracker = (id: string | null) => {
+    setFocusCb(id);
+    if (!id) { if (id === '') setSelTok(null); return; }
+    const tok = tokenOfCb.get(id);
+    setSelTok(tok ?? null);
+    if (tok) lookAt(tok);
+  };
+  // Fichas no mapa que ainda não estão na fila.
+  const missing = Object.values(map.tokens).filter((t) => t.ref.kind === 'character' && table.characters[t.ref.id]?.status === 'approved'
+    && !combat?.order.some((x) => x.ref.kind === 'character' && x.ref.id === t.ref.id)).length;
+  const combatAll = () => act({ type: 'map/combat', mapId: map.id }, combat ? 'Combate trazido para este mapa.' : 'Combate aberto com todos do mapa.');
 
   useEffect(() => { if (selObj && !map.objects[selObj]) setSelObj(null); }, [map.objects, selObj]);
   useEffect(() => { if (selTok && !map.tokens[selTok]) setSelTok(null); }, [map.tokens, selTok]);
@@ -501,6 +551,8 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             route={route}
             onDropToken={mode === 'play' ? onDropToken : undefined}
             popover={popover}
+            focus={camera}
+            top={mode === 'play' && combat && combatHere ? <TurnBar table={table} combat={combat} /> : undefined}
             dock={mode === 'edit' ? <span className="tiny muted map-dock-hint">{TOOLS.find((t) => t.id === tool)?.hint}</span> : playDock}
           />
         </div>
@@ -549,7 +601,40 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             </>
           ) : (
             <>
-              {/* Na mesa, os tokens vêm primeiro: é o que o mestre mais usa. */}
+              {/* Na mesa: a fila do combate (quando há), depois os tokens. */}
+              {combat && combatHere ? (
+                <div className="card col ct-card">
+                  {!linked && (
+                    <div className="tok-hint">
+                      <Swords size={14} /><span>Combate sem mapa.</span><span className="spacer" />
+                      <button className="btn btn-sm" onClick={() => void combatAll()}><Link2 size={13} /> Usar este mapa</button>
+                    </div>
+                  )}
+                  {linked && missing > 0 && (
+                    <button className="btn btn-sm btn-ghost" onClick={() => void combatAll()} title="Põe na fila as fichas que estão no mapa e ainda não lutam">
+                      <Users size={13} /> Pôr na fila {missing === 1 ? 'a ficha' : `as ${missing} fichas`} do mapa
+                    </button>
+                  )}
+                  <CombatTracker table={table} combat={combat} focusId={focusCb} onFocus={focusFromTracker} />
+                </div>
+              ) : combat ? (
+                <div className="card col">
+                  <div className="card-title" style={{ margin: 0 }}><Swords size={14} /> Combate em outro mapa</div>
+                  <div className="tiny muted">A fila está ligada a {table.maps[combat.mapId!]?.name ?? 'outro mapa'}.</div>
+                  <button className="btn btn-sm" onClick={() => void combatAll()}><Link2 size={13} /> Trazer o combate para cá</button>
+                </div>
+              ) : (
+                <div className="card col">
+                  <button className="btn btn-primary" disabled={!missing} onClick={() => void combatAll()}>
+                    <Swords size={15} /> Combate com todos do mapa{missing ? ` (${missing})` : ''}
+                  </button>
+                  <div className="tiny muted">
+                    {missing
+                      ? 'Abre a fila com as fichas que estão no mapa e liga o combate a ele. Ameaças do livro entram na fila ao serem colocadas.'
+                      : 'Coloque fichas no mapa para abrir um combate com elas. Colocar uma ameaça do livro já abre a fila.'}
+                  </div>
+                </div>
+              )}
               <TokensPanel table={table} map={map} selTok={selTok} setSelTok={setSelTok} armed={armed} setArmed={setArmed}
                 guide={guide ? { squares: guide.budget.squares, remaining: guide.budget.remaining, turn: guide.turn } : null} />
               <SessionCard table={table} map={map} />
@@ -600,20 +685,14 @@ function SessionCard({ table, map }: { table: TableState; map: BattleMap }) {
         </div>
         <span className="tiny muted">{MOVE_MODES[map.mode].hint}</span>
       </div>
-      {combat ? (
-        linked ? (
-          <div className="row-wrap">
-            <span className="badge badge-err"><Swords size={11} /> Combate neste mapa{combat.round ? ` · rodada ${combat.round}` : ''}</span>
-            <span className="spacer" />
-            <button className="btn btn-sm btn-ghost" onClick={() => act({ type: 'map/link', mapId: null })}><Link2Off size={13} /> Desvincular</button>
-          </div>
-        ) : (
-          <button className="btn btn-sm" onClick={() => act({ type: 'map/link', mapId: map.id }, 'Combate vinculado ao mapa.')}><Link2 size={14} /> Vincular ao combate aberto</button>
-        )
-      ) : (
-        <div className="tiny muted">Sem combate aberto. Crie um na aba Combate para usar o modo por turno.</div>
+      {combat && linked && (
+        <div className="row-wrap">
+          <span className="badge badge-err"><Swords size={11} /> Combate neste mapa{combat.round ? ` · rodada ${combat.round}` : ''}</span>
+          <span className="spacer" />
+          <button className="btn btn-sm btn-ghost" onClick={() => act({ type: 'map/link', mapId: null })} title="A fila continua, sem mapa"><Link2Off size={13} /> Desvincular</button>
+        </div>
       )}
-      {map.mode === 'turno' && !linked && <div className="tiny" style={{ color: 'var(--warning)' }}>Por turno sem combate vinculado: todo movimento de jogador vira pedido.</div>}
+      {map.mode === 'turno' && !linked && <div className="tiny" style={{ color: 'var(--warning)' }}>Por turno sem combate neste mapa: todo movimento de jogador vira pedido.</div>}
     </div>
   );
 }

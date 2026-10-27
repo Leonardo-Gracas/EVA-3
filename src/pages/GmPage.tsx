@@ -9,7 +9,6 @@ import { useAct } from '../components/act';
 import NpcsPanel from '../components/gm/NpcsPanel';
 import ThreatsPanel from '../components/gm/ThreatsPanel';
 import CharRow from '../components/gm/CharRow';
-import CombatPanel from '../components/combat/CombatPanel';
 import MapsPanel from '../components/map/MapsPanel';
 import { ActProvider, type ActApi } from '../components/act';
 import type { Character, PlayerRecord, TableState } from '../model/types';
@@ -31,7 +30,7 @@ import { GmInbox, GmNotifications, useRollToasts } from '../components/Notificat
 import MusicDock from '../components/music/MusicDock';
 
 /** Abas na ordem do preparo à mesa: o caderno da campanha, quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
-type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'combate' | 'mapas' | 'npcs' | 'admin' | 'regras';
+type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'mapas' | 'npcs' | 'admin' | 'regras';
 type CastView = 'npcs' | 'ameacas';
 type AdminView = 'pedidos' | 'registro' | 'permissoes';
 
@@ -55,7 +54,6 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
   const [threatOpen, setThreatOpen] = useState(false);
   const [campOpen, setCampOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState<string | null>(null);
-  const openMap = (id: string) => { setMapOpen(id); setTab('mapas'); };
   const openSheet = (id: string) => { setSelected(id); setSheetOpen(true); setTab('jogadores'); };
   const openRequests = () => { setAdminView('pedidos'); setTab('admin'); };
   const logOpen = tab === 'admin' && adminView === 'registro';
@@ -109,10 +107,14 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           tabs={[
             { id: 'campanha', label: 'Campanha', icon: <ScrollText size={14} /> },
             { id: 'jogadores', label: 'Jogadores', icon: <Users size={14} />, count: pendingSheets },
-            { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
+            // No celular, a barra fica com o que se usa à mesa (mapas e combate); itens vão para "Mais".
+            { id: 'itens', label: 'Itens', icon: <Package size={14} />, mobileMore: true },
             { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
-            { id: 'combate', label: table.combat?.round ? `Combate · rodada ${table.combat.round}` : 'Combate', short: 'Combate', icon: <Swords size={14} /> },
-            { id: 'mapas', label: 'Mapas', icon: <MapIcon size={14} /> },
+            // O combate vive no mapa (aba Mapas → Mesa); a aba avisa quando há um aberto.
+            {
+              id: 'mapas', label: table.combat ? `Mapas · combate${table.combat.round ? ` R${table.combat.round}` : ''}` : 'Mapas',
+              short: table.combat ? 'Combate' : 'Mapas', icon: table.combat ? <Swords size={14} /> : <MapIcon size={14} />,
+            },
             { id: 'npcs', label: 'NPCs e Ameaças', short: 'NPCs', icon: <VenetianMask size={14} /> },
             { id: 'admin', label: 'Admin', icon: <Settings size={14} />, count: pending },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
@@ -149,7 +151,6 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           {tab === 'jogadores' && <Characters table={table} online={snap.online} onInvite={() => setInvite(true)} selected={selected} setSelected={setSelected} sheetOpen={sheetOpen} setSheetOpen={setSheetOpen} />}
           {tab === 'itens' && <ItemLibrary table={table} />}
           {tab === 'investigacao' && <CasesPanel table={table} />}
-          {tab === 'combate' && <CombatPanel table={table} onOpenMap={openMap} />}
           {tab === 'mapas' && <MapsPanel table={table} openId={mapOpen} setOpenId={setMapOpen} />}
           {tab === 'npcs' && (
             <div className="section">
