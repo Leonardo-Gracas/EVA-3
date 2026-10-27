@@ -223,6 +223,58 @@ describe('mapas: locomoção', () => {
     expect(door(0).state).toBe('open');
   });
 
+  it('visão escura: cada um só vê o próprio cômodo; porta fechada tapa a vista, aberta deixa ver', () => {
+    let { s, mapId, ana } = setup();
+    // Parede em x=5 de cima a baixo, com uma porta fechada em F1.
+    const wall = Array.from({ length: 10 }, (_, y) => ({ o: 'v' as const, x: 5, y }));
+    s = ok(s, gm, { type: 'map/walls', mapId, edges: wall, on: true });
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'door', edge: { o: 'v', x: 5, y: 0 }, state: 'closed', hidden: false } });
+    const doorId = Object.values(s.maps[mapId].objects).find((o) => o.kind === 'door')!.id;
+    s = ok(s, gm, { type: 'map/update', mapId, dark: true });
+    expect(s.log[s.log.length - 1].text).toMatch(/apagou as luzes/);
+
+    // Ana (A1) vê a metade esquerda; do outro lado, só a soleira F1, à meia-luz. Beto não aparece.
+    let v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.dark).toBe(true);
+    expect(v.dim).toEqual([5]);
+    expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
+    const VOID = v.cells[9 * 10 + 9];
+    expect(v.cells[0]).not.toBe(VOID);
+    expect(v.cells[5]).not.toBe(VOID); // soleira
+    expect(v.cells[6]).toBe(VOID);
+    expect(v.cells[1 * 10 + 5]).toBe(VOID);
+    // A parede da borda aparece; a porta também (dá para ir até ela).
+    expect(v.wallsV[3 * 11 + 5]).toBe('1');
+    expect(v.objects).toHaveLength(1);
+    // Beto (J10) vê a direita, sem Ana.
+    const vb = buildPlayerView(s, 'p2', new Set()).map!;
+    expect(vb.tokens.map((t) => t.name)).toEqual(['Bento']);
+    expect(vb.cells[0]).toBe(VOID);
+
+    // Ninguém anda pelo escuro: G1 fica atrás da porta, fora da vista.
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 6, y: 0 })).toMatchObject({ ok: false });
+    // Até a soleira, sim (atravessar a porta fechada custa o dobro: 4 + 2 = 6) — e a porta abre.
+    s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 5, y: 0 });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.dim).toEqual([]);
+    expect(v.tokens.map((t) => t.name).sort()).toEqual(['Bento', 'Mizael']);
+
+    // Porta fechada de novo e Ana de volta: a direita some outra vez.
+    const tok = Object.values(s.maps[mapId].tokens).find((t) => t.ref.id === ana)!;
+    s = ok(s, gm, { type: 'map/move', mapId, tokenId: tok.id, x: 0, y: 0, path: [{ x: 5, y: 0 }, { x: 4, y: 0 }, { x: 3, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 0 }] });
+    s = ok(s, gm, { type: 'map/door', mapId, objectId: doorId, state: 'locked' });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
+    // Trancada: nem soleira.
+    expect(v.dim).toEqual([]);
+    // Luzes acesas: tudo de volta.
+    s = ok(s, gm, { type: 'map/update', mapId, dark: false });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.dark).toBeUndefined();
+    expect(v.tokens).toHaveLength(2);
+    expect(v.cells).toBe(s.maps[mapId].cells);
+  });
+
   it('porta secreta é parede para o jogador', () => {
     let { s, mapId, ana } = setup();
     const wall = Array.from({ length: 10 }, (_, y) => ({ o: 'v' as const, x: 2, y }));

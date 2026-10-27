@@ -58,8 +58,8 @@ export function buildGrid(src: GridSource): Grid {
 
 const passable = (g: Grid, x: number, y: number) => x >= 0 && y >= 0 && x < g.w && y < g.h && g.mult[y * g.w + x] > 0;
 
-/** A linha cruzada por um passo de um quadrado na horizontal ou vertical. */
-function edgeOf(g: Grid, x: number, y: number, dx: number, dy: number): number {
+/** A linha cruzada por um passo de um quadrado na horizontal ou vertical (valor de `EDGE`). */
+export function edgeOf(g: Grid, x: number, y: number, dx: number, dy: number): number {
   if (dx === 1) return g.blockV[y * (g.w + 1) + x + 1];
   if (dx === -1) return g.blockV[y * (g.w + 1) + x];
   if (dy === 1) return g.blockH[(y + 1) * g.w + x];

@@ -212,6 +212,12 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
     case 'map/update': {
       const m = getMap(s, a.mapId);
       if (a.name !== undefined) m.name = str(a.name, MAX_NAME, 'Nome do mapa', true);
+      if (a.dark !== undefined && !!a.dark !== !!m.dark) {
+        m.dark = !!a.dark;
+        if (s.activeMapId === m.id) {
+          log(s, ctx, { kind: 'system', actorName: who, text: m.dark ? `apagou as luzes em ${m.name}: cada um só vê o cômodo onde está.` : `acendeu as luzes em ${m.name}.` });
+        }
+      }
       if (a.mode !== undefined) {
         if (!(typeof a.mode === 'string' && a.mode in MOVE_MODES)) fail('Modo de locomoção inválido.');
         const changed = m.mode !== a.mode;

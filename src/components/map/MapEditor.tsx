@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Armchair, BrickWall, Check, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Link2, Link2Off, Lock, Unlock, MousePointer2, Paintbrush,
-  Redo2, Scaling, Swords, Trash2, Undo2, Users, Wand2, X,
+  Moon, Redo2, Scaling, Sun, Swords, Trash2, Undo2, Users, Wand2, X,
 } from 'lucide-react';
 import type {
   BattleMap, DoorState, EdgeRef, GameAction, MapDoor, MapLayout, MapObject, MapProp, MoveMode, PlaceRef, PropEffect, PropKind, TableState, Terrain,
@@ -11,7 +11,8 @@ import type {
 import { DOOR_STATES, MAP_CELL_M, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS } from '../../model/types';
 import { cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt } from '../../model/map';
 import { costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point } from '../../rules/grid';
-import { fullGrid, isTokenTurn, moveBudget, occupiedCells, tokenCombatant } from '../../store/maps';
+import { fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, tokenCombatant } from '../../store/maps';
+import { visibleArea } from '../../rules/vision';
 import { currentCombatant } from '../../store/combat';
 import { hostStore } from '../../net/host';
 import { useAct } from '../act';
@@ -153,6 +154,19 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     setSelTok(tok ?? null);
     if (tok) lookAt(tok);
   };
+  // Visão escura: o mestre vê tudo, com sombra no que nenhum jogador vê agora.
+  const fog = useMemo(() => {
+    if (!map.dark || mode !== 'play') return undefined;
+    const eyes = Object.values(map.tokens).flatMap((t) => {
+      const ch = t.ref.kind === 'character' ? table.characters[t.ref.id] : undefined;
+      return ch && ch.kind === 'pc' && ch.status === 'approved' && !t.hidden ? [{ x: t.x, y: t.y }] : [];
+    });
+    const { seen } = visibleArea(playerGrid(map), map.cells, eyes);
+    const out: number[] = [];
+    for (let i = 0; i < map.w * map.h; i++) if (!seen[i] && map.cells[i] !== TERRAIN_CHAR.void) out.push(i);
+    return out;
+  }, [map, table.characters, mode]);
+
   // Quem está no mapa e ainda não está na fila: fichas e criaturas soltas.
   const missing = Object.values(map.tokens).filter((t) => (t.ref.kind === 'creature' && !!t.threat)
     || (t.ref.kind === 'character' && table.characters[t.ref.id]?.status === 'approved'
@@ -539,6 +553,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
           <MapCanvas
             grid={map} objects={objects} tokens={shownTokens} fitKey={map.id}
             reach={guide?.cells} reachTone={guide?.turn ? 'free' : 'request'}
+            fog={fog}
             path={path?.cells} pathLabel={pathLabel}
             ghosts={mode === 'play' ? ghosts : undefined}
             preview={preview}
@@ -685,6 +700,24 @@ function SessionCard({ table, map }: { table: TableState; map: BattleMap }) {
           ))}
         </div>
         <span className="tiny muted">{MOVE_MODES[map.mode].hint}</span>
+      </div>
+      <div className="field">
+        <span className="label">Visão</span>
+        <div className="map-modes map-modes-2" role="radiogroup" aria-label="Visão dos jogadores">
+          <button role="radio" aria-checked={!map.dark} className={`map-mode${!map.dark ? ' on' : ''}`}
+            onClick={() => act({ type: 'map/update', mapId: map.id, dark: false })} title="Os jogadores veem o mapa inteiro">
+            <Sun size={12} /> Tudo à vista
+          </button>
+          <button role="radio" aria-checked={!!map.dark} className={`map-mode${map.dark ? ' on' : ''}`}
+            onClick={() => act({ type: 'map/update', mapId: map.id, dark: true })} title="Cada jogador só vê o cômodo onde o personagem dele está">
+            <Moon size={12} /> Escuro
+          </button>
+        </div>
+        <span className="tiny muted">
+          {map.dark
+            ? 'Cada jogador só vê o cômodo do próprio personagem; porta fechada tapa a vista, aberta deixa ver o outro lado. Na Mesa, a sombra marca o que nenhum jogador vê.'
+            : 'Os jogadores veem o mapa inteiro (menos o que estiver oculto).'}
+        </span>
       </div>
       {combat && linked && (
         <div className="row-wrap">

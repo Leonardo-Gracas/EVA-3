@@ -70,6 +70,10 @@ interface Props {
   fitKey: string;
   /** Quadrados destacados (alcance). */
   reach?: number[];
+  /** Visão escura, jogador: soleiras à meia-luz (depois de porta fechada). */
+  dim?: number[];
+  /** Visão escura, mestre: o que nenhum jogador vê (sombra leve por cima). */
+  fog?: number[];
   reachTone?: 'free' | 'request' | 'blocked';
   path?: Point[] | null;
   /** Texto no fim do caminho ("4 quadrados · 6 m"). */
@@ -161,6 +165,8 @@ export default function MapCanvas(props: Props) {
     return wallsPath(wh.join(''), wv.join(''), w, h);
   }, [grid.wallsH, grid.wallsV, w, h, objects]);
   const reachD = useMemo(() => (props.reach?.length ? cellsPath(props.reach, w) : ''), [props.reach, w]);
+  const dimD = useMemo(() => (props.dim?.length ? cellsPath(props.dim, w) : ''), [props.dim, w]);
+  const fogD = useMemo(() => (props.fog?.length ? cellsPath(props.fog, w) : ''), [props.fog, w]);
   const previewD = useMemo(() => (props.preview?.cells?.length ? cellsPath(props.preview.cells, w) : ''), [props.preview, w]);
 
   const pointerAt = (e: React.PointerEvent): MapPointer => {
@@ -282,7 +288,9 @@ export default function MapCanvas(props: Props) {
               <path d={layers.difficult} fill={`url(#dif${uid})`} />
               <path d={layers.stairs} fill={`url(#st${uid})`} />
               <path d={layers.grid} className="map-grid" />
-              {reachD && <path d={reachD} className={`map-reach map-reach-${tone}`} />}
+              {dimD && <path d={dimD} className="map-dim" />}
+              {fogD && <path d={fogD} className="map-fog" />}
+              {reachD &&<path d={reachD} className={`map-reach map-reach-${tone}`} />}
               {previewD && <path d={previewD} className={`map-preview${props.preview?.erase ? ' map-preview-erase' : ''}`} />}
               {props.preview?.rect && (
                 <rect x={props.preview.rect.x + 0.06} y={props.preview.rect.y + 0.06} width={props.preview.rect.w - 0.12} height={props.preview.rect.h - 0.12}

@@ -10,6 +10,7 @@ import {
   buildGrid, canEnd, costTo, followPath, MAX_PATH, metersFor, pathTo, reachFrom, squaresFor, type Grid, type GridPath, type Point, type Reach,
 } from '../rules/grid';
 import { currentCombatant } from './combat';
+import { visibleArea } from '../rules/vision';
 
 /** O que os jogadores enxergam do mapa: sem portas secretas nem objetos ocultos. */
 export const visibleObjects = (m: BattleMap): MapObject[] => Object.values(m.objects).filter((o) => !o.hidden);
@@ -19,6 +20,27 @@ export const playerGrid = (m: BattleMap): Grid => buildGrid({ ...m, objects: vis
 
 /** Grid completo, do mestre. */
 export const fullGrid = (m: BattleMap): Grid => buildGrid({ ...m, objects: Object.values(m.objects) });
+
+/** Onde estão os personagens (visíveis) de um jogador neste mapa: de onde ele enxerga. */
+export function eyesOf(s: TableState, m: BattleMap, ownerId: string): Point[] {
+  return Object.values(m.tokens).flatMap((t) => {
+    const info = t.ref.kind === 'character' ? tokenInfo(s, t) : null;
+    return info && !info.hidden && s.characters[t.ref.id]?.ownerId === ownerId ? [{ x: t.x, y: t.y }] : [];
+  });
+}
+
+/**
+ * Grid em que o jogador se move. Na visão escura, só o que ele vê (e as soleiras das portas):
+ * nenhum caminho passa pelo escuro.
+ */
+export function playerMoveGrid(s: TableState, m: BattleMap, ownerId: string): Grid {
+  const g = playerGrid(m);
+  if (!m.dark) return g;
+  const vis = visibleArea(g, m.cells, eyesOf(s, m, ownerId));
+  const mult = g.mult.slice();
+  for (let i = 0; i < mult.length; i++) if (!vis.seen[i] && !vis.dim.has(i)) mult[i] = 0;
+  return { ...g, mult };
+}
 
 /** Combatente da fila que o token representa (ficha na fila ou instância de ameaça). */
 export function tokenCombatant(s: TableState, tok: MapToken): Combatant | undefined {
@@ -139,7 +161,8 @@ export interface PlannedMove {
 /** Alcance do jogador para a ficha: o mesmo cálculo da tela dele. */
 export function playerReach(s: TableState, m: BattleMap, tok: MapToken, accumulate: boolean): { reach: Reach; budget: MoveBudget } {
   const budget = moveBudget(s, tok, accumulate);
-  const reach = reachFrom(playerGrid(m), tok, budget.remaining, budget.parity, occupiedCells(s, m, tok.id, true));
+  const owner = tok.ref.kind === 'character' ? s.characters[tok.ref.id]?.ownerId ?? '' : '';
+  const reach = reachFrom(playerMoveGrid(s, m, owner), tok, budget.remaining, budget.parity, occupiedCells(s, m, tok.id, true));
   return { reach, budget };
 }
 
@@ -173,7 +196,7 @@ export function planPlayerMove(s: TableState, m: BattleMap, characterId: string,
     const last = cells[cells.length - 1];
     if (first.x !== token.x || first.y !== token.y || last.x !== x || last.y !== y) return { error: 'O caminho não liga o personagem ao destino.' };
     const budget = moveBudget(s, token, accumulate);
-    const walked = followPath(playerGrid(m), cells, budget.parity);
+    const walked = followPath(playerMoveGrid(s, m, s.characters[characterId]?.ownerId ?? ''), cells, budget.parity);
     if (!walked) return { error: 'O caminho passa por onde não dá para andar.' };
     if (walked.cost > budget.remaining) {
       return { error: budget.remaining ? 'O caminho passa do deslocamento.' : 'Sem deslocamento restante neste turno.' };

@@ -2076,6 +2076,9 @@ button.camp-pill { min-height: 36px; }
 .map-stair-line { stroke: #8f7f5f; stroke-width: 0.06; }
 .map-grid { fill: none; stroke: var(--map-grid); stroke-width: 0.025; }
 .map-walls { fill: none; stroke: var(--map-wall); stroke-width: 0.14; stroke-linecap: square; }
+/* Visão escura: soleira à meia-luz (jogador) e o que nenhum jogador vê (mestre). */
+.map-dim { fill: rgba(7, 6, 5, 0.62); }
+.map-fog { fill: rgba(7, 6, 5, 0.45); }
 .map-reach { stroke-width: 0.03; }
 .map-reach-free { fill: rgba(90, 167, 124, 0.26); stroke: rgba(90, 167, 124, 0.5); }
 .map-reach-request { fill: rgba(217, 160, 63, 0.22); stroke: rgba(217, 160, 63, 0.5); }
@@ -2210,6 +2213,8 @@ button.camp-pill { min-height: 36px; }
 .map-mode { padding: 6px 4px; border-radius: 4px; font-size: 12px; text-align: center; color: var(--text-secondary); }
 .map-mode:hover { color: var(--text-primary); }
 .map-mode.on { background: var(--gold-dim); color: var(--gold-soft); font-weight: 600; }
+.map-modes-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.map-mode { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .map-side-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--side); flex-shrink: 0; }
 
 /* Painel de tokens: busca, filtro por tipo e lista rolável (no mapa / para colocar). */
@@ -2284,6 +2289,7 @@ button.camp-pill { min-height: 36px; }
 .pmap-head > svg { flex-shrink: 0; }
 .pmap-name { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pmap-head .badge { flex-shrink: 0; }
+.pmap-dark { gap: 4px; color: #b9b2e8; border-color: rgba(150, 140, 230, 0.4); background: rgba(110, 100, 200, 0.14); }
 .pmap-mode-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pmap-pending { gap: 6px; color: var(--warning); }
 

@@ -432,6 +432,8 @@ export interface BattleMap {
   objects: Record<string, MapObject>;
   tokens: Record<string, MapToken>;
   mode: MoveMode;
+  /** Visão escura: cada jogador só vê o cômodo dos próprios personagens (porta fechada tapa a vista). */
+  dark?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -847,7 +849,7 @@ export type MapAction =
   /** walls: parede em volta de todo o piso. */
   | { type: 'map/create'; name: string; w: number; h: number; fill?: Terrain; walls?: boolean }
   /** Campos ausentes não mudam. */
-  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode }
+  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode; dark?: boolean }
   | { type: 'map/delete'; mapId: string }
   | { type: 'map/duplicate'; mapId: string }
   /** dx/dy: quanto o conteúdo anda (para crescer à esquerda ou em cima). O que sair do mapa some; o que entra ganha `fill` (padrão: vazio). */
@@ -968,6 +970,12 @@ export interface PlayerMap {
   objects: MapObject[];
   tokens: PlayerMapToken[];
   moves: PlayerMapMove[];
+  /**
+   * Visão escura: o que o jogador não vê já vem cortado (vazio, sem paredes, móveis nem tokens).
+   * `dim`: soleiras à meia-luz, logo depois das portas fechadas da borda.
+   */
+  dark?: boolean;
+  dim?: number[];
 }
 
 export interface PlayerView {

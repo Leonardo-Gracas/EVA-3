@@ -3,7 +3,7 @@
 // pelo trajeto exato. O cálculo é o mesmo do motor (grid sem os ocultos).
 // Em combate, a fila fica numa faixa sobre o mapa e os controles do turno, perto do polegar.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Clock, Footprints, Hourglass, LocateFixed, Map as MapIcon, Undo2, X } from 'lucide-react';
+import { Check, Clock, Footprints, Hourglass, LocateFixed, Map as MapIcon, Moon, Undo2, X } from 'lucide-react';
 import type { MoveGateKind, PlayerCombatant, PlayerMapMove, PlayerMapToken, PlayerView } from '../../model/types';
 import { MOVE_MODES } from '../../model/types';
 import { cellLabel } from '../../model/map';
@@ -268,7 +268,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   const noneLeft = !!current && current.remaining === 0 && current.gate !== 'blocked';
 
   const hint = !current
-    ? 'Seu personagem não está neste mapa. O mestre coloca os tokens.'
+    ? m.dark ? 'Está escuro: sem seu personagem no mapa, você não vê nada.' : 'Seu personagem não está neste mapa. O mestre coloca os tokens.'
     : current.gate === 'blocked'
       ? `${current.reason ?? 'Aguarde.'}${turnCb && !myTurn ? ` Vez de ${turnCb.name}.` : ''}`
       : noneLeft
@@ -283,6 +283,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
         <MapIcon size={14} className="gold" />
         <strong className="pmap-name">{m.name}</strong>
         <span className="badge" title={MOVE_MODES[m.mode].hint}>{MOVE_MODES[m.mode].label}</span>
+        {m.dark && <span className="badge pmap-dark" title="Você só vê o cômodo onde seu personagem está. Porta fechada tapa a vista."><Moon size={11} /> Escuro</span>}
         <span className="tiny muted hide-sm pmap-mode-hint">{MOVE_MODES[m.mode].hint}</span>
       </div>
 
@@ -295,6 +296,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
       <MapCanvas
         grid={m} objects={m.objects} tokens={tokens} fitKey={m.id}
         reach={reachCells} reachTone={current?.gate ?? 'free'}
+        dim={m.dim}
         path={shown?.cells} pathLabel={pathLabel}
         ghosts={ghosts}
         selectedTokenId={token?.id}

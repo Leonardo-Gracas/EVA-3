@@ -1,6 +1,6 @@
 // Aba Mapas do mestre: a lista de mapas e, ao abrir um, o editor.
 import { useState } from 'react';
-import { Copy, Eye, EyeOff, Map as MapIcon, Pencil, Plus, Swords, Trash2 } from 'lucide-react';
+import { Copy, Eye, EyeOff, Map as MapIcon, Moon, Pencil, Plus, Swords, Trash2 } from 'lucide-react';
 import type { TableState, Terrain } from '../../model/types';
 import { MAP_CELL_M, MAP_LIMITS, MOVE_MODES } from '../../model/types';
 import { useAct } from '../act';
@@ -72,6 +72,7 @@ export default function MapsPanel({ table, openId, setOpenId }: {
                 <span className="tiny muted">{m.w} × {m.h} quadrados · {tokens} token{tokens === 1 ? '' : 's'}</span>
                 <span className="row-wrap" style={{ gap: 6 }}>
                   <span className="badge">{MOVE_MODES[m.mode].label}</span>
+                  {m.dark && <span className="badge pmap-dark"><Moon size={11} /> Escuro</span>}
                   {active && <span className="badge badge-gold"><Eye size={11} /> Aberto aos jogadores</span>}
                   {linked && <span className="badge badge-err"><Swords size={11} /> Combate</span>}
                 </span>

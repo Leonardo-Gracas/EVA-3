@@ -1,8 +1,10 @@
 // O que cada jogador recebe: só a própria ficha completa e dados públicos.
 import type {
-  LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerView, TableState,
+  BattleMap, LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerView, TableState,
 } from '../model/types';
-import { combatOn, isTokenTurn, moveBudget, moveGate, playerGrid, tokenCombatant, tokenInfo, visibleObjects } from './maps';
+import { TERRAIN_CHAR } from '../model/types';
+import { visibleArea, type Vision } from '../rules/vision';
+import { combatOn, eyesOf, isTokenTurn, moveBudget, moveGate, playerGrid, tokenCombatant, tokenInfo, visibleObjects } from './maps';
 import { followPath } from '../rules/grid';
 import { effectivePermissions } from '../model/permissions';
 import { caseShown, publishedCase } from '../model/cases';
@@ -61,9 +63,12 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
   const moves: PlayerMapMove[] = [];
   const grid = playerGrid(m);
   const here = combatOn(s, m);
+  // Visão escura: só o cômodo dos próprios personagens (o resto nem sai daqui).
+  const vis = m.dark ? visibleArea(grid, m.cells, eyesOf(s, m, playerId)) : null;
+  const sees = (x: number, y: number) => !vis || vis.seen[y * m.w + x] === 1;
   for (const t of Object.values(m.tokens)) {
     const info = tokenInfo(s, t);
-    if (!info || info.hidden) continue;
+    if (!info || info.hidden || !sees(t.x, t.y)) continue;
     const cb = here ? tokenCombatant(s, t) : undefined;
     const ch = info.characterId ? s.characters[info.characterId] : undefined;
     const mine = !!ch && ch.ownerId === playerId;
@@ -77,8 +82,8 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
       ...(mine ? { characterId: ch!.id } : {}),
       turn: isTokenTurn(s, m, t),
       ...(cb ? { combatantId: cb.id } : {}),
-      // Rastro só se o jogador consegue andar por ele: não entrega porta secreta.
-      ...(t.trail && followPath(grid, t.trail) ? { trail: t.trail } : {}),
+      // Rastro só se o jogador consegue andar por ele (não entrega porta secreta) e, no escuro, se viu o caminho todo.
+      ...(t.trail && followPath(grid, t.trail) && t.trail.every((p) => sees(p.x, p.y)) ? { trail: t.trail } : {}),
     });
     if (mine && ch!.status === 'approved') {
       const g = moveGate(s, m, ch!.id);
@@ -89,10 +94,34 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
       });
     }
   }
-  return {
-    id: m.id, name: m.name, w: m.w, h: m.h, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, mode: m.mode,
-    objects: visibleObjects(m), tokens, moves,
-  };
+  const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, tokens, moves };
+  if (!vis) return { ...base, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: visibleObjects(m) };
+  return { ...base, ...darkLayout(m, vis), dark: true, dim: [...vis.dim] };
+}
+
+/**
+ * O desenho cortado pela visão: o que não se vê vira vazio, e só ficam as paredes, portas e
+ * móveis encostados no que se vê (as soleiras contam, para dar para chegar à porta).
+ */
+function darkLayout(m: BattleMap, vis: Vision): Pick<PlayerMap, 'cells' | 'wallsH' | 'wallsV' | 'objects'> {
+  const { w, h } = m;
+  const known = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && (vis.seen[y * w + x] === 1 || vis.dim.has(y * w + x));
+  const voidChar = TERRAIN_CHAR.void;
+  let cells = '';
+  for (let i = 0; i < w * h; i++) cells += known(i % w, Math.floor(i / w)) ? m.cells[i] : voidChar;
+  // Linha horizontal (x, y): entre (x, y-1) e (x, y). Vertical (x, y): entre (x-1, y) e (x, y).
+  const nearH = (x: number, y: number) => known(x, y - 1) || known(x, y);
+  const nearV = (x: number, y: number) => known(x - 1, y) || known(x, y);
+  let wallsH = '';
+  for (let i = 0; i < (h + 1) * w; i++) wallsH += m.wallsH[i] === '1' && nearH(i % w, Math.floor(i / w)) ? '1' : '0';
+  let wallsV = '';
+  for (let i = 0; i < h * (w + 1); i++) wallsV += m.wallsV[i] === '1' && nearV(i % (w + 1), Math.floor(i / (w + 1))) ? '1' : '0';
+  const objects = visibleObjects(m).filter((o) => {
+    if (o.kind === 'door') return o.edge.o === 'h' ? nearH(o.edge.x, o.edge.y) : nearV(o.edge.x, o.edge.y);
+    for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) if (vis.seen[y * w + x] === 1) return true;
+    return false;
+  });
+  return { cells, wallsH, wallsV, objects };
 }
 
 /**
