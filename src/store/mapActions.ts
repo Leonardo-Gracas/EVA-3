@@ -1,8 +1,8 @@
 // Ações dos mapas. Todas do mestre, menos `map/move`, que o jogador usa
 // conforme o modo de locomoção (o portão fica no dispatch; aqui só a regra do movimento).
-import { MAX_COMBATANTS, nameInstances, threatInstance } from './combat';
+import { MAX_COMBATANTS, nameInstances, numberInstances, threatInstance } from './combat';
 import type {
-  Actor, BattleMap, Combatant, DoorState, EdgeRef, MapAction, MapDoor, MapLayout, MapObject, MapToken, MoveMode, PropEffect,
+  Actor, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, MapAction, MapDoor, MapLayout, MapObject, MapToken, MoveMode, PropEffect,
   PropKind, TableState, Terrain, TokenRef,
 } from '../model/types';
 import { DOOR_STATES, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS } from '../model/types';
@@ -122,6 +122,41 @@ export function dropTokens(s: TableState, drop: (t: MapToken) => boolean) {
   for (const m of Object.values(s.maps ?? {})) {
     for (const t of Object.values(m.tokens)) if (drop(t)) delete m.tokens[t.id];
   }
+}
+
+/**
+ * Combatentes que saem da fila (ou o combate que acaba): as ameaças continuam no mapa como
+ * criaturas soltas, com o PV de agora. Só saem do mapa quando o mestre tira o token.
+ */
+export function releaseTokens(s: TableState, gone: Combatant[]) {
+  const byId = new Map(gone.map((cb) => [cb.id, cb]));
+  for (const m of Object.values(s.maps ?? {})) {
+    for (const t of Object.values(m.tokens)) {
+      if (t.ref.kind !== 'combatant') continue;
+      const cb = byId.get(t.ref.id);
+      if (!cb) continue;
+      if (!cb.threat) { delete m.tokens[t.id]; continue; }
+      t.ref = { kind: 'creature', id: cb.ref.id };
+      t.threat = structuredClone(cb.threat);
+      t.hidden = t.hidden || cb.hidden;
+    }
+  }
+}
+
+/** Criatura solta entra no fim da fila (a instância passa do token para a fila). */
+function enlistCreature(c: Combat, t: MapToken, ctx: EngineCtx): Combatant | undefined {
+  if (t.ref.kind !== 'creature' || !t.threat) return undefined;
+  if (c.order.length >= MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
+  const cb: Combatant = { id: ctx.newId(), hidden: t.hidden, conditions: [], ref: { kind: 'threat', id: t.ref.id }, threat: t.threat };
+  c.order.push(cb);
+  t.ref = { kind: 'combatant', id: cb.id };
+  delete t.threat;
+  return cb;
+}
+
+/** Numera as criaturas soltas de um mesmo molde no mapa, como na fila (Goblin 1, Goblin 2…). */
+function nameLoose(m: BattleMap, templateId: string, base: string) {
+  numberInstances(Object.values(m.tokens).flatMap((t) => (t.ref.kind === 'creature' && t.ref.id === templateId && t.threat ? [t.threat] : [])), base);
 }
 
 function tokenIds(m: BattleMap, v: unknown): string[] {
@@ -365,20 +400,24 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       const m = getMap(s, a.mapId);
       const chars = Object.values(m.tokens)
         .flatMap((t) => (t.ref.kind === 'character' && s.characters[t.ref.id]?.status === 'approved' ? [{ t, ch: s.characters[t.ref.id] }] : []));
-      // Ameaças só existem dentro de um combate: sem combate, só fichas podem estar no mapa.
-      if (!s.combat && !chars.length) fail('Ninguém no mapa para lutar.');
+      const creatures = Object.values(m.tokens).filter((t) => t.ref.kind === 'creature' && t.threat);
+      if (!s.combat && !chars.length && !creatures.length) fail('Ninguém no mapa para lutar.');
       const c = s.combat ??= { id: ctx.newId(), round: 0, turn: 0, order: [], startedAt: now, mapId: m.id };
       if (c.mapId !== m.id) { c.mapId = m.id; c.moved = undefined; }
-      // Jogadores primeiro, depois NPCs; quem já está na fila fica onde está.
+      // Quem já está na fila fica onde está; os novos vão para o fim: jogadores, NPCs e as criaturas.
       const rank = (k: string) => (k === 'pc' ? 0 : 1);
       const fresh = chars
         .filter(({ ch }) => !c.order.some((x) => x.ref.kind === 'character' && x.ref.id === ch.id))
         .sort((x, y) => rank(x.ch.kind) - rank(y.ch.kind) || x.ch.name.localeCompare(y.ch.name, 'pt-BR'));
-      if (c.order.length + fresh.length > MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
+      if (c.order.length + fresh.length + creatures.length > MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
       // Token oculto entra oculto na fila.
       for (const { t, ch } of fresh) c.order.push({ id: ctx.newId(), hidden: t.hidden, conditions: [], ref: { kind: 'character', id: ch.id } });
-      if (c.round > 0 && fresh.length) {
-        const names = fresh.map(({ ch }) => ch.name);
+      const names = fresh.map(({ ch }) => ch.name);
+      for (const t of creatures) {
+        const cb = enlistCreature(c, t, ctx);
+        if (cb?.threat) names.push(cb.threat.name);
+      }
+      if (c.round > 0 && names.length) {
         log(s, ctx, { kind: 'system', actorName: who, text: `${names.join(', ')} ${names.length > 1 ? 'entraram' : 'entrou'} no combate.`, hidden: true });
       }
       return c.id;
@@ -404,36 +443,49 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         ? { x: int(a.x, 0, m.w - 1, 'Posição'), y: int(a.y, 0, m.h - 1, 'Posição') }
         : null;
       const have = new Map(Object.values(m.tokens).map((t) => [refKey(t.ref), t]));
+      // Com o combate neste mapa, quem chega ao mapa entra no fim da fila.
+      const c = s.combat && s.combat.mapId === m.id ? s.combat : null;
+      const joined: string[] = [];
       let last: string | undefined;
       for (const raw of a.refs) {
         const r = record(raw);
         let ref: TokenRef;
+        let loose: CombatThreat | undefined;
         if (r.kind === 'character') {
           const ch = typeof r.id === 'string' ? s.characters[r.id] : undefined;
           if (!ch) fail('Ficha não encontrada.');
           if (ch!.status !== 'approved') fail(`A ficha de ${ch!.name} ainda não foi aprovada.`);
           ref = { kind: 'character', id: ch!.id };
+          if (c && !c.order.some((x) => x.ref.kind === 'character' && x.ref.id === ch!.id)) {
+            if (c.order.length >= MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
+            c.order.push({ id: ctx.newId(), hidden: false, conditions: [], ref: { kind: 'character', id: ch!.id } });
+            joined.push(ch!.name);
+          }
         } else if (r.kind === 'combatant') {
           const cb = s.combat?.order.find((x) => x.id === r.id);
           if (!cb) fail('Combatente não encontrado na fila.');
           // Ficha na fila vira token da ficha (o mesmo token dentro e fora do combate).
           ref = cb!.ref.kind === 'character' ? { kind: 'character', id: cb!.ref.id } : { kind: 'combatant', id: cb!.id };
         } else if (r.kind === 'threat') {
-          // Molde do livro: entra na fila do combate (abre um em preparação, ligado a este mapa, se não houver).
+          // Molde do livro: uma instância nova. No combate deste mapa, vai para o fim da fila;
+          // sem combate aqui, fica solta no mapa até um combate começar.
           const t = typeof r.id === 'string' ? s.threats[r.id] : undefined;
           if (!t) fail('Ameaça não encontrada.');
-          if (!s.combat) s.combat = { id: ctx.newId(), round: 0, turn: 0, order: [], startedAt: now, mapId: m.id };
-          const c = s.combat;
-          if (c.order.length >= MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
-          const cb: Combatant = { id: ctx.newId(), hidden: false, conditions: [], ref: { kind: 'threat', id: t!.id }, threat: threatInstance(t!, t!.name) };
-          c.order.push(cb);
-          nameInstances(c, t!.id, t!.name);
-          if (c.round > 0) log(s, ctx, { kind: 'system', actorName: who, text: `${cb.threat!.name} entrou no combate.`, hidden: true });
-          ref = { kind: 'combatant', id: cb.id };
+          if (c) {
+            if (c.order.length >= MAX_COMBATANTS) fail(`Máximo de ${MAX_COMBATANTS} combatentes.`);
+            const cb: Combatant = { id: ctx.newId(), hidden: false, conditions: [], ref: { kind: 'threat', id: t!.id }, threat: threatInstance(t!, t!.name) };
+            c.order.push(cb);
+            nameInstances(c, t!.id, t!.name);
+            joined.push(cb.threat!.name);
+            ref = { kind: 'combatant', id: cb.id };
+          } else {
+            ref = { kind: 'creature', id: t!.id };
+            loose = threatInstance(t!, t!.name);
+          }
         } else {
           return fail('Token inválido.');
         }
-        const ex = have.get(refKey(ref));
+        const ex = loose ? undefined : have.get(refKey(ref));
         if (ex) {
           if (at && a.refs.length === 1) Object.assign(ex, freeCellNear(m, at.x, at.y, ex.id));
           last = ex.id;
@@ -441,10 +493,14 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         }
         if (Object.keys(m.tokens).length >= MAX_TOKENS) fail(`Máximo de ${MAX_TOKENS} tokens no mapa.`);
         const pos = freeCellNear(m, at?.x ?? Math.floor(m.w / 2), at?.y ?? Math.floor(m.h / 2));
-        const tok: MapToken = { id: ctx.newId(), ref, ...pos, hidden: false };
+        const tok: MapToken = { id: ctx.newId(), ref, ...pos, hidden: false, ...(loose ? { threat: loose } : {}) };
         m.tokens[tok.id] = tok;
-        have.set(refKey(ref), tok);
+        if (loose) nameLoose(m, ref.id, loose.name);
+        else have.set(refKey(ref), tok);
         last = tok.id;
+      }
+      if (c && c.round > 0 && joined.length) {
+        log(s, ctx, { kind: 'system', actorName: who, text: `${joined.join(', ')} ${joined.length > 1 ? 'entraram' : 'entrou'} no combate.`, hidden: true });
       }
       m.updatedAt = now;
       return last;

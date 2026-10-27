@@ -19,15 +19,19 @@ export function threatInstance(t: Threat, name: string): CombatThreat {
  * duas, "Goblin 1", "Goblin 2"... sem renumerar quem já tinha número.
  */
 export function nameInstances(c: Combat, templateId: string, base: string) {
-  const group = c.order.filter((x) => x.ref.kind === 'threat' && x.ref.id === templateId && x.threat);
+  numberInstances(c.order.flatMap((x) => (x.ref.kind === 'threat' && x.ref.id === templateId && x.threat ? [x.threat] : [])), base);
+}
+
+/** O mesmo, para uma lista de instâncias de um molde (na fila ou soltas no mapa). */
+export function numberInstances(group: CombatThreat[], base: string) {
   if (group.length < 2) return;
   const re = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (\\d+)$`);
-  const used = new Set(group.map((x) => Number(re.exec(x.threat!.name)?.[1])).filter((n) => n > 0));
+  const used = new Set(group.map((t) => Number(re.exec(t.name)?.[1])).filter((n) => n > 0));
   let next = 1;
-  for (const x of group) {
-    if (re.test(x.threat!.name)) continue;
+  for (const t of group) {
+    if (re.test(t.name)) continue;
     while (used.has(next)) next += 1;
-    x.threat!.name = `${base} ${next}`.slice(0, LIMITS.name);
+    t.name = `${base} ${next}`.slice(0, LIMITS.name);
     used.add(next);
   }
 }

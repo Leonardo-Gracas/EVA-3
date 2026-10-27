@@ -23,7 +23,7 @@ export const fullGrid = (m: BattleMap): Grid => buildGrid({ ...m, objects: Objec
 /** Combatente da fila que o token representa (ficha na fila ou instância de ameaça). */
 export function tokenCombatant(s: TableState, tok: MapToken): Combatant | undefined {
   const c = s.combat;
-  if (!c) return undefined;
+  if (!c || tok.ref.kind === 'creature') return undefined;
   if (tok.ref.kind === 'combatant') return c.order.find((x) => x.id === tok.ref.id);
   return c.order.find((x) => x.ref.kind === 'character' && x.ref.id === tok.ref.id);
 }
@@ -43,6 +43,10 @@ export interface TokenInfo {
 
 /** null = o token aponta para algo que não existe mais. */
 export function tokenInfo(s: TableState, tok: MapToken): TokenInfo | null {
+  if (tok.ref.kind === 'creature') {
+    const t = tok.threat;
+    return t ? { name: t.name, side: 'threat', movement: t.movement, category: t.category, hidden: tok.hidden } : null;
+  }
   const cb = tokenCombatant(s, tok);
   if (tok.ref.kind === 'character') {
     const ch = s.characters[tok.ref.id];

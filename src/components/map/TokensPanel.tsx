@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { Eye, EyeOff, GripVertical, MousePointerClick, Plus, Search, Swords, Trash2, X } from 'lucide-react';
 import type { AvatarConfig } from '../../model/avatar';
 import { avatarFor } from '../../model/avatar';
-import type { BattleMap, CombatSide, PlaceRef, TableState, ThreatCategory } from '../../model/types';
+import type { BattleMap, CombatSide, PlaceRef, TableState, ThreatCategory, TokenRef } from '../../model/types';
 import { THREAT_CATEGORIES } from '../../model/types';
 import { cellLabel } from '../../model/map';
 import { metersFor, squaresFor } from '../../rules/grid';
@@ -28,7 +28,7 @@ export interface Armed { ref: PlaceRef; name: string; /** Molde do livro: cada c
 
 interface Entry {
   key: string;
-  ref: PlaceRef;
+  ref: PlaceRef | TokenRef;
   side: CombatSide;
   name: string;
   sub: string;
@@ -71,8 +71,10 @@ export default function TokensPanel({ table, map, selTok, setSelTok, guide, arme
       const parts = [cellLabel(t.x, t.y)];
       if (t.turn) parts.push('na vez');
       if (t.hidden) parts.push('oculto');
+      if (tok.ref.kind === 'creature') parts.push(combat?.mapId === map.id ? 'fora da fila' : 'solta no mapa');
       return {
-        key: `${tok.ref.kind}:${tok.ref.id}`, ref: tok.ref, side: t.side, name: t.name, sub: parts.join(' · '),
+        // Criaturas soltas do mesmo molde são várias: a chave é o próprio token.
+        key: tok.ref.kind === 'creature' ? `token:${tok.id}` : `${tok.ref.kind}:${tok.ref.id}`, ref: tok.ref, side: t.side, name: t.name, sub: parts.join(' · '),
         avatar: t.avatar, category: t.category, tokenId: t.id, hidden: t.hidden, turn: t.turn,
       };
     });
@@ -125,7 +127,9 @@ export default function TokensPanel({ table, map, selTok, setSelTok, guide, arme
   const shownBook = toPlace.filter((e) => e.repeat && match(e));
 
   const placeRow = (e: Entry) => {
-    const on = armed && armed.ref.kind === e.ref.kind && armed.ref.id === e.ref.id;
+    // Linhas "para colocar" sempre trazem algo que dá para pôr (nunca uma criatura já no mapa).
+    const ref = e.ref as PlaceRef;
+    const on = armed && armed.ref.kind === ref.kind && armed.ref.id === ref.id;
     return (
       <div key={e.key} className={`tok-row side-${e.side}${on ? ' armed' : ''}`} draggable
         onDragStart={(ev) => {
@@ -134,13 +138,13 @@ export default function TokensPanel({ table, map, selTok, setSelTok, guide, arme
           ev.dataTransfer.effectAllowed = 'copy';
         }}>
         <GripVertical size={14} className="tok-grip" aria-hidden="true" />
-        <button className="tok-main" onClick={() => setArmed(on ? null : { ref: e.ref, name: e.name, repeat: !!e.repeat })}
+        <button className="tok-main" onClick={() => setArmed(on ? null : { ref, name: e.name, repeat: !!e.repeat })}
           title="Arraste até o mapa, ou clique e depois clique no quadrado">
           <Pic e={e} />
           <span className="tok-text"><strong>{e.name}</strong><span>{e.sub}</span></span>
         </button>
         <button className="btn btn-sm btn-ghost btn-icon" title="Pôr no piso livre perto do centro" aria-label={`Pôr ${e.name} no mapa`}
-          onClick={() => place([e.ref])}><Plus size={14} /></button>
+          onClick={() => place([ref])}><Plus size={14} /></button>
       </div>
     );
   };
@@ -233,7 +237,7 @@ export default function TokensPanel({ table, map, selTok, setSelTok, guide, arme
 
           {(filter === 'all' || filter === 'threat') && (
             <>
-              <div className="tok-group" title="Cada vez que coloca, entra uma ameaça nova na fila do combate">Livro de ameaças · {shownBook.length}</div>
+              <div className="tok-group" title="Cada vez que coloca, entra uma ameaça nova: no fim da fila, se o combate for neste mapa; senão, solta no mapa">Livro de ameaças · {shownBook.length}</div>
               {shownBook.length === 0 && <div className="tok-empty">{toPlace.some((e) => e.repeat) ? 'Nada com essa busca.' : 'O livro está vazio. Crie ameaças na aba NPCs e Ameaças.'}</div>}
               {shownBook.map(placeRow)}
             </>

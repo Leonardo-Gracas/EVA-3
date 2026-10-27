@@ -153,9 +153,10 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     setSelTok(tok ?? null);
     if (tok) lookAt(tok);
   };
-  // Fichas no mapa que ainda não estão na fila.
-  const missing = Object.values(map.tokens).filter((t) => t.ref.kind === 'character' && table.characters[t.ref.id]?.status === 'approved'
-    && !combat?.order.some((x) => x.ref.kind === 'character' && x.ref.id === t.ref.id)).length;
+  // Quem está no mapa e ainda não está na fila: fichas e criaturas soltas.
+  const missing = Object.values(map.tokens).filter((t) => (t.ref.kind === 'creature' && !!t.threat)
+    || (t.ref.kind === 'character' && table.characters[t.ref.id]?.status === 'approved'
+      && !combat?.order.some((x) => x.ref.kind === 'character' && x.ref.id === t.ref.id))).length;
   const combatAll = () => act({ type: 'map/combat', mapId: map.id }, combat ? 'Combate trazido para este mapa.' : 'Combate aberto com todos do mapa.');
 
   useEffect(() => { if (selObj && !map.objects[selObj]) setSelObj(null); }, [map.objects, selObj]);
@@ -611,8 +612,8 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
                     </div>
                   )}
                   {linked && missing > 0 && (
-                    <button className="btn btn-sm btn-ghost" onClick={() => void combatAll()} title="Põe na fila as fichas que estão no mapa e ainda não lutam">
-                      <Users size={13} /> Pôr na fila {missing === 1 ? 'a ficha' : `as ${missing} fichas`} do mapa
+                    <button className="btn btn-sm btn-ghost" onClick={() => void combatAll()} title="Põe no fim da fila quem está no mapa e ainda não luta">
+                      <Users size={13} /> Pôr na fila {missing === 1 ? 'quem falta' : `os ${missing} que faltam`} do mapa
                     </button>
                   )}
                   <CombatTracker table={table} combat={combat} focusId={focusCb} onFocus={focusFromTracker} />
@@ -630,8 +631,8 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
                   </button>
                   <div className="tiny muted">
                     {missing
-                      ? 'Abre a fila com as fichas que estão no mapa e liga o combate a ele. Ameaças do livro entram na fila ao serem colocadas.'
-                      : 'Coloque fichas no mapa para abrir um combate com elas. Colocar uma ameaça do livro já abre a fila.'}
+                      ? 'Abre a fila com todos que estão no mapa, na ordem: jogadores, NPCs e ameaças. Quem for colocado depois entra no fim da fila.'
+                      : 'Coloque fichas e ameaças no mapa para abrir um combate com elas.'}
                   </div>
                 </div>
               )}

@@ -27,7 +27,7 @@ import {
   combatantInfo, conditionExpired, GROUP_OPS, groupDamageResult, MAX_COMBATANTS, nameInstances, rdFor, threatInstance,
 } from './combat';
 import { Fail, fail, int, log, record, str } from './guard';
-import { applyMapAction, describeMapMove, dropTokens, getMap } from './mapActions';
+import { applyMapAction, describeMapMove, dropTokens, getMap, releaseTokens } from './mapActions';
 import { moveGate } from './maps';
 
 export interface EngineCtx {
@@ -528,8 +528,8 @@ function removeCombatants(s: TableState, ctx: EngineCtx, drop: (cb: Combatant) =
   const removed = new Set(before.filter(drop).map((x) => x.id));
   c.order = c.order.filter((x) => !drop(x));
   reanchorConditions(before, removed);
-  // Ameaça que sai da fila sai do mapa (a instância deixa de existir).
-  dropTokens(s, (t) => t.ref.kind === 'combatant' && removed.has(t.ref.id));
+  // Ameaça que sai da fila fica no mapa, solta (só sai quando o mestre tira o token).
+  releaseTokens(s, before.filter((x) => removed.has(x.id)));
   keepTurn(c, curRemoved ? undefined : cur?.id, c.turn - removedBefore);
   if (!curRemoved || !c.round || !c.order.length) return;
   if (combatantInfo(s, c.order[c.turn])?.down) {
@@ -1155,8 +1155,8 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
           text: `encerrou o combate após ${c.round} rodada${c.round > 1 ? 's' : ''}${down ? ` (${down} fora de combate)` : ''}.`,
         });
       }
-      // As ameaças eram instâncias deste combate: saem dos mapas junto.
-      dropTokens(s, (t) => t.ref.kind === 'combatant');
+      // As ameaças ficam nos mapas, soltas e com o PV de agora, até o mestre tirá-las.
+      releaseTokens(s, c.order);
       s.combat = null;
       return;
     }

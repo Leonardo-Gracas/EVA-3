@@ -309,14 +309,20 @@ describe('mapas: locomoção', () => {
     expect(mv).toMatchObject({ remaining: 6, gate: 'free' });
     s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 5, y: 7 });
 
-    // Fim do combate: a ameaça sai do mapa, a ficha fica.
+    // Fim do combate: a ameaça continua no mapa, solta e com o PV de agora; as fichas também.
     s = ok(s, gm, { type: 'combat/end' });
-    const kinds = Object.values(s.maps[mapId].tokens).map((t) => t.ref.kind);
-    expect(kinds).not.toContain('combatant');
-    expect(kinds.filter((k) => k === 'character')).toHaveLength(2);
+    const toksAfter = Object.values(s.maps[mapId].tokens);
+    expect(toksAfter.map((t) => t.ref.kind).filter((k) => k === 'character')).toHaveLength(2);
+    const loose = toksAfter.find((t) => t.ref.kind === 'creature')!;
+    expect(loose.threat).toMatchObject({ name: 'Goblin', current: gob.threat!.current });
+    expect([loose.x, loose.y]).toEqual([5, 8]);
+    // Os jogadores continuam vendo a criatura.
+    const seen = buildPlayerView(s, 'p1', new Set()).map!.tokens.find((t) => t.side === 'threat')!;
+    expect(seen.name).toBe('Goblin');
+    expect(seen.combatantId).toBeUndefined();
   });
 
-  it('sair da fila tira a ameaça do mapa; excluir a ficha tira o token', () => {
+  it('sair da fila deixa a ameaça no mapa (só o mestre tira); excluir a ficha tira o token', () => {
     let { s, mapId, beto } = setup();
     s = ok(s, gm, { type: 'threat/upsert', data: goblin });
     s = ok(s, gm, { type: 'combat/create' });
@@ -325,28 +331,51 @@ describe('mapas: locomoção', () => {
     s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'combatant', id: gob.id }] });
     expect(Object.keys(s.maps[mapId].tokens)).toHaveLength(3);
     s = ok(s, gm, { type: 'combat/remove', combatantIds: [gob.id] });
+    const tok = Object.values(s.maps[mapId].tokens).find((t) => t.ref.kind === 'creature')!;
+    expect(tok).toBeTruthy();
+    expect(Object.keys(s.maps[mapId].tokens)).toHaveLength(3);
+    s = ok(s, gm, { type: 'map/tokenRemove', mapId, tokenIds: [tok.id] });
     expect(Object.keys(s.maps[mapId].tokens)).toHaveLength(2);
     s = ok(s, gm, { type: 'character/delete', characterId: beto });
     expect(Object.values(s.maps[mapId].tokens).map((t) => t.ref.id)).not.toContain(beto);
   });
 
-  it('ameaça do livro vai direto para o quadrado escolhido (abre combate em preparação se preciso)', () => {
+  it('ameaça do livro sem combate fica solta no mapa e entra na fila quando o combate abre', () => {
     let { s, mapId } = setup();
     s = ok(s, gm, { type: 'threat/upsert', data: goblin });
     const tid = Object.keys(s.threats)[0];
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: tid }], x: 4, y: 3 });
     expect(s.combat).toBeFalsy();
-    s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: tid }], x: 4, y: 3 });
-    expect(s.combat).toMatchObject({ round: 0, mapId });
-    expect(s.combat!.order).toHaveLength(1);
-    const first = Object.values(s.maps[mapId].tokens).find((t) => t.ref.kind === 'combatant')!;
+    const first = Object.values(s.maps[mapId].tokens).find((t) => t.ref.kind === 'creature')!;
     expect([first.x, first.y]).toEqual([4, 3]);
-    // Cada colocação é uma instância nova, numerada.
+    // Cada colocação é uma instância nova, numerada, em outro quadrado.
     s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: tid }], x: 4, y: 3 });
-    expect(s.combat!.order.map((c) => c.threat!.name)).toEqual(['Goblin 1', 'Goblin 2']);
-    const second = Object.values(s.maps[mapId].tokens).find((t) => t.ref.kind === 'combatant' && t.id !== first.id)!;
-    expect(second.x !== 4 || second.y !== 3).toBe(true);
+    const loose = Object.values(s.maps[mapId].tokens).filter((t) => t.ref.kind === 'creature');
+    expect(loose.map((t) => t.threat!.name).sort()).toEqual(['Goblin 1', 'Goblin 2']);
+    expect(loose.find((t) => t.id !== first.id)!.x !== 4 || loose.find((t) => t.id !== first.id)!.y !== 3).toBe(true);
+    // Combate com todos: fichas primeiro, depois as criaturas, que viram combatentes.
+    s = ok(s, gm, { type: 'map/combat', mapId });
+    expect(s.combat!.order.map((x) => x.ref.kind)).toEqual(['character', 'character', 'threat', 'threat']);
+    expect(Object.values(s.maps[mapId].tokens).filter((t) => t.ref.kind === 'creature')).toHaveLength(0);
     expect(run(s, p1, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: tid }] })).toMatchObject({ ok: false });
     expect(run(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: 'nada' }] })).toMatchObject({ ok: false, error: /Ameaça/ });
+  });
+
+  it('com o combate no mapa, quem é colocado nele entra no fim da fila', () => {
+    let { s, mapId, ana, beto } = setup();
+    const betoTok = Object.values(s.maps[mapId].tokens).find((t) => t.ref.id === beto)!;
+    s = ok(s, gm, { type: 'map/tokenRemove', mapId, tokenIds: [betoTok.id] });
+    s = ok(s, gm, { type: 'map/combat', mapId });
+    s = ok(s, gm, { type: 'combat/start' });
+    s = ok(s, gm, { type: 'threat/upsert', data: goblin });
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'threat', id: Object.keys(s.threats)[0] }], x: 5, y: 5 });
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'character', id: beto }], x: 9, y: 9 });
+    expect(s.combat!.order.map((x) => x.ref.kind === 'character' ? x.ref.id : 'goblin')).toEqual([ana, 'goblin', beto]);
+    // A vez continua com quem estava agindo.
+    expect(s.combat!.order[s.combat!.turn].ref.id).toBe(ana);
+    // Mexer de novo no token de quem já está na fila não duplica.
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'character', id: beto }], x: 8, y: 8 });
+    expect(s.combat!.order).toHaveLength(3);
   });
 
   it('caminho exato: o jogador anda pelo trajeto que traçou, e todos veem o rastro', () => {

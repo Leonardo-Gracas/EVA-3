@@ -396,11 +396,14 @@ export interface MapProp {
 
 export type MapObject = MapDoor | MapProp;
 
-/** Ficha (PJ/NPC) ou combatente da fila (ameaças só existem como instância em combate). */
-export type TokenRef = { kind: 'character' | 'combatant'; id: string };
+/**
+ * Ficha (PJ/NPC), combatente da fila ou criatura solta no mapa (ameaça fora de combate:
+ * `id` é o molde do livro e a instância fica em `MapToken.threat`).
+ */
+export type TokenRef = { kind: 'character' | 'combatant' | 'creature'; id: string };
 
-/** O que dá para pôr no mapa: token já existente ou molde do livro de ameaças (vira instância no combate). */
-export type PlaceRef = TokenRef | { kind: 'threat'; id: string };
+/** O que dá para pôr no mapa: token já existente ou molde do livro de ameaças (vira uma instância nova). */
+export type PlaceRef = { kind: 'character' | 'combatant'; id: string } | { kind: 'threat'; id: string };
 
 export interface MapToken {
   id: string;
@@ -408,6 +411,8 @@ export interface MapToken {
   x: number;
   y: number;
   hidden: boolean;
+  /** Criatura solta: a instância da ameaça (PV, PE, nome), que entra na fila quando o combate começa. */
+  threat?: CombatThreat;
   /** Caminho do último movimento (para todos verem o token andar por ele). */
   trail?: Array<{ x: number; y: number }>;
 }
