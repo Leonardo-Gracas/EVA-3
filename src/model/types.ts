@@ -924,6 +924,8 @@ export interface PlayerMapToken {
   characterId?: string;
   /** É a vez dele no combate vinculado. */
   turn: boolean;
+  /** Combatente da fila que o token representa (só com o combate neste mapa). */
+  combatantId?: string;
   /** Caminho do último movimento, se o jogador consegue enxergá-lo inteiro. */
   trail?: Array<{ x: number; y: number }>;
 }

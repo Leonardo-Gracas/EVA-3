@@ -231,6 +231,12 @@ describe('mapas: locomoção', () => {
     const gob = s.combat!.order[1];
     s = ok(s, gm, { type: 'map/tokenPlace', mapId, refs: [{ kind: 'combatant', id: gob.id }], x: 5, y: 5 });
 
+    // O jogador sabe que token é cada um da fila (Beto, fora da fila, não tem vínculo).
+    const toks = buildPlayerView(s, 'p1', new Set()).map!.tokens;
+    expect(toks.find((t) => t.characterId === ana)!.combatantId).toBe(s.combat!.order[0].id);
+    expect(toks.find((t) => t.side === 'threat')!.combatantId).toBe(gob.id);
+    expect(toks.find((t) => !t.mine && t.side === 'pc')!.combatantId).toBeUndefined();
+
     // Vez de Ana: 1 diagonal (1) + 1 diagonal (2) = 3; depois 3 retas; depois acabou.
     s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 1, y: 1 });
     s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 2, y: 2 });

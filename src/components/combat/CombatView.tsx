@@ -12,10 +12,11 @@ import AbilitiesPanel from '../sheet/AbilitiesPanel';
 import { AttributesCard } from '../sheet/CharacterSheet';
 import { ConditionChips, HealthBadge, pct, sideClass, useTopbarHeight } from './common';
 
-const OUT = ['abatido', 'inconsciente', 'morto'];
+/** Fora da luta: a fila pula e mostra riscado. */
+export const OUT = ['abatido', 'inconsciente', 'morto'];
 
 /** Quem vem depois do atual, pulando quem caiu (pelo que o jogador enxerga). */
-function nextVisible(c: PlayerCombat): PlayerCombatant | undefined {
+export function nextVisible(c: PlayerCombat): PlayerCombatant | undefined {
   const i = c.order.findIndex((x) => x.id === c.turnId);
   if (i < 0) return undefined;
   for (let k = 1; k < c.order.length; k++) {

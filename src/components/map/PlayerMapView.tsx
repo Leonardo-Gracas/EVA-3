@@ -1,35 +1,51 @@
 // Mapa do jogador: vê o mapa aberto, o alcance da própria ficha e move a ficha.
 // Dois jeitos de traçar: pelo caminho mais curto até o destino, ou quadrado a quadrado,
 // pelo trajeto exato. O cálculo é o mesmo do motor (grid sem os ocultos).
+// Em combate, a fila fica numa faixa sobre o mapa e os controles do turno, perto do polegar.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Clock, Footprints, Hand, Map as MapIcon, Undo2, X } from 'lucide-react';
-import type { MoveGateKind, PlayerMapMove, PlayerView } from '../../model/types';
+import { Check, Clock, Footprints, Hourglass, LocateFixed, Map as MapIcon, Play, Swords, Undo2, X } from 'lucide-react';
+import type { MoveGateKind, PlayerCombat, PlayerCombatant, PlayerMapMove, PlayerMapToken, PlayerView } from '../../model/types';
 import { MOVE_MODES } from '../../model/types';
 import { cellLabel } from '../../model/map';
 import {
   buildGrid, canEnd, costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point,
 } from '../../rules/grid';
+import { HEALTH_LABELS } from '../../store/combat';
 import { useAct } from '../act';
 import { toast } from '../common/toast';
-import MapCanvas, { type MapPointer, type PointerKind } from './MapCanvas';
-import { PATH_HINT, PathModeToggle, usePathMode } from './pathMode';
+import Avatar from '../common/Avatar';
+import { ThreatGlyph } from '../gm/ThreatIcon';
+import { nextVisible, OUT } from '../combat/CombatView';
+import { useTopbarHeight } from '../combat/common';
+import MapCanvas, { type MapFocus, type MapPointer, type PointerKind } from './MapCanvas';
+import { PathModeToggle, usePathMode } from './pathMode';
 import type { RouteFn } from './useWalk';
 
 const GATE: Record<MoveGateKind, { label: string; cls: string }> = {
   free: { label: 'Livre', cls: 'badge-ok' },
-  request: { label: 'Pedir ao mestre', cls: 'badge-warn' },
+  request: { label: 'Pedir', cls: 'badge-warn' },
   blocked: { label: 'Aguarde', cls: 'badge-err' },
 };
 
 const meters = (sq: number) => `${metersFor(sq).toLocaleString('pt-BR')} m`;
+const squaresText = (n: number) => `${n} quadrado${n === 1 ? '' : 's'}`;
 const same = (a: Point | null | undefined, b: Point | null | undefined) => !!a && !!b && a.x === b.x && a.y === b.y;
+/** Zoom mínimo ao levar a câmera até alguém: dá para tocar nos quadrados com o dedo. */
+const FOCUS_ZOOM = 0.9;
 
 export default function PlayerMapView({ view }: { view: PlayerView }) {
   const m = view.map!;
+  const c = view.combat;
   const { act } = useAct();
+  const root = useRef<HTMLDivElement>(null);
+  useTopbarHeight(root);
   const [sel, setSel] = useState<string | null>(null);
+  /** Quadrado sob o mouse (mostra o caminho; o clique move). */
   const [hover, setHover] = useState<Point | null>(null);
+  /** No toque: destino escolhido, esperando confirmar. */
+  const [armed, setArmed] = useState<Point | null>(null);
   const [sending, setSending] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [pathMode, setPathMode] = usePathMode();
   /** Quadrado a quadrado: o trajeto que está sendo traçado (começa no personagem). */
   const [draft, setDraftState] = useState<Point[] | null>(null);
@@ -37,7 +53,15 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   const setDraft = (d: Point[] | null) => { draftRef.current = d; setDraftState(d); };
   /** Arrastando a própria ficha. */
   const dragging = useRef(false);
+  const [focus, setFocus] = useState<MapFocus | null>(null);
+  const focusN = useRef(0);
+  const focusOn = useCallback((p: Point, opts?: Omit<MapFocus, 'x' | 'y' | 'n'>) => {
+    focusN.current += 1;
+    setFocus({ x: p.x, y: p.y, n: focusN.current, ...opts });
+  }, []);
 
+  const turnCb = c?.order.find((x) => x.id === c.turnId);
+  const myTurn = turnCb?.mine ? turnCb : undefined;
   const turnMove = m.moves.find((mv) => m.tokens.find((t) => t.id === mv.tokenId)?.turn);
   const current: PlayerMapMove | undefined = m.moves.find((mv) => mv.characterId === sel) ?? turnMove ?? m.moves[0];
   const token = current ? m.tokens.find((t) => t.id === current.tokenId) : undefined;
@@ -50,24 +74,49 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   );
   const reachCells = useMemo(() => (reach && current?.gate !== 'blocked' ? reachableCells(reach) : []), [reach, current?.gate]);
 
-  // O rascunho só vale enquanto o personagem está onde ele começa.
+  // O rascunho e o destino escolhido só valem enquanto o personagem está onde começam.
   useEffect(() => {
     const d = draftRef.current;
     if (d && (!token || d[0].x !== token.x || d[0].y !== token.y)) setDraft(null);
+    setArmed(null);
   }, [token?.x, token?.y, token?.id]);
-  useEffect(() => { if (pathMode === 'auto') setDraft(null); }, [pathMode]);
+  useEffect(() => { setDraft(null); setArmed(null); }, [pathMode]);
+
+  // Ao abrir o mapa: a câmera vai até a própria ficha.
+  useEffect(() => {
+    if (token) focusOn(token, { zoom: window.innerWidth < 640 ? FOCUS_ZOOM : undefined });
+    // Só ao trocar de mapa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.id]);
+
+  // Começou a sua vez: seleciona quem age e leva a câmera até ele.
+  const myTurnId = myTurn?.id;
+  useEffect(() => {
+    if (!myTurnId) return;
+    setSel(null);
+    const t = m.tokens.find((x) => x.combatantId === myTurnId);
+    if (t) focusOn(t, { zoom: FOCUS_ZOOM, ping: true, smooth: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTurnId]);
 
   const pending = view.myRequests.filter((r) => r.status === 'pending' && r.action.type === 'map/move' && r.action.mapId === m.id);
   const ghosts = pending.map((r) => (r.action.type === 'map/move' ? { x: r.action.x, y: r.action.y } : { x: -1, y: -1 }));
 
-  // Caminho mostrado: o rascunho (quadrado a quadrado) ou o mais curto até o quadrado sob o ponteiro.
+  // Caminho mostrado: o rascunho (quadrado a quadrado) ou o mais curto até o destino escolhido / sob o mouse.
   const draftCost = draft && draft.length > 1 && current ? followPath(grid, draft, current.parity) : null;
-  const target = pathMode === 'auto' && hover && reach && costTo(reach, hover.x, hover.y) > 0 && canEnd(reach, hover.x, hover.y) ? hover : null;
+  const dest = pathMode === 'auto' ? (armed ?? hover) : null;
+  const target = dest && reach && costTo(reach, dest.x, dest.y) > 0 && canEnd(reach, dest.x, dest.y) ? dest : null;
   const autoPath = target && reach ? pathTo(reach, target.x, target.y) : null;
   const shown = draft && draftCost ? { cells: draft, cost: draftCost.cost } : autoPath;
+  /** Movimento pronto para confirmar pelo botão. */
+  const plan = draft && draftCost
+    ? { to: draft[draft.length - 1], cost: draftCost.cost, cells: draft }
+    : armed && autoPath ? { to: armed, cost: autoPath.cost, cells: undefined } : null;
 
   // Caminhada de quem não traz rastro: o mais curto no que o jogador vê.
   const route = useCallback<RouteFn>((_id, from, to) => pathTo(reachFrom(grid, from, Infinity), to.x, to.y)?.cells ?? null, [grid]);
+
+  const clearPlan = () => { setDraft(null); setArmed(null); setHover(null); };
 
   const send = async (to: Point, cells?: Point[]) => {
     if (!current || sending) return;
@@ -79,12 +128,21 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
       ...(cells ? { path: cells } : {}),
     });
     setSending(false);
-    if (r.ok) { setHover(null); setDraft(null); }
+    if (r.ok) clearPlan();
   };
+
+  const confirm = () => { if (plan) void send(plan.to, plan.cells); };
 
   const sendDraft = () => {
     const d = draftRef.current;
     if (d && d.length > 1) void send(d[d.length - 1], d);
+  };
+
+  const endTurn = async () => {
+    if (!myTurn || ending) return;
+    setEnding(true);
+    await act({ type: 'combat/endTurn', combatantId: myTurn.id });
+    setEnding(false);
   };
 
   /** Quadrado a quadrado: leva o rascunho até `cell` (ou corta nele). */
@@ -96,6 +154,14 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
       toast(current.remaining ? 'Não dá para seguir por aí.' : 'Sem deslocamento restante neste turno.', 'info');
     }
     setDraft(next);
+  };
+
+  /** Toque num token que não é seu: diz quem é (no celular não há dica ao passar o mouse). */
+  const describe = (t: PlayerMapToken) => {
+    const cb = t.combatantId ? c?.order.find((x) => x.id === t.combatantId) : undefined;
+    const state = cb ? ` · ${HEALTH_LABELS[cb.health].label}` : '';
+    const turn = cb && cb.id === c?.turnId ? ' · na vez' : '';
+    toast(`${t.name}${state}${turn}`, 'info');
   };
 
   const onPointer = (kind: PointerKind, p: MapPointer): boolean | void => {
@@ -110,6 +176,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
       const mv = m.moves.find((x) => x.characterId === mine.characterId);
       if (!mv || mv.gate === 'blocked') return false;
       dragging.current = true;
+      setArmed(null);
       if (pathMode === 'exact') setDraft([{ x: mine.x, y: mine.y }]);
       return true;
     }
@@ -130,20 +197,24 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
       dragging.current = false;
       if (pathMode === 'exact') { sendDraft(); return; }
       if (cell && reach && costTo(reach, cell.x, cell.y) > 0 && canEnd(reach, cell.x, cell.y)) void send(cell);
+      if (p.e.pointerType !== 'mouse') setHover(null);
       return;
     }
 
     // Toque / clique.
     if (!cell) return;
     const { x, y } = cell;
-    const mine = m.tokens.find((t) => t.x === x && t.y === y && t.mine);
-    if (mine) {
-      setSel(mine.characterId ?? null);
+    const here = m.tokens.find((t) => t.x === x && t.y === y);
+    if (here?.mine) {
+      setSel(here.characterId ?? null);
       setHover(null);
+      setArmed(null);
       if (pathMode === 'exact') setDraft([{ x, y }]);
       return;
     }
-    if (current?.gate === 'blocked') { toast(current.reason ?? 'Aguarde.', 'info'); return; }
+    if (here) { describe(here); return; }
+    if (!current) return;
+    if (current.gate === 'blocked') { toast(current.reason ?? 'Aguarde.', 'info'); return; }
 
     if (pathMode === 'exact') {
       const d = draftRef.current;
@@ -154,23 +225,28 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
     }
 
     if (!reach || costTo(reach, x, y) <= 0 || !canEnd(reach, x, y)) {
-      if (current) toast(current.remaining ? 'Fora do alcance.' : 'Sem deslocamento restante neste turno.', 'info');
+      setArmed(null);
+      toast(current.remaining ? 'Fora do alcance.' : 'Sem deslocamento restante neste turno.', 'info');
       return;
     }
-    // No toque, o primeiro toque mostra o caminho; o segundo, no mesmo quadrado, confirma.
-    if (p.e.pointerType !== 'mouse' && (hover?.x !== x || hover?.y !== y)) { setHover({ x, y }); return; }
+    // No toque, o primeiro toque escolhe o destino; o botão (ou outro toque no mesmo quadrado) confirma.
+    if (p.e.pointerType !== 'mouse') {
+      if (same(armed, cell)) void send(cell);
+      else setArmed({ x, y });
+      return;
+    }
     void send({ x, y });
   };
 
-  // Atalhos do trajeto: Backspace volta um passo, Enter confirma, Esc limpa.
+  // Atalhos: Backspace volta um passo, Enter confirma, Esc limpa.
   useEffect(() => {
-    if (!draft) return;
+    if (!draft && !armed) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (e.key === 'Escape') { setDraft(null); return; }
-      if (e.key === 'Enter') { e.preventDefault(); sendDraft(); return; }
-      if (e.key === 'Backspace') {
+      if (e.key === 'Escape') { clearPlan(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); confirm(); return; }
+      if (e.key === 'Backspace' && draft) {
         e.preventDefault();
         const d = draftRef.current;
         if (d && d.length > 1) setDraft(d.slice(0, -1));
@@ -180,50 +256,39 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const request = current?.gate === 'request' ? ' · pedir' : '';
-  const pathLabel = shown
-    ? draft
-      ? `${shown.cost} de ${current?.remaining ?? 0} quadrados · ${meters(shown.cost)}${request}`
-      : `${shown.cost} quadrado${shown.cost === 1 ? '' : 's'} · ${meters(shown.cost)}${request}`
-    : undefined;
+  const pickCombatant = (x: PlayerCombatant) => {
+    const t = m.tokens.find((tk) => tk.combatantId === x.id) ?? (x.characterId ? m.tokens.find((tk) => tk.characterId === x.characterId) : undefined);
+    if (!t) { toast(`${x.name} não está neste mapa.`, 'info'); return; }
+    if (t.mine && t.characterId) setSel(t.characterId);
+    focusOn(t, { zoom: FOCUS_ZOOM, ping: true, smooth: true });
+  };
 
+  const request = current?.gate === 'request';
+  const pathLabel = shown ? `${squaresText(shown.cost)} · ${meters(shown.cost)}${request ? ' · pedir' : ''}` : undefined;
   const steps = draft ? draft.length - 1 : 0;
+  const noneLeft = !!current && current.remaining === 0 && current.gate !== 'blocked';
+
+  const hint = !current
+    ? 'Seu personagem não está neste mapa. O mestre coloca os tokens.'
+    : current.gate === 'blocked'
+      ? `${current.reason ?? 'Aguarde.'}${turnCb && !myTurn ? ` Vez de ${turnCb.name}.` : ''}`
+      : noneLeft
+        ? 'Sem deslocamento restante neste turno.'
+        : pathMode === 'exact'
+          ? steps > 0 ? 'Continue tocando nos quadrados do trajeto.' : 'Toque nos quadrados, um a um, ou arraste a ficha.'
+          : 'Toque no destino (ou arraste a ficha).';
 
   return (
-    <div className="col gap-lg">
-      <div className="row-wrap">
-        <div className="grow">
-          <div className="card-title" style={{ marginBottom: 2 }}><MapIcon size={14} /> {m.name}</div>
-          <div className="tiny muted">Locomoção: {MOVE_MODES[m.mode].label.toLowerCase()}. {MOVE_MODES[m.mode].hint}</div>
-        </div>
-        {view.combat?.round ? <span className="badge">Rodada {view.combat.round}</span> : null}
+    <div className="pmap" ref={root}>
+      <div className="pmap-head">
+        <MapIcon size={14} className="gold" />
+        <strong className="pmap-name">{m.name}</strong>
+        <span className="badge" title={MOVE_MODES[m.mode].hint}>{MOVE_MODES[m.mode].label}</span>
+        <span className="tiny muted hide-sm pmap-mode-hint">{MOVE_MODES[m.mode].hint}</span>
       </div>
 
-      {m.moves.length > 0 ? (
-        <div className="row-wrap map-moves">
-          {m.moves.map((mv) => {
-            const t = m.tokens.find((x) => x.id === mv.tokenId);
-            const on = mv.characterId === current?.characterId;
-            return (
-              <button key={mv.characterId} className={`map-move-chip${on ? ' on' : ''}`} onClick={() => setSel(mv.characterId)}>
-                <Footprints size={14} />
-                <span className="grow">
-                  <strong>{t?.name ?? 'Ficha'}</strong>
-                  <span className="tiny secondary">
-                    {mv.gate === 'blocked' ? (mv.reason ?? 'Aguarde.') : `Restam ${mv.remaining} de ${mv.squares} quadrados (${meters(mv.remaining)})`}
-                  </span>
-                </span>
-                <span className={`badge ${GATE[mv.gate].cls}`} title={mv.reason}>{mv.gate === 'request' ? <Hand size={11} /> : null}{GATE[mv.gate].label}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="empty small">Seu personagem não está neste mapa. O mestre coloca os tokens.</div>
-      )}
-
       {pending.length > 0 && (
-        <div className="small secondary row" style={{ gap: 6 }}>
+        <div className="small secondary row pmap-pending">
           <Clock size={14} /> Pedido de movimento para {pending.map((r) => (r.action.type === 'map/move' ? cellLabel(r.action.x, r.action.y) : '')).join(', ')} aguardando o mestre.
         </div>
       )}
@@ -238,26 +303,166 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
         touch="pan"
         onPointer={onPointer}
         route={route}
+        focus={focus}
+        top={c ? <CombatQueue combat={c} tokens={m.tokens} onPick={pickCombatant} /> : undefined}
         dock={<>
-          {m.moves.length > 0 && <PathModeToggle mode={pathMode} onChange={setPathMode} />}
-          {steps > 0 ? (
-            <span className="map-draft-bar">
-              <span className="tiny muted">{steps} passo{steps === 1 ? '' : 's'}</span>
-              <button className="btn btn-sm btn-ghost" onClick={() => setDraft(draft!.slice(0, -1))} title="Voltar um passo (Backspace)"><Undo2 size={13} /> Passo</button>
-              <button className="btn btn-sm btn-ghost" onClick={() => setDraft(null)} title="Apagar o trajeto (Esc)"><X size={13} /> Limpar</button>
-              <button className="btn btn-sm btn-primary" disabled={sending || !draftCost} onClick={sendDraft} title="Andar pelo trajeto (Enter)">
-                <Check size={13} /> {current?.gate === 'request' ? 'Pedir' : 'Mover'}
-              </button>
-            </span>
-          ) : (
-            <span className="tiny muted map-dock-hint">
-              {current?.gate === 'blocked' ? current.reason
-                : pathMode === 'exact' ? `${PATH_HINT.exact} Toque no fim para confirmar.`
-                  : 'Toque no destino para ver o caminho; toque de novo (ou arraste a ficha) para mover.'}
+          {m.moves.length > 1 && (
+            <span className="pmap-chars" role="radiogroup" aria-label="Quem se move">
+              {m.moves.map((mv) => {
+                const t = m.tokens.find((x) => x.id === mv.tokenId);
+                const on = mv.characterId === current?.characterId;
+                return (
+                  <button key={mv.characterId} role="radio" aria-checked={on} className={`pmap-char${on ? ' on' : ''}`}
+                    onClick={() => { setSel(mv.characterId); clearPlan(); if (t) focusOn(t, { smooth: true }); }} title={t?.name}>
+                    <Avatar config={t?.avatar} size={22} /><span className="hide-xs">{t?.name ?? 'Ficha'}</span>
+                  </button>
+                );
+              })}
             </span>
           )}
+          {current && <MoveMeter mv={current} plan={shown?.cost ?? 0} name={m.moves.length === 1 ? token?.name : undefined} />}
+          {token && (
+            <button className="btn btn-sm btn-ghost btn-icon" onClick={() => focusOn(token, { zoom: FOCUS_ZOOM, ping: true, smooth: true })}
+              title="Centralizar no meu personagem" aria-label="Centralizar no meu personagem">
+              <LocateFixed size={14} />
+            </button>
+          )}
         </>}
+        bottom={(
+          <div className={`pmap-actions${plan ? ' has-plan' : ''}${myTurn ? ' my-turn' : ''}`}>
+            {plan ? (
+              <>
+                <span className="pmap-plan">
+                  <span className="tiny muted">{request ? 'Pedir para ir a' : 'Ir para'}</span>
+                  <strong>{cellLabel(plan.to.x, plan.to.y)}</strong>
+                  <span className="tiny secondary">{squaresText(plan.cost)} · {meters(plan.cost)}</span>
+                </span>
+                {steps > 1 && (
+                  <button className="btn btn-icon pmap-btn" onClick={() => setDraft(draft!.slice(0, -1))} title="Voltar um passo (Backspace)" aria-label="Voltar um passo">
+                    <Undo2 size={16} />
+                  </button>
+                )}
+                <button className="btn btn-icon pmap-btn" onClick={clearPlan} title="Cancelar (Esc)" aria-label="Cancelar o movimento"><X size={16} /></button>
+                <button className="btn btn-primary pmap-btn pmap-go" disabled={sending} onClick={confirm} title="Confirmar (Enter)">
+                  <Check size={16} /> {request ? 'Pedir' : 'Mover'}
+                </button>
+              </>
+            ) : (
+              <>
+                {current && current.gate !== 'blocked' && !noneLeft && <PathModeToggle mode={pathMode} onChange={setPathMode} />}
+                <span className="pmap-hint tiny muted">
+                  {current?.gate === 'blocked' && <Hourglass size={12} />} {hint}
+                </span>
+                {myTurn && (
+                  <button className={`btn pmap-btn pmap-end${noneLeft ? ' btn-primary pmap-end-glow' : ''}`} disabled={ending} onClick={() => void endTurn()}>
+                    Encerrar turno
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       />
+    </div>
+  );
+}
+
+/** Deslocamento do turno: um tracinho por quadrado (gastos, do caminho escolhido e livres). */
+function MoveMeter({ mv, plan, name }: { mv: PlayerMapMove; plan: number; name?: string }) {
+  const spent = mv.squares - mv.remaining;
+  const after = Math.max(0, mv.remaining - plan);
+  const segs = mv.squares > 0 && mv.squares <= 16;
+  const title = mv.gate === 'blocked'
+    ? (mv.reason ?? 'Aguarde.')
+    : `Restam ${mv.remaining} de ${mv.squares} quadrados (${meters(mv.remaining)})${mv.gate === 'request' ? ' · o mestre aprova' : ''}`;
+  return (
+    <span className={`pmap-meter tone-${mv.gate}`} title={title} aria-label={title}>
+      <Footprints size={14} />
+      {name && <span className="pmap-meter-name hide-xs">{name}</span>}
+      <span className="pmap-meter-num mono">
+        {plan > 0 ? <><span className="muted">{mv.remaining}→</span><strong>{after}</strong></> : <strong>{mv.remaining}</strong>}
+        <span className="muted">/{mv.squares}</span>
+      </span>
+      {segs ? (
+        <span className="pmap-segs" aria-hidden="true">
+          {Array.from({ length: mv.squares }, (_, i) => (
+            <i key={i} className={i < spent ? 'used' : i < spent + plan ? 'plan' : ''} />
+          ))}
+        </span>
+      ) : (
+        <span className="pmap-bar" aria-hidden="true"><span style={{ width: `${(after / Math.max(1, mv.squares)) * 100}%` }} /></span>
+      )}
+      <span className={`badge ${GATE[mv.gate].cls} pmap-gate`}>{GATE[mv.gate].label}</span>
+    </span>
+  );
+}
+
+/** Fila do combate em faixa: a vez em destaque, você marcado e quem vem a seguir. Tocar leva até o token. */
+function CombatQueue({ combat, tokens, onPick }: { combat: PlayerCombat; tokens: PlayerMapToken[]; onPick: (x: PlayerCombatant) => void }) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const started = combat.round > 0;
+  const turn = combat.order.find((x) => x.id === combat.turnId);
+  const mine = turn?.mine ? turn : undefined;
+  const upNext = started ? nextVisible(combat) : undefined;
+
+  // A vez sempre à vista na faixa (rola só a faixa, não a página).
+  useEffect(() => {
+    const list = listRef.current;
+    const el = list?.querySelector<HTMLElement>('.pq-item.on');
+    if (!list || !el) return;
+    const left = el.offsetLeft - list.clientWidth / 2 + el.offsetWidth / 2;
+    list.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }, [combat.turnId, combat.order.length]);
+
+  return (
+    <div className={`pq${mine ? ' pq-mine' : ''}`}>
+      <div className="pq-status" aria-live="polite">
+        <span className="pq-round" aria-label={started ? `Rodada ${combat.round}` : 'Preparando'}>
+          <Swords size={12} /> {started ? `R${combat.round}` : '—'}
+        </span>
+        <span className="pq-now">
+          {!started ? (
+            <>O combate vai começar <span className="muted">· o mestre está montando a ordem</span></>
+          ) : mine ? (
+            <span className="gold">Sua vez, <strong>{mine.name}</strong>!{upNext ? <span className="muted"> · depois: {upNext.name}</span> : null}</span>
+          ) : (
+            <>
+              <span className="muted">Vez de</span> <strong>{turn?.name ?? 'alguém nas sombras'}</strong>
+              {upNext?.mine
+                ? <span className="gold"> · você é o próximo</span>
+                : upNext ? <span className="muted"> · a seguir: {upNext.name}</span> : null}
+            </>
+          )}
+        </span>
+      </div>
+      {combat.order.length > 0 && (
+        <ol className="pq-list" ref={listRef} aria-label="Ordem de combate">
+          {combat.order.map((x, i) => {
+            const isTurn = x.id === combat.turnId;
+            const tok = tokens.find((t) => t.combatantId === x.id);
+            const down = OUT.includes(x.health);
+            const next = x.id === upNext?.id;
+            const label = `${i + 1}. ${x.name}${x.mine ? ' (você)' : ''}${isTurn ? ', na vez' : next ? ', a seguir' : ''}${down ? `, ${HEALTH_LABELS[x.health].label.toLowerCase()}` : ''}`;
+            return (
+              <li key={x.id}>
+                <button type="button" onClick={() => onPick(x)} aria-label={label} title={label}
+                  className={['pq-item', `side-${x.side}`, isTurn && 'on', x.mine && 'mine', down && 'down', next && 'next', !tok && 'off-map'].filter(Boolean).join(' ')}>
+                  <span className="pq-pic">
+                    {x.avatar
+                      ? <Avatar config={x.avatar} size={30} />
+                      : tok?.category
+                        ? <span className={`map-token-threat threat-cat-${tok.category}`}><ThreatGlyph category={tok.category} size={15} /></span>
+                        : <span className="pq-initial">{x.name.slice(0, 1).toUpperCase()}</span>}
+                    {isTurn && <span className="pq-play"><Play size={9} fill="currentColor" /></span>}
+                    {x.conditions.length > 0 && <span className="pq-conds" title={x.conditions.map((k) => k.name).join(', ')}>{x.conditions.length}</span>}
+                  </span>
+                  <span className="pq-name">{x.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
 }

@@ -14,13 +14,17 @@ export function TopBar({ title, children }: { title: ReactNode; children?: React
   );
 }
 
-/** `short`: rótulo curto usado na barra inferior do celular. */
-export interface TabDef<T extends string> { id: T; label: string; short?: string; icon?: ReactNode; count?: number }
+/**
+ * `short`: rótulo curto usado na barra inferior do celular.
+ * `mobileMore`: no celular, a aba vai direto para a gaveta "Mais" (no computador fica no lugar).
+ */
+export interface TabDef<T extends string> { id: T; label: string; short?: string; icon?: ReactNode; count?: number; mobileMore?: boolean }
 
 /**
  * Com `mobileBar`, as abas viram uma barra de navegação fixa no rodapé em telas estreitas.
- * A barra mostra no máximo `mobileMax` itens; o resto das abas e o conteúdo de `more`
- * (dados e ações da sessão) ficam na gaveta "Mais".
+ * A barra mostra no máximo `mobileMax` itens; o resto das abas (as marcadas com `mobileMore`,
+ * que nunca vão para a barra, aparecem primeiro) e o conteúdo de `more` (dados e ações da
+ * sessão) ficam na gaveta "Mais".
  * Tocar na aba já aberta volta ao topo e chama `onReselect`.
  */
 export function Tabs<T extends string>({ tabs, value, onChange, onReselect, mobileBar, mobileMax = 5, more }: {
@@ -28,9 +32,12 @@ export function Tabs<T extends string>({ tabs, value, onChange, onReselect, mobi
   mobileBar?: boolean; mobileMax?: number; more?: (close: () => void) => ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const needMore = !!mobileBar && (!!more || tabs.length > mobileMax);
-  const primary = needMore ? mobileMax - 1 : tabs.length;
-  const overflow = tabs.slice(primary);
+  const forced = mobileBar ? tabs.filter((t) => t.mobileMore) : [];
+  const inBar = mobileBar ? tabs.filter((t) => !t.mobileMore) : tabs;
+  const needMore = !!mobileBar && (!!more || forced.length > 0 || tabs.length > mobileMax);
+  const primary = needMore ? Math.min(inBar.length, mobileMax - 1) : tabs.length;
+  const barIds = new Set(inBar.slice(0, primary).map((t) => t.id));
+  const overflow = [...forced, ...inBar.slice(primary)];
   const overflowActive = overflow.some((t) => t.id === value);
   const overflowCount = overflow.reduce((n, t) => n + (t.count ?? 0), 0);
 
@@ -47,8 +54,8 @@ export function Tabs<T extends string>({ tabs, value, onChange, onReselect, mobi
   return (
     <>
       <nav className={`tabs${mobileBar ? ' tabs-mobile-bar' : ''}`}>
-        {tabs.map((t, i) => (
-          <button key={t.id} className={`tab${t.id === value ? ' tab-active' : ''}${i >= primary ? ' tab-overflow' : ''}`} onClick={() => pick(t.id)}
+        {tabs.map((t) => (
+          <button key={t.id} className={`tab${t.id === value ? ' tab-active' : ''}${barIds.has(t.id) ? '' : ' tab-overflow'}`} onClick={() => pick(t.id)}
             aria-current={t.id === value ? 'page' : undefined} aria-label={t.count ? `${t.label} (${t.count})` : t.label}>
             <span className="tab-icon">{t.icon}{t.count ? <span className="count">{t.count}</span> : null}</span>
             <span className="tab-label">{t.label}</span>

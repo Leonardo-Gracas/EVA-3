@@ -1,7 +1,7 @@
 // Desenho do mapa: terreno, grid, paredes e portas em SVG (unidade = quadrado);
 // móveis e tokens por cima, em HTML, para usar os ícones e avatares do app.
 // Zoom e pinça vêm da câmera do mural; quem usa o mapa decide o que o ponteiro faz.
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Archive, Armchair, Bath, Bed, Box, CookingPot, Cylinder, Expand, Flame, Landmark, Library, Maximize2, Minimize2, Minus, Mountain,
   Package, PersonStanding, Plus, RectangleHorizontal, Shrub, Sofa, Square, Table2, TreePine,
@@ -98,7 +98,17 @@ interface Props {
   onDropToken?: (data: string, cell: Point) => void;
   /** Balão preso a um ponto do mapa (em quadrados), fora da escala do zoom. */
   popover?: { x: number; y: number; content: ReactNode } | null;
+  /**
+   * Leva a câmera até o quadrado (x, y). Cada `n` novo é um pedido; `zoom` é o zoom mínimo
+   * e `ping` marca o quadrado com um pulso.
+   */
+  focus?: MapFocus | null;
+  /** Acima do mapa e abaixo da barra, dentro da moldura: continuam à vista na tela cheia. */
+  top?: ReactNode;
+  bottom?: ReactNode;
 }
+
+export interface MapFocus { x: number; y: number; n: number; zoom?: number; ping?: boolean; smooth?: boolean }
 
 const TAP_SLOP = 6;
 
@@ -114,6 +124,20 @@ export default function MapCanvas(props: Props) {
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const walk = useWalk(tokens, props.route);
   const [dropCell, setDropCell] = useState<Point | null>(null);
+
+  // Pedido de foco: depois do enquadramento inicial (que roda no quadro seguinte).
+  const focus = props.focus;
+  const centerOn = view.centerOn;
+  useEffect(() => {
+    if (!focus) return;
+    const raf = requestAnimationFrame(() => centerOn(
+      { x: (focus.x + 0.5) * CELL, y: (focus.y + 0.5) * CELL },
+      { minZoom: focus.zoom, smooth: focus.smooth },
+    ));
+    return () => cancelAnimationFrame(raf);
+    // Só um pedido novo (outro `n`) move a câmera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.n, centerOn]);
 
   const layers = useMemo(() => ({
     floor: runsPath(grid.cells, w, h, TERRAIN_CHAR.floor),
@@ -229,6 +253,7 @@ export default function MapCanvas(props: Props) {
 
   return (
     <div className={`map-shell${fullscreen.full ? ' map-full' : ''}${props.compact ? ' map-compact' : ''}`}>
+      {props.top}
       <div ref={wrapRef} className={`map-wrap${props.touch === 'none' ? ' map-touch-draw' : ''}`}
         style={fullscreen.full ? undefined : { height: props.height ?? 'min(70vh, 760px)' }}>
         <div style={{ width: size.w * zoom, height: size.h * zoom, position: 'relative' }}>
@@ -287,6 +312,7 @@ export default function MapCanvas(props: Props) {
                   {props.path.slice(1).map((p, i) => <circle key={i} cx={p.x + 0.5} cy={p.y + 0.5} r={0.08} className="map-path-dot" />)}
                 </>
               )}
+              {focus?.ping && <circle key={focus.n} cx={focus.x + 0.5} cy={focus.y + 0.5} r={0.62} className="map-ping" />}
             </svg>
             {objects.map((o) => (o.kind === 'prop' && (!o.hidden || props.showHidden) ? (
               <PropView key={o.id} o={o} selected={props.selectedObjectId === o.id} />
@@ -326,15 +352,17 @@ export default function MapCanvas(props: Props) {
       <div className="map-dock">
         {props.dock}
         <span className="spacer" />
-        <button className="btn btn-sm btn-ghost btn-icon" onClick={() => view.zoomBy(1 / 1.2)} title="Afastar" aria-label="Afastar"><Minus size={14} /></button>
-        <button className="btn btn-sm btn-ghost mono map-zoom" onClick={() => view.zoomTo(1)} title="Zoom 100%">{Math.round(zoom * 100)}%</button>
-        <button className="btn btn-sm btn-ghost btn-icon" onClick={() => view.zoomBy(1.2)} title="Aproximar" aria-label="Aproximar"><Plus size={14} /></button>
+        {/* No toque, a pinça faz o zoom: os botões de zoom saem para dar espaço. */}
+        <button className="btn btn-sm btn-ghost btn-icon map-zoom-btn" onClick={() => view.zoomBy(1 / 1.2)} title="Afastar" aria-label="Afastar"><Minus size={14} /></button>
+        <button className="btn btn-sm btn-ghost mono map-zoom map-zoom-btn" onClick={() => view.zoomTo(1)} title="Zoom 100%">{Math.round(zoom * 100)}%</button>
+        <button className="btn btn-sm btn-ghost btn-icon map-zoom-btn" onClick={() => view.zoomBy(1.2)} title="Aproximar" aria-label="Aproximar"><Plus size={14} /></button>
         <button className="btn btn-sm btn-ghost btn-icon" onClick={view.fit} title="Enquadrar o mapa" aria-label="Enquadrar o mapa"><Expand size={14} /></button>
         <button className="btn btn-sm btn-ghost btn-icon" onClick={fullscreen.toggle} title={fullscreen.full ? 'Sair da tela cheia' : 'Tela cheia'}
           aria-label={fullscreen.full ? 'Sair da tela cheia' : 'Tela cheia'}>
           {fullscreen.full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
       </div>
+      {props.bottom}
     </div>
   );
 }

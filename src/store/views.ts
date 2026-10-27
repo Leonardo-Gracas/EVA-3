@@ -2,7 +2,7 @@
 import type {
   LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerView, TableState,
 } from '../model/types';
-import { isTokenTurn, moveBudget, moveGate, playerGrid, tokenInfo, visibleObjects } from './maps';
+import { combatOn, isTokenTurn, moveBudget, moveGate, playerGrid, tokenCombatant, tokenInfo, visibleObjects } from './maps';
 import { followPath } from '../rules/grid';
 import { effectivePermissions } from '../model/permissions';
 import { caseShown, publishedCase } from '../model/cases';
@@ -60,9 +60,11 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
   const tokens: PlayerMapToken[] = [];
   const moves: PlayerMapMove[] = [];
   const grid = playerGrid(m);
+  const here = combatOn(s, m);
   for (const t of Object.values(m.tokens)) {
     const info = tokenInfo(s, t);
     if (!info || info.hidden) continue;
+    const cb = here ? tokenCombatant(s, t) : undefined;
     const ch = info.characterId ? s.characters[info.characterId] : undefined;
     const mine = !!ch && ch.ownerId === playerId;
     // NPC que o mestre não revelou aparece no mapa, mas sem nome.
@@ -74,6 +76,7 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
       mine,
       ...(mine ? { characterId: ch!.id } : {}),
       turn: isTokenTurn(s, m, t),
+      ...(cb ? { combatantId: cb.id } : {}),
       // Rastro só se o jogador consegue andar por ele: não entrega porta secreta.
       ...(t.trail && followPath(grid, t.trail) ? { trail: t.trail } : {}),
     });

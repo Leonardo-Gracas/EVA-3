@@ -20,6 +20,8 @@ export interface BoardView {
   insideView: (cx: number, cy: number) => boolean;
   /** Centro da área visível, em coordenadas do quadro. */
   viewCenter: () => Point;
+  /** Põe o ponto do quadro no centro da tela; com `minZoom`, aproxima antes se estiver mais longe. */
+  centerOn: (p: Point, opts?: { minZoom?: number; smooth?: boolean }) => void;
   /** Rolagem automática enquanto algo é arrastado perto da borda; `onScroll` refaz a posição do arraste. */
   startAutoScroll: (onScroll: () => void) => void;
   stopAutoScroll: () => void;
@@ -90,6 +92,22 @@ export function useBoardView(
   }, [wrapRef]);
 
   const zoomBy = useCallback((f: number) => zoomTo(zoomRef.current * f), [zoomTo]);
+
+  const centerOn = useCallback((p: Point, opts?: { minZoom?: number; smooth?: boolean }) => {
+    const w = wrapRef.current;
+    if (!w) return;
+    const min = opts?.minZoom;
+    if (min && zoomRef.current < min) {
+      const next = clamp(min, ZOOM_MIN, ZOOM_MAX);
+      flushSync(() => setZoom(next));
+      zoomRef.current = next;
+    }
+    const z = zoomRef.current;
+    const left = p.x * z - w.clientWidth / 2;
+    const top = p.y * z - w.clientHeight / 2;
+    if (opts?.smooth && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) w.scrollTo({ left, top, behavior: 'smooth' });
+    else { w.scrollLeft = left; w.scrollTop = top; }
+  }, [wrapRef]);
 
   const fit = useCallback(() => {
     const w = wrapRef.current;
@@ -228,5 +246,5 @@ export function useBoardView(
 
   useEffect(() => stopAutoScroll, [stopAutoScroll]);
 
-  return { zoom, zoomTo, zoomBy, fit, clientToBoard, insideView, viewCenter, startAutoScroll, stopAutoScroll, trackPointer };
+  return { zoom, zoomTo, zoomBy, fit, clientToBoard, insideView, viewCenter, centerOn, startAutoScroll, stopAutoScroll, trackPointer };
 }

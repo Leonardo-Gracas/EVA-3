@@ -29,10 +29,10 @@ export function PathModeToggle({ mode, onChange }: { mode: PathMode; onChange: (
   return (
     <div className="seg map-path-mode" role="radiogroup" aria-label="Como traçar o movimento">
       <button role="radio" aria-checked={mode === 'auto'} className={mode === 'auto' ? 'on-inherit' : ''} onClick={() => onChange('auto')} title={PATH_HINT.auto}>
-        <Route size={13} /> Mais curto
+        <Route size={13} /> <span className="pm-long">Mais curto</span><span className="pm-short">Curto</span>
       </button>
       <button role="radio" aria-checked={mode === 'exact'} className={mode === 'exact' ? 'on-inherit' : ''} onClick={() => onChange('exact')} title={PATH_HINT.exact}>
-        <Footprints size={13} /> Quadrado a quadrado
+        <Footprints size={13} /> <span className="pm-long">Quadrado a quadrado</span><span className="pm-short">Exato</span>
       </button>
     </div>
   );
