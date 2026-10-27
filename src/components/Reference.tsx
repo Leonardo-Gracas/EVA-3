@@ -3,8 +3,8 @@
 // acompanha a seção visível; cada seção abre com um resumo de uma linha.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AlertTriangle, BookOpen, Calculator, Dices, Heart, Lightbulb, ListChecks, Minus, Package, Plus, RotateCcw,
-  Search, Shield, Sparkles, Swords, Users,
+  AlertTriangle, BookOpen, Calculator, Dices, Hand, Heart, Lightbulb, ListChecks, Minus, Package, Plus, RotateCcw,
+  Search, Shield, Sparkles, Swords, Tag, Users,
 } from 'lucide-react';
 import {
   ATTR_COST, ATTR_KEYS, ATTR_MAX, ATTR_MIN, ATTRIBUTES, POINT_BUDGET, emptyAttributes, fmtMod, pointsLeft,
@@ -24,6 +24,8 @@ const SECTIONS = [
   { id: 'classes', label: 'Classes e níveis', icon: <Users size={14} /> },
   { id: 'vida', label: 'PV, PE e morte', icon: <Heart size={14} /> },
   { id: 'dano', label: 'Dano e RD', icon: <Shield size={14} /> },
+  { id: 'manobras', label: 'Manobras de combate', icon: <Hand size={14} /> },
+  { id: 'condicoes', label: 'Condições', icon: <Tag size={14} /> },
   { id: 'investigacao', label: 'Investigação', icon: <Search size={14} /> },
   { id: 'itens', label: 'Itens', icon: <Package size={14} /> },
   { id: 'habilidades', label: 'Habilidades', icon: <Swords size={14} /> },
@@ -118,6 +120,8 @@ export default function Reference() {
         <ClassesSec go={go} />
         <VidaSec />
         <DanoSec />
+        <ManobrasSec go={go} />
+        <CondicoesSec />
         <InvestigacaoSec go={go} />
         <ItensSec />
         <HabilidadesSec />
@@ -545,6 +549,68 @@ function DanoSec() {
   );
 }
 
+function ManobrasSec({ go }: { go: (id: SectionId) => void }) {
+  return (
+    <Section id="manobras" title="Manobras de combate" lead="Um ataque corpo a corpo feito para conseguir um efeito em vez de dano: derrubar, agarrar, empurrar, tomar ou quebrar a arma do alvo.">
+      <div className="ref-formula" aria-label="Fórmula da manobra">
+        <span className="term">seu teste de manobra</span><span className="op">&gt;</span><span className="term gold">teste de manobra do alvo</span>
+      </div>
+      <ul className="ref-list">
+        <li>A manobra <strong>substitui um ataque corpo a corpo</strong>. O teste de manobra é o mesmo teste do ataque corpo a corpo.</li>
+        <li>É um <strong>teste oposto</strong>: você e o alvo rolam. Você precisa <strong>superar</strong> o resultado dele; empate é falha.</li>
+        <li>Tudo que modifica testes de ataque também vale para manobras. Algumas habilidades dão bônus só em manobras, como a <em>Postura Defensiva</em>.</li>
+      </ul>
+
+      <Sub>As manobras</Sub>
+      <div className="ref-table-wrap">
+        <table className="ref-table">
+          <thead><tr><th>Manobra</th><th>Se você vencer</th></tr></thead>
+          <tbody>
+            <tr><td className="nowrap"><strong>Agarrar</strong></td><td>O alvo fica <Link to="condicoes" go={go}>agarrado</Link>. Exige uma mão livre. Veja os detalhes abaixo.</td></tr>
+            <tr><td className="nowrap"><strong>Derrubar</strong></td><td>O alvo fica <Link to="condicoes" go={go}>caído</Link>.</td></tr>
+            <tr><td className="nowrap"><strong>Desarmar</strong></td><td>O alvo derruba um item que esteja segurando. O item cai no espaço do alvo, a menos que ele esteja voando, sobre uma ponte etc.</td></tr>
+            <tr><td className="nowrap"><strong>Empurrar</strong></td><td>O alvo é empurrado 1,5 m, mais 1,5 m a cada 5 pontos de diferença a seu favor. Você pode gastar uma ação de movimentação para avançar junto, até o limite do seu deslocamento.</td></tr>
+            <tr><td className="nowrap"><strong>Quebrar</strong></td><td>Você acerta um item que o alvo esteja segurando, como arma ou escudo. Role o dano do ataque e desconte a RD do item; o resto sai dos PV dele. Com 0 PV, o item quebra. Os valores estão em <Link to="itens" go={go}>Itens</Link>.</td></tr>
+            <tr><td className="nowrap"><strong>Atropelar</strong></td><td><strong>Ação livre</strong> durante o seu movimento, para passar pelo espaço de uma criatura. Ela escolhe dar passagem (sem teste) ou resistir. Se resistir e você vencer, ela fica caída e você segue; se ela vencer, seu movimento para ali.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <Sub>Agarrar</Sub>
+      <ul className="ref-list">
+        <li>Quem agarra fica com uma mão ocupada e se move com metade do deslocamento, arrastando o alvo. Soltar é ação livre.</li>
+        <li>Com a mão livre, quem agarra pode atacar o alvo normalmente ou <strong>estrangulá-lo</strong>: um ataque corpo a corpo que causa o dano padrão de <strong>1d3</strong>.</li>
+        <li>O alvo se solta gastando uma ação padrão e vencendo um teste de manobra oposto.</li>
+        <li>Ataques à distância contra quem está num agarrão têm <strong>50% de chance</strong> de acertar a criatura errada.</li>
+      </ul>
+
+      <Callout kind="example">
+        Você tenta empurrar um bandido para o rio. Seu teste dá <strong>17</strong>; o dele, <strong>11</strong>.
+        A diferença é 6, então ele vai 1,5 m + 1,5 m = <strong>3 m</strong> para trás. Se os dois tirassem 11, o empate seria falha e ele não sairia do lugar.
+      </Callout>
+    </Section>
+  );
+}
+
+function CondicoesSec() {
+  return (
+    <Section id="condicoes" title="Condições" lead="Estados temporários que mudam o que uma criatura pode fazer. O mestre marca as condições na fila de combate, com a duração em rodadas.">
+      <div className="ref-table-wrap">
+        <table className="ref-table">
+          <thead><tr><th>Condição</th><th>Efeito</th></tr></thead>
+          <tbody>
+            <tr><td className="nowrap"><strong>Agarrado</strong></td><td>Desprevenido e imóvel. Sofre −2 em testes de ataque e só ataca com armas leves. Para se soltar: ação padrão e vencer um teste de manobra oposto.</td></tr>
+            <tr><td className="nowrap"><strong>Caído</strong></td><td>Sofre −5 em ataques corpo a corpo e o deslocamento cai para 1,5 m. Na DEF, sofre −5 contra ataques corpo a corpo e recebe +5 contra ataques à distância. Levantar custa uma ação de movimentação.</td></tr>
+            <tr><td className="nowrap"><strong>Desprevenido</strong></td><td>Sofre −5 na DEF.</td></tr>
+            <tr><td className="nowrap"><strong>Imóvel</strong></td><td>Deslocamento 0.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="small secondary mt">Uma condição pode trazer outras: quem está agarrado também está desprevenido e imóvel.</p>
+    </Section>
+  );
+}
+
 function InvestigacaoSec({ go }: { go: (id: SectionId) => void }) {
   return (
     <Section id="investigacao" title="Investigação" lead="Mistérios se resolvem com Clareza: a capacidade do personagem de enxergar o que está diante dele. Ela paga apurações e inquéritos.">
@@ -686,6 +752,11 @@ const GLOSSARY: Array<[string, ReactNode]> = [
   ['Catalisador', 'Objeto sagrado, profano ou etéreo exigido por certas habilidades.'],
   ['Durabilidade', 'PV, RD e DEF de um objeto. Com 0 PV, ele quebra.'],
   ['Ação de movimentação', 'Ação curta do turno, usada por algumas habilidades (ex.: Oração).'],
+  ['Ação padrão', 'A ação principal do turno, como atacar.'],
+  ['Ação livre', 'Não gasta ação do turno.'],
+  ['Manobra de combate', 'Ataque corpo a corpo para agarrar, derrubar, desarmar, empurrar, quebrar ou atropelar em vez de causar dano.'],
+  ['Teste oposto', 'Os dois lados rolam; quem age precisa superar o resultado do outro.'],
+  ['Condição', 'Estado temporário, como caído ou agarrado, com efeitos na ficha e no turno.'],
 ];
 
 function GlossarioSec() {
