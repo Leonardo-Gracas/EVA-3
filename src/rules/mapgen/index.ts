@@ -11,7 +11,7 @@ import { cleanMapParams } from './params';
 import { type GenBase, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
 import { generateTemple } from './temple';
 
-export { cleanMapParams, GEN_MIN_SIDE, MAP_GEN_DEFAULTS, PRESET_DEFAULTS } from './params';
+export { cleanMapParams, GEN_MIN_SIDE, houseModelDefaults, MAP_GEN_DEFAULTS, PRESET_DEFAULTS } from './params';
 export type { GenProp } from './furnish';
 export { ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
 

@@ -309,6 +309,17 @@ const library: Recipe = (f, R) => {
   if (R.w * R.h >= 16) f.dining(R, 2, 'Mesa de leitura');
 };
 
+/** Salão: mesinhas em grade, cada uma com duas cadeiras. */
+const tables = (f: Furnisher, R: Rect) => {
+  for (let y = R.y + 1; y <= R.y + R.h - 2; y += 3) {
+    for (let x = R.x + 2; x <= R.x + R.w - 3; x += 4) {
+      if (!f.place('mesa', { x, y, w: 1, h: 1 })) continue;
+      f.place('cadeira', { x: x - 1, y, w: 1, h: 1 });
+      f.place('cadeira', { x: x + 1, y, w: 1, h: 1 });
+    }
+  }
+};
+
 /** Pilares em grade, a cada três quadrados, longe das paredes. */
 const pillarGrid = (f: Furnisher, R: Rect) => {
   for (let y = R.y + 2; y <= R.y + R.h - 3; y += 3) {
@@ -350,6 +361,33 @@ const RECIPES: Record<RoomKind, Recipe> = {
     f.some(2, () => f.alongWall(R, 'estante', 2, 1) || f.alongWall(R, 'estante', 1, 1));
   },
   biblioteca: library,
+  jantar: (f, R) => {
+    f.alongWall(R, 'estante', 2, 1, 'Aparador') || f.alongWall(R, 'estante', 1, 1, 'Aparador');
+    if (R.w * R.h >= 30) tables(f, R);
+    else f.dining(R, Math.min(8, 2 + Math.floor((R.w * R.h) / 4)), 'Mesa de jantar');
+  },
+  lavanderia: (f, R) => {
+    f.alongWall(R, 'outro', 1, 1, 'Tanque');
+    f.corner(R, 'caixa', 'Cesto de roupa');
+  },
+  entrada: (f, R) => {
+    f.corner(R, 'outro', 'Cabideiro');
+    if (R.w * R.h >= 12) f.alongWall(R, 'mesa', 1, 1, 'Aparador');
+    if (Math.min(R.w, R.h) >= 4) f.corner(R, 'estatua', 'Vaso');
+  },
+  recepcao: (f, R) => {
+    f.alongWall(R, 'mesa', 3, 1, 'Balcão da recepção') || f.alongWall(R, 'mesa', 2, 1, 'Balcão da recepção');
+    f.alongWall(R, 'sofa', 2, 1) || f.alongWall(R, 'sofa', 1, 1);
+    f.corner(R, 'cadeira', 'Poltrona');
+    f.corner(R, 'estatua', 'Vaso');
+  },
+  taverna: (f, R) => {
+    const len = Math.min(4, Math.max(R.w, R.h) - 2);
+    f.alongWall(R, 'mesa', len, 1, 'Balcão') || f.alongWall(R, 'mesa', 2, 1, 'Balcão');
+    f.some(2, () => f.corner(R, 'barril'));
+    if (R.w * R.h >= 30) f.alongWall(R, 'fogao', 1, 1, 'Lareira');
+    tables(f, R);
+  },
   nave: (f, R) => {
     const L = local(R, R.dir ?? 'n');
     const { U, V } = L;
@@ -447,7 +485,7 @@ function dungeonKind(R: GenRoom, r: SeededRng): RoomKind {
 }
 
 /** Árvores longe das paredes e arbustos encostados, no quintal da casa ou do templo. */
-function yard(f: Furnisher) {
+function yard(f: Furnisher, treeChance: number) {
   const { w, h, zone } = f;
   const built = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && (zone[y * w + x] === ZONE.room || zone[y * w + x] === ZONE.corridor);
   for (let y = 0; y < h && !f.full; y++) {
@@ -463,7 +501,7 @@ function yard(f: Furnisher) {
         }
       }
       const rc = { x, y, w: 1, h: 1 };
-      if (!near8 && f.r() < 0.14) f.place('arvore', rc);
+      if (!near8 && f.r() < treeChance) f.place('arvore', rc);
       else if (near4 && f.r() < 0.07) f.place('arbusto', rc);
     }
   }
@@ -547,7 +585,9 @@ export function furnish(base: GenBase, preset: MapPreset, r: SeededRng): GenProp
       });
     }
   }
-  if (preset === 'house' || preset === 'temple') yard(f);
+  // O quintal da casa pode ser grande (a casa tem o tamanho dela, não o do mapa): árvores mais espaçadas.
+  if (preset === 'house') yard(f, 0.05);
+  if (preset === 'temple') yard(f, 0.14);
   if (preset === 'outdoor') field(f);
 
   base.layout.cells = f.cells.join('');

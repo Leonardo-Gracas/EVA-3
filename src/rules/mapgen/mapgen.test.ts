@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { HouseShape, MapGenParams, MapPreset } from '../../model/types';
-import { PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
+import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapPreset } from '../../model/types';
+import { HOUSE_MODELS, HOUSE_SIZES, PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import { edgeKey, hasWall, isOpen, terrainAt } from '../../model/map';
 import { generateDungeon } from '../dungeon';
 import { cleanMapParams, describeRooms, generateMap, type GeneratedMap, PRESET_DEFAULTS } from './index';
@@ -24,6 +24,51 @@ function components(g: GeneratedMap): number {
     n++;
     const s = flood(g.layout, keys, [i], blocked);
     for (let k = 0; k < w * h; k++) if (s[k]) seen[k] = 1;
+  }
+  return n;
+}
+
+/** Para onde o cômodo tem passagem (vão ou porta): tipo do cômodo vizinho, 'corredor' ou 'fora'. */
+function passagesOf(g: GeneratedMap, rm: GeneratedMap['rooms'][number]): string[] {
+  const { w, h, wallsH, wallsV } = g.layout;
+  const keys = new Set(g.doors.map(edgeKey));
+  const owner = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return 'fora';
+    const o = g.rooms.find((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+    return o ? o.kind : g.zone[y * w + x] === ZONE.corridor ? 'corredor' : 'fora';
+  };
+  const out: string[] = [];
+  const pass = (o: 'h' | 'v', x: number, y: number) => (o === 'h' ? wallsH[y * w + x] : wallsV[y * (w + 1) + x]) !== '1' || keys.has(`${o}${x},${y}`);
+  for (let x = rm.x; x < rm.x + rm.w; x++) {
+    if (pass('h', x, rm.y)) out.push(owner(x, rm.y - 1));
+    if (pass('h', x, rm.y + rm.h)) out.push(owner(x, rm.y + rm.h));
+  }
+  for (let y = rm.y; y < rm.y + rm.h; y++) {
+    if (pass('v', rm.x, y)) out.push(owner(rm.x - 1, y));
+    if (pass('v', rm.x + rm.w, y)) out.push(owner(rm.x + rm.w, y));
+  }
+  return out;
+}
+
+/** Pedaços de corredor separados uns dos outros. */
+function corridorGroups(g: GeneratedMap): number {
+  const { w, h } = g.layout;
+  const seen = new Uint8Array(w * h);
+  let n = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (seen[i] || g.zone[i] !== ZONE.corridor) continue;
+    n++;
+    const stack = [i];
+    seen[i] = 1;
+    while (stack.length) {
+      const j = stack.pop()!;
+      const x = j % w;
+      for (const k of [j - w, j + w, x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1]) {
+        if (k < 0 || k >= w * h || seen[k] || g.zone[k] !== ZONE.corridor) continue;
+        seen[k] = 1;
+        stack.push(k);
+      }
+    }
   }
   return n;
 }
@@ -85,11 +130,15 @@ describe('gerador de mapas', () => {
     expect(p.furnish).toBe(false);
   });
 
-  it('casa: planta sem vazio, tudo ligado, cômodos encostados nos corredores', () => {
-    let touching = 0;
-    let total = 0;
-    for (let seed = 0; seed < 120; seed++) {
-      const g = generateMap(params('house', { ...size(seed), corridor: 1 + (seed % 2) }), seed);
+  it('casa e hotel: planta sem vazio, tudo ligado, sem passar por banheiro, quartos com saída boa', () => {
+    const models = Object.keys(HOUSE_MODELS) as HouseModel[];
+    const sizes = Object.keys(HOUSE_SIZES) as HouseSize[];
+    for (let seed = 0; seed < 150; seed++) {
+      const model = models[seed % models.length];
+      const [lo, hi] = HOUSE_MODELS[model].rooms;
+      const g = generateMap(params('house', {
+        ...size(seed), model, size: sizes[seed % 3], rooms: lo + (seed % (hi - lo + 1)), corridor: 1 + (seed % 3),
+      }), seed);
       checkCommon(g);
       const { w, h } = g.layout;
       // Dentro da casa é tudo piso (sem vazio), e cômodos + corredores cobrem a planta toda.
@@ -102,25 +151,65 @@ describe('gerador de mapas', () => {
       const corrCells = [...g.zone].filter((z) => z === ZONE.corridor).length;
       expect(roomCells + corrCells).toBe(foot);
       expect(components(g)).toBe(1);
-      expect(g.rooms.some((r) => r.kind === 'sala')).toBe(true);
+      // Tirando os banheiros, todo o resto continua ligado: ninguém passa por banheiro.
+      const bath = new Uint8Array(w * h);
+      for (const rm of g.rooms) if (rm.kind === 'banheiro') for (let y = rm.y; y < rm.y + rm.h; y++) for (let x = rm.x; x < rm.x + rm.w; x++) bath[y * w + x] = 1;
+      const keys = new Set(g.doors.map(edgeKey));
+      const start = [...bath].findIndex((b) => !b);
+      const seen = flood(g.layout, keys, [start], bath);
+      for (let i = 0; i < w * h; i++) if (!bath[i]) expect(seen[i]).toBe(1);
+      // Quarto abre para corredor ou cômodo social (no casebre, para o cômodo principal). Mapa
+      // pequeno demais para o modelo vira casebre.
+      const social = ['sala', 'jantar', 'entrada', 'recepcao', 'taverna'];
+      const casebre = !g.rooms.some((r) => social.includes(r.kind));
+      const ok = new Set([...social, ...(casebre ? ['cozinha'] : [])]);
       for (const rm of g.rooms) {
-        total++;
-        let t = false;
-        for (let x = rm.x; x < rm.x + rm.w && !t; x++) {
-          t = g.zone[(rm.y - 1) * w + x] === ZONE.corridor || g.zone[(rm.y + rm.h) * w + x] === ZONE.corridor;
-        }
-        for (let y = rm.y; y < rm.y + rm.h && !t; y++) {
-          t = g.zone[y * w + rm.x - 1] === ZONE.corridor || g.zone[y * w + rm.x + rm.w] === ZONE.corridor;
-        }
-        if (t) touching++;
+        if (rm.kind !== 'quarto') continue;
+        const exits = passagesOf(g, rm);
+        expect(exits.some((k) => k === 'corredor' || ok.has(k))).toBe(true);
       }
     }
-    expect(touching / total).toBeGreaterThan(0.75);
+  });
+
+  it('casa: pouco corredor, um só, e os cômodos de uma casa', () => {
+    for (let seed = 0; seed < 60; seed++) {
+      const k = 1 + (seed % 5);
+      const g = generateMap(params('house', { model: 'casa', rooms: k, w: 40, h: 30 }), seed);
+      const kinds = g.rooms.map((r) => r.kind);
+      expect(kinds.filter((x) => x === 'quarto')).toHaveLength(k);
+      for (const x of ['sala', 'cozinha', 'banheiro'] as const) expect(kinds).toContain(x);
+      const corr = [...g.zone].filter((z) => z === ZONE.corridor).length;
+      const built = [...g.zone].filter((z) => z === ZONE.corridor || z === ZONE.room).length;
+      expect(corr / built).toBeLessThan(0.15);
+      expect(corridorGroups(g)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('hotel e estalagem: o número de quartos pedido, todos na porta do corredor', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const model: HouseModel = seed % 2 ? 'hotel' : 'estalagem';
+      const shapes = HOUSE_MODELS[model].shapes;
+      const k = model === 'hotel' ? 8 + (seed % 20) : 2 + (seed % 12);
+      const g = generateMap(params('house', { model, shape: shapes[seed % shapes.length], rooms: k, w: 70, h: 60 }), seed);
+      const quartos = g.rooms.filter((r) => r.kind === 'quarto');
+      expect(quartos).toHaveLength(k);
+      for (const rm of quartos) expect(passagesOf(g, rm)).toContain('corredor');
+    }
+  });
+
+  it('casa: mapa pequeno demais cabe com menos quartos, sem sair do mapa', () => {
+    for (const model of Object.keys(HOUSE_MODELS) as HouseModel[]) {
+      const g = generateMap(params('house', { model, rooms: HOUSE_MODELS[model].rooms[1], w: 12, h: 12 }), 3);
+      checkCommon(g);
+      expect(components(g)).toBe(1);
+      expect(g.rooms.length).toBeGreaterThan(0);
+      for (const rm of g.rooms) expect(rm.x >= 1 && rm.y >= 1 && rm.x + rm.w <= 11 && rm.y + rm.h <= 11).toBe(true);
+    }
   });
 
   it('casa: o formato aparece na planta', () => {
-    const footprint = (shape: HouseShape, seed: number) => {
-      const g = generateMap(params('house', { shape, w: 40, h: 32 }), seed);
+    const footprint = (shape: HouseShape, seed: number, model: HouseModel = 'casa', rooms = 4) => {
+      const g = generateMap(params('house', { model, shape, rooms, w: 60, h: 50 }), seed);
       const { w, h } = g.layout;
       let n = 0;
       let x1 = w;
@@ -139,8 +228,9 @@ describe('gerador de mapas', () => {
     };
     for (let seed = 0; seed < 20; seed++) {
       expect(footprint('square', seed).fill).toBe(1);
-      expect(footprint('long', seed).aspect).toBeGreaterThanOrEqual(1.8);
-      for (const s of ['L', 'T', 'U'] as HouseShape[]) expect(footprint(s, seed).fill).toBeLessThan(0.95);
+      expect(footprint('long', seed).aspect).toBeGreaterThanOrEqual(2);
+      expect(footprint('L', seed).fill).toBeLessThan(1);
+      for (const s of ['L', 'T', 'U'] as HouseShape[]) expect(footprint(s, seed, 'hotel', 24).fill).toBeLessThan(0.95);
     }
   });
 

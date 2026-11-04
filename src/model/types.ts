@@ -443,7 +443,7 @@ export type MapPreset = 'dungeon' | 'house' | 'temple' | 'outdoor';
 
 export const MAP_PRESETS: Record<MapPreset, { label: string; hint: string }> = {
   dungeon: { label: 'Masmorra', hint: 'Salas soltas na rocha, ligadas por corredores.' },
-  house: { label: 'Casa', hint: 'Planta fechada no formato escolhido, cômodos ao longo dos corredores.' },
+  house: { label: 'Casa ou hotel', hint: 'Planta de casa (casebre, casa, casarão) ou de hospedagem (estalagem, hotel), com quintal em volta.' },
   temple: { label: 'Templo', hint: 'Nave simétrica, santuário com degraus, capelas e sacristias.' },
   outdoor: { label: 'Cenário aberto', hint: 'Campo com mato, rochas, rio, trilha e construções.' },
 };
@@ -452,20 +452,67 @@ export const MAP_PRESETS: Record<MapPreset, { label: string; hint: string }> = {
 export type HouseShape = 'random' | 'square' | 'long' | 'L' | 'T' | 'U';
 
 export const HOUSE_SHAPES: Record<HouseShape, string> = {
-  random: 'Aleatório', square: 'Quadrada', long: 'Comprida', L: 'Em L', T: 'Em T', U: 'Em U',
+  random: 'Aleatório', square: 'Compacta', long: 'Comprida', L: 'Em L', T: 'Em T', U: 'Em U',
 };
+
+/** Modelo de planta do tipo "casa ou hotel". */
+export type HouseModel = 'casebre' | 'casa' | 'casarao' | 'estalagem' | 'hotel';
+
+export interface HouseModelInfo {
+  label: string;
+  group: 'Casas' | 'Hospedagem';
+  hint: string;
+  /** Formatos que o modelo aceita (além de aleatório). */
+  shapes: Array<Exclude<HouseShape, 'random'>>;
+  /** Quartos: mínimo, máximo e padrão. */
+  rooms: [number, number, number];
+  corridor: number;
+  doors: number;
+}
+
+export const HOUSE_MODELS: Record<HouseModel, HouseModelInfo> = {
+  casebre: {
+    label: 'Casebre', group: 'Casas', hint: 'Um cômodo de fogão e mesa, com até dois quartos encostados. Sem corredor.',
+    shapes: ['square'], rooms: [0, 2, 1], corridor: 1, doors: 0.7,
+  },
+  casa: {
+    label: 'Casa térrea', group: 'Casas', hint: 'Sala, cozinha e um corredor curto para os quartos e o banheiro.',
+    shapes: ['square', 'long', 'L'], rooms: [1, 5, 3], corridor: 1, doors: 0.9,
+  },
+  casarao: {
+    label: 'Casarão', group: 'Casas', hint: 'Entrada, salas na frente, corredor central de quartos, jantar e cozinha no fundo.',
+    shapes: ['long', 'L', 'T'], rooms: [3, 10, 5], corridor: 2, doors: 0.9,
+  },
+  estalagem: {
+    label: 'Estalagem', group: 'Hospedagem', hint: 'Taverna com balcão e cozinha, e um corredor de quartos para hóspedes.',
+    shapes: ['square', 'long', 'L'], rooms: [2, 16, 6], corridor: 1, doors: 0.95,
+  },
+  hotel: {
+    label: 'Hotel', group: 'Hospedagem', hint: 'Recepção e restaurante na frente; corredores longos com quartos dos dois lados.',
+    shapes: ['long', 'L', 'T', 'U'], rooms: [4, 40, 12], corridor: 2, doors: 1,
+  },
+};
+
+/** Tamanho dos cômodos da casa. */
+export type HouseSize = 'compacto' | 'normal' | 'amplo';
+
+export const HOUSE_SIZES: Record<HouseSize, string> = { compacto: 'Compactos', normal: 'Normais', amplo: 'Amplos' };
 
 /** Parâmetros do gerador de mapas. */
 export interface MapGenParams {
   /** Ausente nas ações antigas: masmorra. */
   preset: MapPreset;
-  /** Só para casa. */
+  /** Só para casa: formato geral. */
   shape: HouseShape;
+  /** Só para casa: modelo da planta (ausente nas ações antigas: casa térrea). */
+  model: HouseModel;
+  /** Só para casa: tamanho dos cômodos. */
+  size: HouseSize;
   /** Põe móveis conforme o tipo de cada cômodo. */
   furnish: boolean;
   w: number;
   h: number;
-  /** Masmorra: salas. Cenário aberto: construções. Casa e templo não usam. */
+  /** Masmorra: salas. Cenário aberto: construções. Casa: quartos. Templo não usa. */
   rooms: number;
   roomMin: number;
   roomMax: number;

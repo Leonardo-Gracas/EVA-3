@@ -11,6 +11,7 @@ export type Dir = 'n' | 's' | 'e' | 'w';
 
 export type RoomKind =
   | 'generic' | 'sala' | 'cozinha' | 'quarto' | 'banheiro' | 'despensa' | 'escritorio' | 'biblioteca'
+  | 'jantar' | 'lavanderia' | 'entrada' | 'recepcao' | 'taverna'
   | 'nave' | 'santuario' | 'vestibulo' | 'capela' | 'sacristia' | 'cela' | 'torre'
   | 'guarda' | 'deposito' | 'tesouro' | 'dormitorio' | 'ruina' | 'salao' | 'cabana';
 
@@ -23,6 +24,11 @@ export const ROOM_KINDS: Record<RoomKind, { one: string; many: string }> = {
   despensa: { one: 'despensa', many: 'despensas' },
   escritorio: { one: 'escritório', many: 'escritórios' },
   biblioteca: { one: 'biblioteca', many: 'bibliotecas' },
+  jantar: { one: 'sala de jantar', many: 'salas de jantar' },
+  lavanderia: { one: 'lavanderia', many: 'lavanderias' },
+  entrada: { one: 'hall de entrada', many: 'halls de entrada' },
+  recepcao: { one: 'recepção', many: 'recepções' },
+  taverna: { one: 'taverna', many: 'tavernas' },
   nave: { one: 'nave', many: 'naves' },
   santuario: { one: 'santuário', many: 'santuários' },
   vestibulo: { one: 'vestíbulo', many: 'vestíbulos' },
