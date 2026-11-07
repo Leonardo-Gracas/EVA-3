@@ -1,7 +1,7 @@
 // Combate do mestre, em versão compacta para ficar ao lado do mapa: a barra de turno e a
 // fila. Cada linha mostra o essencial (vez, PV, condições) e o botão de dano; tocar na linha
 // abre as outras ações dela. A faixa da esquerda marca alvos para dano e condição em grupo.
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Eye, EyeOff, FileText, Flag, Heart, Play, Plus, Skull, Tag, X, Zap,
 } from 'lucide-react';
@@ -101,11 +101,9 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
   const [group, setGroup] = useState(false);
   const [ending, setEnding] = useState(false);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
-  /** Arraste da fila (mouse): a ordem prévia, que vira `combat/move` ao soltar. */
+  /** Arraste da fila: a ordem prévia, que vira `combat/move` ao soltar. */
   const [drag, setDrag] = useState<{ id: string; order: string[] } | null>(null);
-  const listRef = useRef<HTMLOListElement>(null);
-  /** Acabou de arrastar: o clique que vem junto não abre a linha. */
-  const justDragged = useRef(false);
+  const dragRef = useRef<{ id: string; ids: string[]; order: string[]; lastY: number; dropped: boolean } | null>(null);
 
   // Quem saiu da fila sai da seleção.
   useEffect(() => {
@@ -147,65 +145,52 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
   const selIds = [...selected];
 
   /**
-   * Arrastar para reordenar (mouse; no toque, ↑↓ na linha aberta). Quem arrasta quer mover:
-   * um pouco para baixo já troca com o de baixo, um pouco para cima com o de cima, e passar
-   * por cima de outra linha leva até ela. A fila salva ao soltar.
+   * Arrastar para reordenar (mouse; no toque, ↑↓ na linha aberta). A fila se arruma enquanto
+   * arrasta: basta entrar na linha de baixo (ou de cima) para trocar com ela, e passar por cima
+   * de outra linha leva até o lugar dela. Só troca no sentido em que o mouse vai, para uma linha
+   * mais alta não ficar trocando de volta. A fila salva ao soltar.
    */
-  const startDrag = (e: ReactPointerEvent, id: string) => {
-    if (e.pointerType === 'touch' || e.button !== 0) return;
+  const onDragStart = (e: DragEvent, id: string) => {
     const ids = entries.map((x) => x.cb.id);
-    const y0 = e.clientY;
-    let base = y0;
-    let order: string[] | null = null;
-    const STEP = 8;
-    const onMove = (ev: PointerEvent) => {
-      if (!order) {
-        if (Math.abs(ev.clientY - y0) < 4) return;
-        order = ids;
-        document.body.classList.add('ct-sorting');
-      }
-      const dy = ev.clientY - base;
-      if (Math.abs(dy) < STEP) return;
-      const cur = order.indexOf(id);
-      // Linha sob o ponteiro, na ordem que está na tela.
-      const rows = [...(listRef.current?.querySelectorAll<HTMLElement>('li[data-id]') ?? [])];
-      let under = cur;
-      if (rows.length) {
-        const first = rows[0].getBoundingClientRect();
-        const last = rows[rows.length - 1].getBoundingClientRect();
-        if (ev.clientY < first.top) under = 0;
-        else if (ev.clientY > last.bottom) under = rows.length - 1;
-        else {
-          const hit = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return ev.clientY >= b.top - 2 && ev.clientY <= b.bottom + 2; });
-          if (hit >= 0) under = order.indexOf(rows[hit].dataset.id!);
-        }
-      }
-      const to = Math.max(0, Math.min(order.length - 1, dy > 0 ? Math.max(cur + 1, under) : Math.min(cur - 1, under)));
-      base = ev.clientY;
-      if (to === cur) return;
-      const next = order.filter((x) => x !== id);
-      next.splice(to, 0, id);
-      order = next;
-      setDrag({ id, order: next });
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      document.body.classList.remove('ct-sorting');
-      if (!order) return;
-      justDragged.current = true;
-      setTimeout(() => { justDragged.current = false; }, 0);
-      const to = order.indexOf(id);
-      const from = ids.indexOf(id);
-      if (to === from) { setDrag(null); return; }
-      // Posição na fila de verdade: onde estava quem ocupava esse lugar.
-      const target = combat.order.findIndex((x) => x.id === ids[to]);
-      void Promise.resolve(move(id, target)).finally(() => setDrag(null));
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    dragRef.current = { id, ids, order: ids, lastY: e.clientY, dropped: false };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+    // O fantasma do navegador sai da linha como está; a prévia muda depois.
+    requestAnimationFrame(() => setDrag({ id, order: ids }));
+  };
+  const onDragOver = (e: DragEvent, overId: string) => {
+    const d = dragRef.current;
+    if (!d) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const down = e.clientY > d.lastY;
+    const up = e.clientY < d.lastY;
+    d.lastY = e.clientY;
+    if (overId === d.id) return;
+    const cur = d.order.indexOf(d.id);
+    const to = d.order.indexOf(overId);
+    if (to < 0 || (to > cur && up) || (to < cur && down)) return;
+    const next = d.order.filter((x) => x !== d.id);
+    next.splice(to, 0, d.id);
+    d.order = next;
+    setDrag({ id: d.id, order: next });
+  };
+  const onDrop = (e: DragEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    e.preventDefault();
+    d.dropped = true;
+    const to = d.order.indexOf(d.id);
+    if (to === d.ids.indexOf(d.id)) return;
+    // Posição na fila de verdade: onde estava quem ocupava esse lugar.
+    const target = combat.order.findIndex((x) => x.id === d.ids[to]);
+    void Promise.resolve(move(d.id, target)).finally(() => setDrag(null));
+  };
+  const onDragEnd = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    // Solto fora da fila (ou sem mudar nada): volta como estava.
+    if (!d?.dropped || d.order.indexOf(d.id) === d.ids.indexOf(d.id)) setDrag(null);
   };
   const shown = drag ? drag.order.flatMap((id) => entries.filter((x) => x.cb.id === id)) : entries;
 
@@ -238,7 +223,8 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
         </div>
       )}
 
-      <ol ref={listRef} className={`ct-list${selected.size ? ' ct-targeting' : ''}${drag ? ' ct-list-sorting' : ''}`}>
+      <ol className={`ct-list${selected.size ? ' ct-targeting' : ''}${drag ? ' ct-list-sorting' : ''}`}
+        onDragOver={(e) => { if (dragRef.current) e.preventDefault(); }} onDrop={onDrop}>
         {shown.map(({ cb, info }, idx) => {
           const isTurn = cb.id === current?.id;
           const isNext = cb.id === upNext?.id;
@@ -250,14 +236,13 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
               className={[
                 'ct-row', sideClass(info.side), isTurn && 'on', info.down && 'down', sel && 'sel', open && 'open',
                 drag?.id === cb.id && 'dragging',
-              ].filter(Boolean).join(' ')}>
+              ].filter(Boolean).join(' ')}
+              draggable onDragStart={(e) => onDragStart(e, cb.id)} onDragOver={(e) => onDragOver(e, cb.id)} onDragEnd={onDragEnd}>
               <button className="ct-target" aria-pressed={sel} onClick={(e) => toggleSel(cb.id, e.shiftKey)}
                 title={sel ? 'Desmarcar alvo' : 'Marcar como alvo (Shift: intervalo)'} aria-label={`${sel ? 'Desmarcar' : 'Marcar'} ${info.name} como alvo`}>
                 {sel ? <Check size={14} strokeWidth={3} /> : <Crosshair size={14} />}
               </button>
-              <button className="ct-main" aria-expanded={open}
-                onPointerDown={(e) => startDrag(e, cb.id)}
-                onClick={() => { if (!justDragged.current) setFocus(open ? '' : cb.id); }}
+              <button className="ct-main" aria-expanded={open} onClick={() => setFocus(open ? '' : cb.id)}
                 title={open ? `${info.name} (arraste para mudar a ordem)` : `${info.name}: mais ações (arraste para mudar a ordem)`}>
                 <span className="ct-pic">
                   {info.character

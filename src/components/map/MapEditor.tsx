@@ -547,9 +547,9 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       armedKey={armedKey} onPick={pick} onQuick={quick}
       controls={<MapModes map={map} />}
       threatsExtra={queue.length > 0 && (
-        <button className="btn btn-sm btn-ghost trail-mini" onClick={() => void act({ type: 'map/tokenPlace', mapId: map.id, refs: queue }, 'Fila do combate no mapa.')}
+        <button className="btn btn-sm trail-mini" onClick={() => void act({ type: 'map/tokenPlace', mapId: map.id, refs: queue }, 'Fila do combate no mapa.')}
           title="Põe no mapa todos da fila que ainda não estão nele">
-          <Swords size={12} /> Fila {queue.length}
+          <Swords size={12} /> Pôr a fila no mapa ({queue.length})
         </button>
       )}
       info={(
@@ -557,8 +557,8 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
           <span><b>Locomoção · {MOVE_MODES[map.mode].label}:</b> {MOVE_MODES[map.mode].hint}</span>
           <span><b>Visão · {VISION_MODES[vision].label}:</b> {VISION_MODES[vision].hint}{vision !== 'open' ? ' Na Mesa, a sombra marca o que nenhum jogador vê.' : ''}</span>
           {map.mode === 'turno' && !linked && <span className="warn">Turnos sem combate neste mapa: todo movimento de jogador vira pedido.</span>}
-          {placeHelp}
-          <span><b>∞</b> = do livro de ameaças: cada vez entra uma nova{combat && linked ? ', no fim da fila' : ', solta no mapa'}.</span>
+          <span><b>NPCs e ameaças:</b> busque pelo nome; arraste até o quadrado, ou clique e depois clique no mapa.</span>
+          <span><b>Ameaça do livro:</b> cada vez que coloca, entra uma nova{combat && linked ? ', no fim da fila' : ', solta no mapa'}.</span>
         </>
       )}
     />

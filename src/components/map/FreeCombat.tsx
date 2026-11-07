@@ -63,8 +63,8 @@ export default function FreeCombat({ table, combat, onBack }: { table: TableStat
             onPick={pickItem}
             info={(
               <>
-                <span><b>Pôr na fila:</b> arraste até o plano ou clique.</span>
-                <span><b>∞</b> = do livro de ameaças: cada vez entra uma nova.</span>
+                <span><b>Pôr na fila:</b> busque pelo nome; arraste até o plano ou clique.</span>
+                <span><b>Ameaça do livro:</b> cada vez entra uma nova.</span>
               </>
             )}
           />

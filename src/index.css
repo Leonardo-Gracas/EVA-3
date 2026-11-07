@@ -1256,10 +1256,9 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 .ct-row.sel { border-color: rgba(214, 69, 79, 0.75); }
 .ct-row.down { opacity: 0.55; }
 .ct-row.down .ct-name { text-decoration: line-through; text-decoration-color: var(--text-muted); }
-/* Arrastando na fila: a linha pega fica em destaque e as outras abrem espaço na hora. */
+/* Arrastando na fila: as outras linhas abrem espaço na hora; o lugar de quem vai é tracejado. */
 .ct-list-sorting .ct-row { transition: none; }
-.ct-row.dragging { z-index: 2; border-color: var(--gold-soft); box-shadow: 0 0 0 1px var(--gold-soft) inset, 0 8px 22px rgba(0, 0, 0, 0.55); }
-body.ct-sorting, body.ct-sorting * { cursor: grabbing !important; user-select: none; }
+.ct-row.dragging { opacity: 0.45; border-style: dashed; border-color: var(--gold-soft); }
 
 /* Faixa de alvo: a lateral da linha, na cor do lado; marcada, vira mira vermelha. */
 .ct-target {
@@ -1870,14 +1869,33 @@ button.camp-pill { min-height: 36px; }
 /* ── Trilha sonora do mestre (canto inferior direito) ────── */
 /* Recolhida: só a barra de controles. Expandida: painel com capa, posição na faixa, a mesma barra e as playlists.
    Os players do YouTube ficam sempre fora da tela (.music-engine): o painel mostra só a capa. */
-#root:has(.music-dock) { --music-bottom: 16px; }
+#root:has(.music-dock) { --music-bottom: 16px; --music-tuck: var(--music-bottom); }
 #root:has(.music-dock) .toasts { bottom: calc(var(--music-bottom) + 68px); }
 #root:has(.music-dock) .page { padding-bottom: 96px; }
+/* Guardada, a barra quase não ocupa a tela. */
+#root:has(.music-tucked) .toasts { bottom: calc(var(--music-bottom) + 18px); }
+#root:has(.music-tucked) .page { padding-bottom: 24px; }
 
 .music-dock {
   position: fixed; right: 16px; bottom: var(--music-bottom, 16px); z-index: 950; width: 400px; max-width: calc(100vw - 32px);
   display: flex; flex-direction: column; gap: 8px;
+  transition: transform 220ms ease, clip-path 220ms ease;
 }
+/* Faixa invisível embaixo: o mouse não "cai" no vão entre a barra e a borda da tela. */
+.music-dock::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--music-bottom, 16px); }
+/* Guardada: desce e mostra só a beirada de cima (14 px), com um tracinho de puxar. */
+.music-dock.music-tucked {
+  transform: translateY(calc(100% + var(--music-tuck, 16px) - 14px));
+  clip-path: inset(0 0 calc(100% - 14px) 0 round var(--radius-lg) var(--radius-lg) 0 0);
+}
+.music-dock.music-tucked:hover, .music-dock.music-tucked:has(:focus-visible), .music-dock.music-peek { transform: none; clip-path: none; }
+.music-tucked .music-bar { position: relative; }
+.music-tucked .music-bar::before {
+  content: ''; position: absolute; top: 4px; left: 50%; width: 48px; height: 3px; margin-left: -24px; border-radius: 2px;
+  background: var(--gold-soft); opacity: 0.85; transition: opacity var(--transition);
+}
+.music-tucked:hover .music-bar::before, .music-peek .music-bar::before { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .music-dock { transition: none; } }
 .music-bar {
   display: flex; align-items: center; gap: 2px; padding: 6px; min-height: 56px;
   background: var(--bg-elevated); border: 1px solid var(--border-gold); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
@@ -1944,10 +1962,16 @@ button.camp-pill { min-height: 36px; }
   animation: music-open 140ms ease;
 }
 .music-head {
-  display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; border-bottom: 1px solid var(--border);
+  position: relative; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; border-bottom: 1px solid var(--border);
   cursor: pointer; transition: background var(--transition);
 }
 .music-head:hover { background: var(--bg-elevated); }
+/* Seta larga para baixo: a aba recolhe o player. */
+.music-collapse {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none;
+  fill: none; stroke: var(--text-muted); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: stroke var(--transition), transform var(--transition);
+}
+.music-head:hover .music-collapse { stroke: var(--gold); transform: translate(-50%, -35%); }
 .music-head:hover strong { color: var(--gold); }
 .music-head-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 28px; border-radius: var(--radius-sm); outline: none; }
 .music-head-title:focus-visible { outline: 2px solid var(--gold-soft); outline-offset: 2px; }
@@ -2035,7 +2059,8 @@ button.camp-pill { min-height: 36px; }
 .music-empty { padding: 18px 12px; text-align: center; font-size: 12.5px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius); }
 
 @media (max-width: 640px) {
-  #root:has(.music-dock) { --music-bottom: calc(var(--bottom-nav-h, 0px) + 8px); }
+  /* Acima da barra de abas: guardada, a beirada fica logo acima dela. */
+  #root:has(.music-dock) { --music-bottom: calc(var(--bottom-nav-h, 0px) + 8px); --music-tuck: 0px; }
   .music-dock { left: 8px; right: 8px; width: auto; max-width: none; }
   .music-vol-inline { display: none; }
   .music-btn { width: 38px; height: 38px; }
@@ -2199,6 +2224,11 @@ button.camp-pill { min-height: 36px; }
 .map-fill { flex: 1 1 0; min-height: 0; }
 .map-fill .map-wrap { flex: 1 1 0; min-height: 200px; }
 .btn-gold-on { background: var(--gold-dim); border-color: var(--border-gold); color: var(--gold-soft); }
+/* Lista de mapas: abrir o combate atual e a bandeira vermelha para encerrar. */
+.btn-combat { background: var(--accent-dim); border-color: rgba(179, 52, 59, 0.55); color: #f2a3a8; font-weight: 600; }
+.btn-combat:hover { border-color: var(--accent); }
+.btn-end-combat { color: var(--error); }
+.btn-end-combat:hover { background: var(--accent-dim); color: #f2a3a8; }
 
 /* Mapa com barra à esquerda: os dois na mesma altura (também na tela cheia). */
 .map-body-plain { display: contents; }
@@ -2227,14 +2257,8 @@ button.camp-pill { min-height: 36px; }
 .trail-modes .map-mode { justify-content: flex-start; gap: 7px; padding: 5px 8px; }
 .trail-search .input { padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
 .trail-list { display: flex; flex-direction: column; gap: 3px; flex: 1 1 0; min-height: 80px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
-.trail-group {
-  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 5px; padding: 6px 2px 3px; background: var(--bg-surface);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
-}
-.trail-group b { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.trail-group .spacer { flex: 1; }
-.trail-mini { padding: 2px 6px; font-size: 11px; text-transform: none; letter-spacing: 0; }
-.trail-sep { height: 1px; margin: 3px 2px; background: var(--border); }
+.trail-mini { justify-content: center; font-size: 11px; }
+.trail-tag { flex-shrink: 0; font-size: 10px; color: var(--text-muted); }
 .trail-row {
   display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 3px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: grab;
 }
@@ -2242,7 +2266,8 @@ button.camp-pill { min-height: 36px; }
 .trail-row:active { cursor: grabbing; }
 .trail-row.armed { border-color: var(--gold); border-style: dashed; background: var(--gold-dim); }
 .trail-row .tbar-main { flex: 1; }
-.trail-row .tbar-name { max-width: none; flex: 1; text-align: left; }
+.trail-row .tbar-name { max-width: none; flex: 1; min-width: 0; text-align: left; font-weight: 500; }
+.trail-row .tbar-main { gap: 7px; padding: 1px 2px; }
 .tbar-list .tok-empty { padding: 6px 2px; }
 .tbar-chip {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; max-width: 190px; padding: 3px 4px 3px 3px;

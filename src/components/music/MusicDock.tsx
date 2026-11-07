@@ -35,10 +35,25 @@ export default function MusicDock() {
 
   useEffect(() => (host.current ? attachPlayer(host.current) : undefined), []);
 
-  const toggle = () => { setOpen((o) => !o); setHelp(false); };
+  const toggle = () => { setOpen((o) => !o); setHelp(false); setPeek(false); };
+
+  // Recolhida, fica guardada embaixo da tela: só a beirada de cima aparece. O mouse em cima
+  // (ou o foco do teclado) a faz subir; no toque, o primeiro toque sobe e o seguinte usa a barra.
+  const [peek, setPeek] = useState(false);
+  const swallow = useRef(false);
+  const dock = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!peek) return;
+    const off = (e: PointerEvent) => { if (!dock.current?.contains(e.target as Node)) setPeek(false); };
+    document.addEventListener('pointerdown', off);
+    return () => document.removeEventListener('pointerdown', off);
+  }, [peek]);
 
   return (
-    <div className={`music-dock${open ? ' music-open' : ''}`}
+    <div ref={dock} className={`music-dock${open ? ' music-open' : ' music-tucked'}${peek ? ' music-peek' : ''}`}
+      onPointerDown={(e) => { if (!open && !peek && e.pointerType !== 'mouse') { setPeek(true); swallow.current = true; } }}
+      onClickCapture={(e) => { if (swallow.current) { swallow.current = false; e.stopPropagation(); e.preventDefault(); } }}
+      onMouseLeave={() => setPeek(false)}
       onKeyDown={(e) => { if (e.key !== 'Escape') return; if (help) setHelp(false); else if (open) setOpen(false); }}>
       {/* O som vem de players do YouTube mantidos fora da tela; o painel mostra só a capa. */}
       <div className="music-engine" aria-hidden><div ref={host} className="music-engine-host" /></div>
@@ -52,6 +67,10 @@ export default function MusicDock() {
               <Music size={16} className="gold" />
               <strong>Trilha sonora</strong>
             </div>
+            {/* Seta larga: clicar nesta aba recolhe o player. */}
+            <svg className="music-collapse" viewBox="0 0 44 12" width="44" height="12" aria-hidden="true">
+              <polyline points="3,3 22,9 41,3" />
+            </svg>
             <button className={`music-btn music-btn-sm${help ? ' on' : ''}`} onClick={() => setHelp((h) => !h)}
               aria-expanded={help} aria-label="Ajuda" title="Ajuda"><Info size={16} /></button>
           </header>

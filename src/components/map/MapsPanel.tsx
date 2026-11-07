@@ -1,6 +1,6 @@
 // Aba Mapas do mestre: a lista de mapas e, ao abrir um, o editor.
 import { useState } from 'react';
-import { Copy, Eye, EyeOff, Map as MapIcon, Moon, Pencil, Plus, Swords, Trash2 } from 'lucide-react';
+import { Copy, Eye, EyeOff, Flag, Map as MapIcon, Moon, Pencil, Plus, Swords, Trash2 } from 'lucide-react';
 import type { TableState, Terrain } from '../../model/types';
 import { MAP_CELL_M, MAP_LIMITS, MOVE_MODES, VISION_MODES } from '../../model/types';
 import { visionOf } from '../../model/map';
@@ -9,7 +9,7 @@ import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
 import MapEditor from './MapEditor';
 import FreeCombat from './FreeCombat';
-import { CombatTracker, TurnBar } from '../combat/CombatTracker';
+import { EndCombatModal } from '../combat/CombatModals';
 
 export default function MapsPanel({ table, openId, setOpenId }: {
   table: TableState; openId: string | null; setOpenId: (id: string | null) => void;
@@ -18,6 +18,7 @@ export default function MapsPanel({ table, openId, setOpenId }: {
   const [creating, setCreating] = useState(false);
   /** Tela do combate sem mapa aberta. */
   const [free, setFree] = useState(false);
+  const [ending, setEnding] = useState(false);
   const maps = Object.values(table.maps).sort((a, b) => a.createdAt - b.createdAt);
   const open = openId ? table.maps[openId] : undefined;
   const combat = table.combat;
@@ -39,26 +40,25 @@ export default function MapsPanel({ table, openId, setOpenId }: {
           <div className="card-title" style={{ marginBottom: 2 }}><MapIcon size={14} /> Mapas</div>
           <div className="tiny muted">Grid de quadrados de {MAP_CELL_M.toLocaleString('pt-BR')} m. Os jogadores só veem o mapa que você mostrar. O combate fica no mapa, na Mesa.</div>
         </div>
-        {!combat && (
+        {combat ? (
+          <>
+            {/* O combate se conduz aberto (no mapa ou no plano); aqui, só abrir ou encerrar. */}
+            <button className="btn btn-sm btn-combat" onClick={() => (combatMap ? setOpenId(combatMap.id) : setFree(true))}
+              title={combatMap ? `Abre o mapa ${combatMap.name}, onde o combate está` : 'Abre o combate sem mapa'}>
+              <Swords size={14} /> Abrir o combate{combat.round ? ` · R${combat.round}` : ''}
+            </button>
+            <button className="btn btn-sm btn-ghost btn-icon btn-end-combat" onClick={() => setEnding(true)} title="Encerrar o combate" aria-label="Encerrar o combate">
+              <Flag size={15} />
+            </button>
+          </>
+        ) : (
           <button className="btn btn-sm" onClick={() => void freeCombat()} title="Abre um combate num plano aberto, sem mapa: os jogadores veem só a fila">
             <Swords size={14} /> Combate sem mapa
           </button>
         )}
         <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus size={14} /> Novo mapa</button>
       </div>
-
-      {combat && (
-        <div className="card col ct-card ct-card-wide">
-          <div className="row-wrap">
-            <div className="card-title grow" style={{ margin: 0 }}><Swords size={14} /> Combate{combatMap ? ` · ${combatMap.name}` : ' sem mapa'}</div>
-            {combatMap
-              ? <button className="btn btn-sm btn-primary" onClick={() => setOpenId(combatMap.id)}><MapIcon size={13} /> Abrir o mapa</button>
-              : <button className="btn btn-sm btn-primary" onClick={() => setFree(true)}><Swords size={13} /> Abrir o combate</button>}
-          </div>
-          <TurnBar table={table} combat={combat} />
-          <CombatTracker table={table} combat={combat} />
-        </div>
-      )}
+      {ending && combat && <EndCombatModal table={table} combat={combat} onClose={() => setEnding(false)} />}
       {maps.length === 0 && (
         <div className="empty col" style={{ alignItems: 'center' }}>
           <p>Nenhum mapa ainda.</p>

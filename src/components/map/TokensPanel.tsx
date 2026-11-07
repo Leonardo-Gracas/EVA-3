@@ -141,11 +141,11 @@ function PlaceChip({ e, armed, onPick, onQuick, rail }: {
         ev.dataTransfer.effectAllowed = 'copy';
       }}>
       <button className="tbar-main" onClick={() => onPick(e)}>
-        <Pic e={e} size={rail ? 26 : 28} />
+        <Pic e={e} size={rail ? 24 : 28} />
         <span className="tbar-name">{e.name}</span>
-        {e.repeat && <span className="tbar-book" aria-label="do livro">∞</span>}
+        {rail && e.ref.kind === 'combatant' && <span className="trail-tag">na fila</span>}
       </button>
-      {onQuick && (
+      {onQuick && !rail && (
         <button className="tbar-quick" onClick={() => onQuick(e)} title="Pôr no piso livre perto do centro" aria-label={`Pôr ${e.name} no mapa`}>
           <Plus size={13} />
         </button>
@@ -164,16 +164,14 @@ export function TokenRail({ items, armedKey, onPick, onQuick, controls, threatsE
   onPick: (it: PlaceItem) => void;
   onQuick?: (it: PlaceItem) => void;
   controls?: React.ReactNode;
-  /** Ao lado do título das ameaças (atalho da fila). */
+  /** No pé da barra (atalho da fila). */
   threatsExtra?: React.ReactNode;
   info: React.ReactNode;
 }) {
   const [q, setQ] = useState('');
-  const match = (e: PlaceItem) => !q.trim() || fold(e.name).includes(fold(q.trim()));
-  const npcs = items.filter((e) => e.side === 'npc' && match(e));
-  const threats = items.filter((e) => e.side === 'threat' && !e.repeat && match(e));
-  const book = items.filter((e) => e.side === 'threat' && e.repeat && match(e));
-  const row = (e: PlaceItem) => <PlaceChip key={e.key} e={e} rail armed={armedKey === e.key} onPick={onPick} onQuick={onQuick} />;
+  const term = fold(q.trim());
+  // NPCs, ameaças da fila e o livro, nessa ordem; a busca é só pelo nome.
+  const shown = items.filter((e) => !term || fold(e.name).includes(term));
 
   return (
     <aside className="trail" aria-label="Regras, NPCs e ameaças">
@@ -186,20 +184,18 @@ export function TokenRail({ items, armedKey, onPick, onQuick, controls, threatsE
       <div className="row" style={{ gap: 4 }}>
         <label className="tok-search trail-search grow">
           <Search size={13} />
-          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" aria-label="Buscar NPC ou ameaça" />
+          <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="NPC ou ameaça"
+            onKeyDown={(e) => { if (e.key === 'Escape') setQ(''); }} aria-label="Buscar NPC ou ameaça pelo nome" />
         </label>
         {!controls && <InfoTip label="Informações">{info}</InfoTip>}
       </div>
       <div className="trail-list" role="list">
-        <div className="trail-group">NPCs <b>{npcs.length}</b></div>
-        {npcs.length === 0 && <div className="tok-empty">{q ? 'Nada com essa busca.' : 'Nenhum NPC para colocar.'}</div>}
-        {npcs.map(row)}
-        <div className="trail-group">Ameaças <b>{threats.length + book.length}</b><span className="spacer" />{threatsExtra}</div>
-        {threats.map(row)}
-        {book.length > 0 && threats.length > 0 && <div className="trail-sep" />}
-        {book.map(row)}
-        {threats.length + book.length === 0 && <div className="tok-empty">{q ? 'Nada com essa busca.' : 'Crie ameaças na aba NPCs e Ameaças.'}</div>}
+        {shown.length === 0 && (
+          <div className="tok-empty">{term ? 'Ninguém com esse nome.' : 'Nenhum NPC ou ameaça. Crie na aba NPCs e Ameaças.'}</div>
+        )}
+        {shown.map((e) => <PlaceChip key={e.key} e={e} rail armed={armedKey === e.key} onPick={onPick} onQuick={onQuick} />)}
       </div>
+      {threatsExtra}
     </aside>
   );
 }
