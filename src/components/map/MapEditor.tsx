@@ -2,18 +2,22 @@
 // redimensionar, com desfazer. Mesa: tokens, alcance e movimento sem limite.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, Armchair, BrickWall, Check, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Footprints, Hand, Hourglass, Link2, Link2Off, Lock, Unlock,
-  MousePointer2, MousePointerClick, Paintbrush, Pencil, Redo2, Scaling, Sun, Swords, Trash2, Undo2, User, Users, Wand2, X,
+  AppWindow, ArrowLeft, Armchair, BrickWall, Check, Cloud, CloudSun, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Flame, Footprints, Hand, Hourglass,
+  Lightbulb, LightbulbOff, Link2, Link2Off, Lock, Moon, MoonStar, MousePointer2, MousePointerClick, Paintbrush, Pencil, Redo2, Scaling, Sun, Sunset,
+  Swords, Trash2, Undo2, Unlock, User, Users, Wand2, X,
 } from 'lucide-react';
 import type {
-  BattleMap, DoorState, EdgeRef, GameAction, MapDoor, MapLayout, MapObject, MapProp, MoveMode, PlaceRef, PropEffect, PropKind, TableState, Terrain,
-  VisionMode,
+  Ambient, BattleMap, DoorState, EdgeRef, GameAction, LightKind, LightMount, MapDoor, MapLayout, MapLight, MapObject, MapProp, MoveMode, PlaceRef,
+  PropEffect, PropKind, TableState, Terrain, VisionMode,
 } from '../../model/types';
-import { DOOR_STATES, MAP_CELL_M, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS, VISION_MODES } from '../../model/types';
-import { cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt, visionOf } from '../../model/map';
+import {
+  AMBIENTS, DOOR_STATES, LIGHT_KINDS, LIGHT_MOUNTS, MAP_CELL_M, MAP_LIMITS, MAX_LIGHT_RADIUS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR,
+  TERRAINS, VISION_MODES,
+} from '../../model/types';
+import { ambientOf, cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt, visionOf } from '../../model/map';
 import { costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point } from '../../rules/grid';
-import { fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, tokenCombatant } from '../../store/maps';
-import { visibleArea } from '../../rules/vision';
+import { fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, sightOptions, tokenCombatant, visibleObjects } from '../../store/maps';
+import { fullLight, sightArea } from '../../rules/vision';
 import { currentCombatant } from '../../store/combat';
 import { hostStore } from '../../net/host';
 import { useAct } from '../act';
@@ -21,7 +25,8 @@ import Modal from '../common/Modal';
 import { SubTabs } from '../room/TopBar';
 import { useUndo } from '../investigation/useUndo';
 import { CombatTracker, TurnBar } from '../combat/CombatTracker';
-import MapCanvas, { PROP_ICONS, type MapFocus, type MapPointer, type PointerKind } from './MapCanvas';
+import MapCanvas, { LIGHT_ICONS, lightIcon, PROP_ICONS, type MapFocus, type MapPointer, type PointerKind } from './MapCanvas';
+import { LightIconsToggle, useLightIcons } from './lightIcons';
 import MapGenerateModal from './MapGenerateModal';
 import { edgesBetween, lineCells, rectCells } from './mapRender';
 import { gmTokens } from './tokens';
@@ -32,11 +37,11 @@ import { PathModeToggle, usePathMode } from './pathMode';
 import type { RouteFn } from './useWalk';
 
 type Mode = 'edit' | 'play';
-type Tool = 'select' | 'terrain' | 'wall' | 'door' | 'prop' | 'erase';
+type Tool = 'select' | 'terrain' | 'wall' | 'door' | 'window' | 'prop' | 'light' | 'sky' | 'erase';
 
 type Stroke =
-  | { kind: 'paint'; cells: Set<number>; last: { x: number; y: number } }
-  | { kind: 'rect'; for: 'terrain' | 'prop'; start: { x: number; y: number }; end: { x: number; y: number } }
+  | { kind: 'paint'; for: 'terrain' | 'sky'; cells: Set<number>; last: { x: number; y: number } }
+  | { kind: 'rect'; for: 'terrain' | 'prop' | 'sky'; start: { x: number; y: number }; end: { x: number; y: number } }
   | { kind: 'walls'; on: boolean; start: EdgeRef; edges: Map<string, EdgeRef> }
   | { kind: 'erase'; cells: Set<number>; edges: Map<string, EdgeRef> }
   | { kind: 'token'; tokenId: string; at: { x: number; y: number } };
@@ -46,11 +51,34 @@ const TOOLS: Array<{ id: Tool; label: string; icon: JSX.Element; hint: string }>
   { id: 'terrain', label: 'Terreno', icon: <Paintbrush size={14} />, hint: 'Pinte os quadrados. Shift ou "Retângulo" pinta uma área.' },
   { id: 'wall', label: 'Parede', icon: <BrickWall size={14} />, hint: 'Clique ou arraste sobre as linhas do grid. Começar numa parede apaga.' },
   { id: 'door', label: 'Porta', icon: <DoorClosed size={14} />, hint: 'Clique numa linha para pôr uma porta. Clique de novo: fechada → aberta → trancada.' },
+  { id: 'window', label: 'Janela', icon: <AppWindow size={14} />, hint: 'Clique numa linha para pôr uma janela: não deixa passar, mas deixa ver e a luz de fora entrar.' },
   { id: 'prop', label: 'Móvel', icon: <Armchair size={14} />, hint: 'Clique num quadrado ou arraste para o tamanho.' },
-  { id: 'erase', label: 'Borracha', icon: <Eraser size={14} />, hint: 'Apaga paredes, portas e móveis por onde passar.' },
+  { id: 'light', label: 'Luz', icon: <Flame size={14} />, hint: 'Clique num quadrado para pôr a fonte de luz escolhida (pode ficar sobre um móvel).' },
+  { id: 'sky', label: 'Céu aberto', icon: <CloudSun size={14} />, hint: 'Pinte os quadrados a céu aberto: recebem a luz de fora. Shift ou "Retângulo" pinta uma área.' },
+  { id: 'erase', label: 'Borracha', icon: <Eraser size={14} />, hint: 'Apaga paredes, portas, janelas, móveis e luzes por onde passar.' },
 ];
 
-const layoutOf = (m: BattleMap): MapLayout => ({ w: m.w, h: m.h, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: m.objects });
+const layoutOf = (m: BattleMap): MapLayout => ({
+  w: m.w, h: m.h, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: m.objects, ...(m.outside ? { outside: m.outside } : {}),
+});
+
+/** Luz de fora: ícones na ordem dos botões. */
+const AMBIENT_ICONS: Record<Ambient, JSX.Element> = {
+  geral: <Lightbulb size={13} />, dia: <Sun size={13} />, nublado: <Cloud size={13} />, crepusculo: <Sunset size={13} />,
+  luar: <Moon size={13} />, breu: <MoonStar size={13} />,
+};
+
+const SIDE_LABEL: Record<NonNullable<MapLight['side']>, string> = { n: 'Cima', s: 'Baixo', w: 'Esquerda', e: 'Direita' };
+
+/** A parede mais perto do quadrado (para pendurar a luz). */
+function wallSide(m: BattleMap, x: number, y: number): MapLight['side'] {
+  const sides: Array<[NonNullable<MapLight['side']>, EdgeRef]> = [
+    ['n', { o: 'h', x, y }], ['w', { o: 'v', x, y }], ['e', { o: 'v', x: x + 1, y }], ['s', { o: 'h', x, y: y + 1 }],
+  ];
+  return sides.find(([, e]) => hasWall(m, e))?.[0];
+}
+
+const toLightString = (lm: Uint8Array) => { let s = ''; for (const v of lm) s += v; return s; };
 
 const metersLabel = (sq: number) => `${sq} quadrado${sq === 1 ? '' : 's'} · ${metersFor(sq).toLocaleString('pt-BR')} m`;
 
@@ -63,6 +91,13 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   const [terrain, setTerrain] = useState<Terrain>('floor');
   const [rectMode, setRectMode] = useState(false);
   const [propKind, setPropKind] = useState<PropKind>('mesa');
+  const [lightKind, setLightKind] = useState<LightKind>('vela');
+  const [lightMount, setLightMount] = useState<LightMount>(LIGHT_KINDS.vela.mount);
+  /** Céu aberto: pintar marca (true) ou desmarca. */
+  const [skyOn, setSkyOn] = useState(true);
+  const [lightIcons, setLightIcons] = useLightIcons();
+  /** Mesa: luz com o balão de acender/apagar aberto. */
+  const [lightPop, setLightPop] = useState<string | null>(null);
   const [selObj, setSelObj] = useState<string | null>(null);
   const [selTok, setSelTok] = useState<string | null>(null);
   const [hover, setHover] = useState<{ cell: { x: number; y: number } | null; edge: EdgeRef | null } | null>(null);
@@ -167,11 +202,25 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       const ch = t.ref.kind === 'character' ? table.characters[t.ref.id] : undefined;
       return ch && ch.kind === 'pc' && ch.status === 'approved' && !t.hidden ? [{ x: t.x, y: t.y }] : [];
     });
-    const { seen } = visibleArea(playerGrid(map), map.cells, eyes);
+    const { seen } = sightArea(playerGrid(map), map.cells, eyes, sightOptions(table, map, visibleObjects(map)));
     const out: number[] = [];
     for (let i = 0; i < map.w * map.h; i++) if (!seen[i] && map.cells[i] !== TERRAIN_CHAR.void) out.push(i);
     return out;
-  }, [map, table.characters, mode]);
+  }, [map, table, mode]);
+  // A luz do mapa inteiro, de leve (o mestre enxerga tudo): na Mesa com visão escura e ao mexer com luz no editor.
+  const lightTools = tool === 'light' || tool === 'window' || tool === 'sky';
+  const lightView = useMemo(() => {
+    const show = mode === 'play' ? visionOf(map) !== 'open' : lightTools;
+    if (!show || ambientOf(map) === 'geral') return undefined;
+    const all = Object.values(map.objects);
+    return toLightString(fullLight(fullGrid(map), map.cells, sightOptions(table, map, all)));
+  }, [map, table, mode, lightTools]);
+  const sky = useMemo(() => {
+    if (mode !== 'edit' || !map.outside) return undefined;
+    const out: number[] = [];
+    for (let i = 0; i < map.w * map.h; i++) if (map.outside[i] === '1') out.push(i);
+    return out;
+  }, [map.outside, map.w, map.h, mode]);
 
   // Quem está no mapa e ainda não está na fila: fichas e criaturas soltas.
   const missing = Object.values(map.tokens).filter((t) => (t.ref.kind === 'creature' && !!t.threat)
@@ -182,7 +231,8 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   useEffect(() => { if (selObj && !map.objects[selObj]) setSelObj(null); }, [map.objects, selObj]);
   useEffect(() => { if (selTok && !map.tokens[selTok]) setSelTok(null); }, [map.tokens, selTok]);
   useEffect(() => { if (doorPop && map.objects[doorPop]?.kind !== 'door') setDoorPop(null); }, [map.objects, doorPop]);
-  useEffect(() => { if (mode !== 'play') { setArmed(null); setDoorPop(null); setDraft(null); } }, [mode]);
+  useEffect(() => { if (lightPop && map.objects[lightPop]?.kind !== 'light') setLightPop(null); }, [map.objects, lightPop]);
+  useEffect(() => { if (mode !== 'play') { setArmed(null); setDoorPop(null); setLightPop(null); setDraft(null); } }, [mode]);
   useEffect(() => { if (pathMode === 'auto') setDraft(null); }, [pathMode]);
   // O trajeto só vale para o token escolhido, a partir de onde ele está.
   useEffect(() => {
@@ -219,7 +269,9 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
 
   const tokenAt = (x: number, y: number) => Object.values(map.tokens).find((t) => t.x === x && t.y === y);
   const propAt = (x: number, y: number) => objects.find((o): o is MapProp => o.kind === 'prop' && x >= o.x && y >= o.y && x < o.x + o.w && y < o.y + o.h);
-  const doorAt = (e: EdgeRef | null) => (e ? objects.find((o) => o.kind === 'door' && sameEdge(o.edge, e)) : undefined);
+  const doorAt = (e: EdgeRef | null) => (e ? objects.find((o): o is MapDoor => o.kind === 'door' && sameEdge(o.edge, e)) : undefined);
+  const windowAt = (e: EdgeRef | null) => (e ? objects.find((o) => o.kind === 'window' && sameEdge(o.edge, e)) : undefined);
+  const lightAt = (x: number, y: number) => objects.find((o): o is MapLight => o.kind === 'light' && o.x === x && o.y === y);
 
   const moveToken = async (tokenId: string, x: number, y: number, path?: Point[]) => {
     const t = map.tokens[tokenId];
@@ -246,12 +298,14 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   const commit = async (s: Stroke) => {
     switch (s.kind) {
       case 'paint': {
+        if (s.for === 'sky') { await paintSky([...s.cells]); return; }
         const ch = TERRAIN_CHAR[terrain];
         const cells = [...s.cells].filter((i) => map.cells[i] !== ch);
         if (cells.length) await edit(`Pintar ${TERRAINS[terrain].label.toLowerCase()}`, [{ type: 'map/paint', mapId: map.id, terrain, cells }]);
         return;
       }
       case 'rect': {
+        if (s.for === 'sky') { await paintSky(rectCells(s.start.x, s.start.y, s.end.x, s.end.y, map.w, map.h)); return; }
         if (s.for === 'terrain') {
           const ch = TERRAIN_CHAR[terrain];
           const cells = rectCells(s.start.x, s.start.y, s.end.x, s.end.y, map.w, map.h).filter((i) => map.cells[i] !== ch);
@@ -274,10 +328,13 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       case 'erase': {
         const props = new Set<string>();
         for (const i of s.cells) {
-          const p = propAt(i % map.w, Math.floor(i / map.w));
+          const x = i % map.w;
+          const y = Math.floor(i / map.w);
+          // A luz sai antes do móvel embaixo dela.
+          const p = lightAt(x, y) ?? propAt(x, y);
           if (p) props.add(p.id);
         }
-        const edges = [...s.edges.values()].filter((e) => hasWall(map, e) || doorAt(e));
+        const edges = [...s.edges.values()].filter((e) => hasWall(map, e) || doorAt(e) || windowAt(e));
         const actions: GameAction[] = [];
         if (props.size) actions.push({ type: 'map/objectRemove', mapId: map.id, objectIds: [...props] });
         if (edges.length) actions.push({ type: 'map/walls', mapId: map.id, edges, on: false });
@@ -287,6 +344,24 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       case 'token':
         await moveToken(s.tokenId, s.at.x, s.at.y);
     }
+  };
+
+  const paintSky = async (cells: number[]) => {
+    const want = skyOn ? '1' : '0';
+    const todo = cells.filter((i) => (map.outside?.[i] ?? '0') !== want && map.cells[i] !== TERRAIN_CHAR.void);
+    if (todo.length) await edit(skyOn ? 'Marcar céu aberto' : 'Cobrir', [{ type: 'map/outside', mapId: map.id, cells: todo, on: skyOn }]);
+  };
+
+  const placeLight = async (x: number, y: number) => {
+    const side = lightMount === 'parede' ? wallSide(map, x, y) : undefined;
+    const id = await edit(`Pôr ${LIGHT_KINDS[lightKind].label.toLowerCase()}`, [{
+      type: 'map/objectUpsert', mapId: map.id,
+      object: {
+        id: '', kind: 'light', light: lightKind, label: '', x, y, radius: LIGHT_KINDS[lightKind].radius, mount: lightMount,
+        ...(side ? { side } : {}), lit: true, hidden: false,
+      },
+    }]);
+    if (id) setSelObj(id);
   };
 
   const onPointer = (kind: PointerKind, p: MapPointer): boolean | void => {
@@ -341,11 +416,15 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
         }
         // Porta: balão para abrir, fechar, trancar ou destrancar.
         const d = doorAt(edge);
-        if (d) { setDoorPop(d.id === doorPop ? null : d.id); return; }
+        if (d) { setDoorPop(d.id === doorPop ? null : d.id); setLightPop(null); return; }
         setDoorPop(null);
         if (!cell) return;
         const t = tokenAt(cell.x, cell.y);
         if (t) return;
+        // Sem token escolhido, tocar numa luz abre o balão de acender ou apagar.
+        const lt = !selToken ? lightAt(cell.x, cell.y) : undefined;
+        if (lt) { setLightPop(lt.id === lightPop ? null : lt.id); return; }
+        setLightPop(null);
         if (!selToken) return;
         if (pathMode === 'exact') {
           const d = draftRef.current;
@@ -360,7 +439,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     }
 
     // Editar
-    const wantsEdge = tool === 'wall' || tool === 'door' || tool === 'erase' || tool === 'select';
+    const wantsEdge = tool === 'wall' || tool === 'door' || tool === 'window' || tool === 'erase' || tool === 'select';
     if (kind === 'move') {
       setHover({ cell: wantsEdge && edge ? null : cell, edge: wantsEdge ? edge : null });
       if (!s) return;
@@ -384,9 +463,9 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       return;
     }
     if (kind === 'down') {
-      if (tool === 'terrain' && cell) {
-        if (rectMode || p.e.shiftKey) setStroke({ kind: 'rect', for: 'terrain', start: cell, end: cell });
-        else setStroke({ kind: 'paint', cells: new Set([cell.y * map.w + cell.x]), last: cell });
+      if ((tool === 'terrain' || tool === 'sky') && cell) {
+        if (rectMode || p.e.shiftKey) setStroke({ kind: 'rect', for: tool, start: cell, end: cell });
+        else setStroke({ kind: 'paint', for: tool, cells: new Set([cell.y * map.w + cell.x]), last: cell });
         return true;
       }
       if (tool === 'prop' && cell) {
@@ -427,10 +506,26 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
         }
         return;
       }
+      if (tool === 'window' && edge) {
+        const wnd = windowAt(edge);
+        if (wnd) { setSelObj(wnd.id); return; }
+        void edit('Pôr janela', [{ type: 'map/objectUpsert', mapId: map.id, object: { id: '', kind: 'window', edge, hidden: false } }])
+          .then((id) => { if (id) setSelObj(id); });
+        return;
+      }
+      if (tool === 'light' && cell) {
+        const lt = lightAt(cell.x, cell.y);
+        if (lt) setSelObj(lt.id);
+        else void placeLight(cell.x, cell.y);
+        return;
+      }
       if (tool === 'select') {
-        const d = doorAt(edge);
+        const e = doorAt(edge) ?? windowAt(edge);
+        const lt = cell ? lightAt(cell.x, cell.y) : undefined;
         const pr = cell ? propAt(cell.x, cell.y) : undefined;
-        setSelObj(d?.id ?? pr?.id ?? null);
+        // Luz sobre um móvel: o primeiro toque pega a luz, o segundo, o móvel.
+        const inCell = lt && selObj === lt.id && pr ? pr : lt ?? pr;
+        setSelObj(e?.id ?? inCell?.id ?? null);
       }
     }
   };
@@ -450,7 +545,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
         if (e.key === 'Enter') { e.preventDefault(); sendDraft(); return; }
         if (e.key === 'Backspace') { e.preventDefault(); if (d.length > 1) setDraft(d.slice(0, -1)); return; }
       }
-      if (e.key === 'Escape') { setSelObj(null); setSelTok(null); setArmed(null); setDoorPop(null); return; }
+      if (e.key === 'Escape') { setSelObj(null); setSelTok(null); setArmed(null); setDoorPop(null); setLightPop(null); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selObj && mode === 'edit') {
         e.preventDefault();
         void edit('Apagar objeto', [{ type: 'map/objectRemove', mapId: map.id, objectIds: [selObj] }]);
@@ -463,16 +558,17 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   // Prévia do traço em andamento.
   const preview = (() => {
     if (!stroke) return null;
-    if (stroke.kind === 'paint') return { cells: [...stroke.cells], erase: terrain === 'void' };
+    const erasing = stroke.kind !== 'erase' && stroke.kind !== 'walls' && stroke.kind !== 'token' && stroke.for === 'sky' ? !skyOn : terrain === 'void';
+    if (stroke.kind === 'paint') return { cells: [...stroke.cells], erase: erasing };
     if (stroke.kind === 'rect') {
-      if (stroke.for === 'terrain') return { cells: rectCells(stroke.start.x, stroke.start.y, stroke.end.x, stroke.end.y, map.w, map.h), erase: terrain === 'void' };
+      if (stroke.for !== 'prop') return { cells: rectCells(stroke.start.x, stroke.start.y, stroke.end.x, stroke.end.y, map.w, map.h), erase: erasing };
       return { rect: propRect(stroke.start, stroke.end) };
     }
     if (stroke.kind === 'walls') return { edges: [...stroke.edges.values()], erase: !stroke.on };
     if (stroke.kind === 'erase') {
       const cells: number[] = [];
       for (const i of stroke.cells) {
-        const pr = propAt(i % map.w, Math.floor(i / map.w));
+        const pr = lightAt(i % map.w, Math.floor(i / map.w)) ?? propAt(i % map.w, Math.floor(i / map.w));
         if (pr) for (const [x, y] of objectCells(pr)) cells.push(y * map.w + x);
       }
       return { cells, edges: [...stroke.edges.values()], erase: true };
@@ -498,20 +594,28 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     : tokens;
 
   const popDoor = doorPop ? map.objects[doorPop] : undefined;
+  const popLight = lightPop ? map.objects[lightPop] : undefined;
   const popover = mode === 'play' && popDoor?.kind === 'door' ? {
     x: popDoor.edge.o === 'h' ? popDoor.edge.x + 0.5 : popDoor.edge.x,
     y: popDoor.edge.o === 'h' ? popDoor.edge.y : popDoor.edge.y + 0.5,
     content: <DoorActions door={popDoor} onClose={() => setDoorPop(null)}
       onState={(state) => act({ type: 'map/door', mapId: map.id, objectId: popDoor.id, state }, DOOR_DONE[state])} />,
+  } : mode === 'play' && popLight?.kind === 'light' ? {
+    x: popLight.x + 0.5,
+    y: popLight.y,
+    content: <LightActions light={popLight} onClose={() => setLightPop(null)}
+      onToggle={() => act({ type: 'map/objectUpsert', mapId: map.id, object: { ...popLight, lit: !popLight.lit } }, popLight.lit ? 'Luz apagada.' : 'Luz acesa.')} />,
   } : null;
 
   const playHint = pathMode === 'exact'
     ? 'Escolha um token e clique quadrado a quadrado (ou arraste a partir dele). Clique no fim, ou Enter, para andar.'
-    : 'Toque num token para ver o alcance; arraste ou toque no destino para mover. Toque numa porta para abrir ou trancar.';
+    : 'Toque num token para ver o alcance; arraste ou toque no destino para mover. Toque numa porta para abrir ou trancar, e numa luz (sem token escolhido) para acender ou apagar.';
   const steps = draft ? draft.length - 1 : 0;
+  const hasLights = objects.some((o) => o.kind === 'light');
   const playDock = (
     <>
       <PathModeToggle mode={pathMode} onChange={setPathMode} />
+      {hasLights && <LightIconsToggle on={lightIcons} onChange={setLightIcons} />}
       {armed ? (
         <span className="tok-hint">
           <MousePointerClick size={14} />
@@ -559,6 +663,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
         <>
           <span><b>Locomoção · {MOVE_MODES[map.mode].label}:</b> {MOVE_MODES[map.mode].hint}</span>
           <span><b>Visão · {VISION_MODES[vision].label}:</b> {VISION_MODES[vision].hint}{vision !== 'open' ? ' Na Mesa, a sombra marca o que nenhum jogador vê.' : ''}</span>
+          {vision !== 'open' && <span><b>Luz de fora · {AMBIENTS[ambientOf(map)].label}:</b> {AMBIENTS[ambientOf(map)].hint}</span>}
           {map.mode === 'turno' && !linked && <span className="warn">Turnos sem combate neste mapa: todo movimento de jogador vira pedido.</span>}
           <span><b>NPCs e ameaças:</b> busque pelo nome; arraste até o quadrado, ou clique e depois clique no mapa.</span>
           <span><b>Ameaça do livro:</b> cada vez que coloca, entra uma nova{combat && linked ? ', no fim da fila' : ', solta no mapa'}.</span>
@@ -611,6 +716,9 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             grid={map} objects={objects} tokens={shownTokens} fitKey={map.id}
             reach={guide?.cells} reachTone={guide?.turn ? 'free' : 'request'}
             fog={fog}
+            light={lightView} lightSoft
+            showLights={mode === 'edit' || lightIcons}
+            sky={sky}
             path={path?.cells} pathLabel={pathLabel}
             ghosts={mode === 'play' ? ghosts : undefined}
             preview={preview}
@@ -619,7 +727,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             hoverCell={hover?.cell && !(mode === 'play' && path) ? hover.cell : null}
             hoverEdge={mode === 'edit' ? hover?.edge ?? null : null}
             showHidden
-            touch={mode === 'edit' && tool !== 'select' && tool !== 'door' ? 'none' : 'pan'}
+            touch={mode === 'edit' && tool !== 'select' && tool !== 'door' && tool !== 'window' && tool !== 'light' ? 'none' : 'pan'}
             onPointer={onPointer}
             route={route}
             onDropToken={mode === 'play' ? onDropToken : undefined}
@@ -663,6 +771,49 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
                     })}
                   </div>
                   <div className="tiny muted">Efeito padrão: {PROP_EFFECTS[PROP_KINDS[propKind].effect].toLowerCase()}. Dá para trocar depois de pôr.</div>
+                </div>
+              )}
+              {tool === 'light' && (
+                <div className="card col">
+                  <div className="card-title">Fonte de luz</div>
+                  <div className="map-swatches">
+                    {(Object.keys(LIGHT_KINDS) as LightKind[]).map((k) => {
+                      const Icon = LIGHT_ICONS[k];
+                      return (
+                        <button key={k} className={`map-swatch${lightKind === k ? ' on' : ''}`}
+                          onClick={() => { setLightKind(k); setLightMount(LIGHT_KINDS[k].mount); }}
+                          title={`${LIGHT_KINDS[k].label}: ilumina ${metersLabel(LIGHT_KINDS[k].radius)}`}>
+                          <Icon size={14} />{LIGHT_KINDS[k].label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="field">
+                    <span className="label">Onde fica</span>
+                    <div className="seg">
+                      {(Object.keys(LIGHT_MOUNTS) as LightMount[]).map((mt) => (
+                        <button key={mt} className={lightMount === mt ? 'on-inherit' : ''} onClick={() => setLightMount(mt)}>{LIGHT_MOUNTS[mt]}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="tiny muted">
+                    Ilumina {metersLabel(LIGHT_KINDS[lightKind].radius)} em volta, até onde houver linha reta (parede e porta fechada tapam).
+                    Na parede ou no teto, aparece um ícone discreto de luz suspensa.
+                  </div>
+                </div>
+              )}
+              {tool === 'sky' && (
+                <div className="card col">
+                  <div className="card-title">Céu aberto</div>
+                  <div className="seg">
+                    <button className={skyOn ? 'on-inherit' : ''} onClick={() => setSkyOn(true)}><CloudSun size={13} /> Céu aberto</button>
+                    <button className={!skyOn ? 'on-inherit' : ''} onClick={() => setSkyOn(false)}>Coberto</button>
+                  </div>
+                  <label className="row small"><input type="checkbox" checked={rectMode} onChange={(e) => setRectMode(e.target.checked)} /> Retângulo (ou segure Shift)</label>
+                  <div className="tiny muted">
+                    A céu aberto, vale a luz de fora (dia, nublado, luar...). As janelas levam essa luz para o lado coberto.
+                    A luz de fora se escolhe no modo Mesa.
+                  </div>
                 </div>
               )}
               {selected && <ObjectCard map={map} o={selected} onEdit={edit} onClose={() => setSelObj(null)} />}
@@ -750,6 +901,7 @@ const VISION_ICONS: Record<VisionMode, JSX.Element> = {
 function MapModes({ map }: { map: BattleMap }) {
   const { act } = useAct();
   const vision = visionOf(map);
+  const ambient = ambientOf(map);
   return (
     <>
       <div className="trail-label">Locomoção</div>
@@ -770,6 +922,19 @@ function MapModes({ map }: { map: BattleMap }) {
           </button>
         ))}
       </div>
+      {vision !== 'open' && (
+        <>
+          <div className="trail-label">Luz de fora</div>
+          <div className="trail-modes" role="radiogroup" aria-label="Luz de fora">
+            {(Object.keys(AMBIENTS) as Ambient[]).map((a) => (
+              <button key={a} role="radio" aria-checked={ambient === a} className={`map-mode${ambient === a ? ' on' : ''}`}
+                onClick={() => act({ type: 'map/update', mapId: map.id, ambient: a })} title={AMBIENTS[a].hint}>
+                {AMBIENT_ICONS[a]}{AMBIENTS[a].label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -781,17 +946,69 @@ function ObjectCard({ map, o, onEdit, onClose }: {
 }) {
   const save = (patch: Partial<MapObject>) => onEdit('Editar objeto', [{ type: 'map/objectUpsert', mapId: map.id, object: { ...o, ...patch } as MapObject }]);
   const remove = () => onEdit('Apagar objeto', [{ type: 'map/objectRemove', mapId: map.id, objectIds: [o.id] }]);
-  const [label, setLabel] = useState(o.kind === 'prop' ? o.label : '');
-  useEffect(() => { if (o.kind === 'prop') setLabel(o.label); }, [o]);
+  const [label, setLabel] = useState(o.kind === 'prop' || o.kind === 'light' ? o.label : '');
+  useEffect(() => { if (o.kind === 'prop' || o.kind === 'light') setLabel(o.label); }, [o]);
+  const title = o.kind === 'door' ? 'Porta' : o.kind === 'window' ? 'Janela' : o.kind === 'light' ? LIGHT_KINDS[o.light].label : PROP_KINDS[o.prop].label;
 
   return (
     <div className="card col">
       <div className="row">
-        <div className="card-title" style={{ margin: 0 }}>{o.kind === 'door' ? 'Porta' : PROP_KINDS[o.prop].label}</div>
+        <div className="card-title" style={{ margin: 0 }}>{title}</div>
         <span className="spacer" />
         <button className="btn btn-sm btn-ghost btn-icon" onClick={onClose} aria-label="Fechar"><X size={14} /></button>
       </div>
-      {o.kind === 'door' ? (
+      {o.kind === 'window' ? (
+        <>
+          <div className="tiny muted">
+            Não deixa passar, mas deixa ver e a luz de fora entrar (do lado a céu aberto para o coberto).
+            Linha {o.edge.o === 'h' ? 'horizontal' : 'vertical'} em {cellLabel(o.edge.x, o.edge.y)}.
+          </div>
+          <label className="row small"><input type="checkbox" checked={o.hidden} onChange={(e) => save({ hidden: e.target.checked })} /> Oculta (para os jogadores é parede)</label>
+        </>
+      ) : o.kind === 'light' ? (
+        <>
+          <div className="field">
+            <label className="label">Tipo</label>
+            <select className="input" value={o.light} onChange={(e) => {
+              const light = e.target.value as LightKind;
+              void save({ light, radius: LIGHT_KINDS[light].radius });
+            }}>
+              {(Object.keys(LIGHT_KINDS) as LightKind[]).map((k) => <option key={k} value={k}>{LIGHT_KINDS[k].label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label className="label">Rótulo</label>
+            <input className="input" value={label} maxLength={40} placeholder={LIGHT_KINDS[o.light].label}
+              onChange={(e) => setLabel(e.target.value)} onBlur={() => { if (label !== o.label) void save({ label }); }} />
+          </div>
+          <div className="field">
+            <span className="label">Onde fica</span>
+            <div className="seg">
+              {(Object.keys(LIGHT_MOUNTS) as LightMount[]).map((mt) => (
+                <button key={mt} className={o.mount === mt ? 'on-inherit' : ''}
+                  onClick={() => save({ mount: mt, side: mt === 'parede' ? o.side ?? wallSide(map, o.x, o.y) : undefined })}>{LIGHT_MOUNTS[mt]}</button>
+              ))}
+            </div>
+          </div>
+          {o.mount === 'parede' && (
+            <div className="field">
+              <span className="label">Parede</span>
+              <div className="seg">
+                {(Object.keys(SIDE_LABEL) as Array<keyof typeof SIDE_LABEL>).map((sd) => (
+                  <button key={sd} className={o.side === sd ? 'on-inherit' : ''} onClick={() => save({ side: sd })}>{SIDE_LABEL[sd]}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <label className="field small secondary">Alcance (quadrados)
+            <input className="input mono" type="number" min={1} max={MAX_LIGHT_RADIUS} style={{ width: 80 }} value={o.radius}
+              onChange={(e) => { const v = Math.max(1, Math.min(MAX_LIGHT_RADIUS, +e.target.value || 1)); void save({ radius: v }); }} />
+          </label>
+          <div className="tiny muted">{metersLabel(o.radius)} em volta. Parede e porta fechada tapam a luz; janela e porta aberta deixam passar.</div>
+          <label className="row small"><input type="checkbox" checked={o.lit} onChange={(e) => save({ lit: e.target.checked })} /> Acesa</label>
+          <label className="row small"><input type="checkbox" checked={o.hidden} onChange={(e) => save({ hidden: e.target.checked })} /> Oculta (os jogadores veem a luz, não o objeto)</label>
+        </>
+      ) : o.kind === 'door' ? (
         <>
           <div className="seg">
             {(Object.keys(DOOR_STATES) as DoorState[]).map((st) => (
@@ -851,11 +1068,34 @@ function Legend() {
       ))}
       <span>Diagonal custa 1, 2, 1, 2... e não corta canto de parede.</span>
       <span>Porta aberta é livre; fechada custa como terreno difícil (só em linha reta); trancada bloqueia.</span>
+      <span>Janela não deixa passar, mas deixa ver e a luz entrar. Na visão escura, cada um vê o que está iluminado e em linha reta; no escuro, só os vizinhos.</span>
     </div>
   );
 }
 
-const DOOR_DONE: Record<DoorState, string> = { open: 'Porta aberta.', closed: 'Porta fechada.', locked: 'Porta trancada.' };
+/** Balão da luz no modo Mesa: acender ou apagar. */
+function LightActions({ light, onToggle, onClose }: { light: MapLight; onToggle: () => unknown; onClose: () => void }) {
+  const Icon = lightIcon(light);
+  return (
+    <>
+      <div className="map-popover-head">
+        <Icon size={14} />
+        <span className="grow">
+          <strong>{light.label || LIGHT_KINDS[light.light].label}</strong>{light.hidden ? ' · oculta' : ''}<br />
+          {light.lit ? `acesa, ilumina ${metersLabel(light.radius)}` : 'apagada'}
+        </span>
+        <button className="btn btn-sm btn-ghost btn-icon" onClick={onClose} aria-label="Fechar"><X size={13} /></button>
+      </div>
+      <div className="map-popover-actions">
+        <button className="btn btn-sm btn-primary" onClick={() => void onToggle()}>
+          {light.lit ? <><LightbulbOff size={13} /> Apagar</> : <><Lightbulb size={13} /> Acender</>}
+        </button>
+      </div>
+    </>
+  );
+}
+
+const DOOR_DONE: Record<DoorState, string> ={ open: 'Porta aberta.', closed: 'Porta fechada.', locked: 'Porta trancada.' };
 
 /** Balão da porta no modo Mesa: o estado e as ações que fazem sentido a partir dele. */
 function DoorActions({ door, onState, onClose }: { door: MapDoor; onState: (s: DoorState) => unknown; onClose: () => void }) {

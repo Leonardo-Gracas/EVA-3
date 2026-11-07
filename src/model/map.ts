@@ -1,6 +1,6 @@
 // Leitura e escrita das strings do mapa: terreno por quadrado e paredes nas linhas.
-import type { BattleMap, EdgeRef, MapLayout, MapObject, Terrain, VisionMode } from './types';
-import { MAP_LIMITS, TERRAIN_CHAR } from './types';
+import type { Ambient, BattleMap, EdgeRef, MapLayout, MapObject, Terrain, VisionMode } from './types';
+import { AMBIENTS, MAP_LIMITS, TERRAIN_CHAR } from './types';
 
 const CHAR_TERRAIN: Record<string, Terrain> = Object.fromEntries(
   Object.entries(TERRAIN_CHAR).map(([t, ch]) => [ch, t as Terrain]),
@@ -85,8 +85,9 @@ export function cellLabel(x: number, y: number): string {
   return `${col}${y + 1}`;
 }
 
-/** Quadrados que o objeto ocupa (porta: nenhum). */
+/** Quadrados que o objeto ocupa (porta e janela: nenhum; luz: o dela). */
 export function objectCells(o: MapObject): Array<[number, number]> {
+  if (o.kind === 'light') return [[o.x, o.y]];
   if (o.kind !== 'prop') return [];
   const out: Array<[number, number]> = [];
   for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) out.push([x, y]);
@@ -111,6 +112,11 @@ export function fixMap(m: BattleMap): BattleMap {
   m.mode ??= 'livre';
   m.vision = visionOf(m);
   delete m.dark;
+  m.ambient = ambientOf(m);
+  if (m.outside !== undefined) {
+    m.outside = fit(m.outside, m.w * m.h, '0', (c) => c === '0' || c === '1');
+    if (!m.outside.includes('1')) delete m.outside;
+  }
   return m;
 }
 
@@ -118,3 +124,11 @@ export function fixMap(m: BattleMap): BattleMap {
 export function visionOf(m: Pick<BattleMap, 'vision' | 'dark'>): VisionMode {
   return m.vision ?? (m.dark ? 'individual' : 'open');
 }
+
+/** Luz de fora (mapas antigos: tudo iluminado). */
+export function ambientOf(m: Pick<BattleMap, 'ambient'>): Ambient {
+  return m.ambient && m.ambient in AMBIENTS ? m.ambient : 'geral';
+}
+
+/** O quadrado está a céu aberto? */
+export const isOutside = (m: Pick<BattleMap, 'outside'>, i: number) => m.outside?.[i] === '1';

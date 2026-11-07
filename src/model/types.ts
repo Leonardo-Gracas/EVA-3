@@ -98,9 +98,14 @@ export interface ItemEffects {
   def: number;
   rdPhysical: number;
   rdMagic: number;
+  /** Ilumina em volta de quem usa: raio em quadrados (tocha, lampião). Ausente = 0. */
+  light?: number;
 }
 
 export const NO_EFFECTS: ItemEffects = { def: 0, rdPhysical: 0, rdMagic: 0 };
+
+/** Maior raio de luz de um item, em quadrados. */
+export const MAX_ITEM_LIGHT = 20;
 
 /** Durabilidade padrão sugerida ao criar um item de cada tipo. */
 export const DEFAULT_DURABILITY: Record<ItemType, Durability> = {
@@ -338,9 +343,55 @@ export type VisionMode = 'open' | 'individual' | 'shared';
 /** Na ordem dos botões. */
 export const VISION_MODES: Record<VisionMode, { label: string; hint: string }> = {
   open: { label: 'Aberta', hint: 'O mapa todo.' },
-  individual: { label: 'Individual', hint: 'Só onde o próprio personagem chega andando. Porta fechada tapa a vista.' },
+  individual: { label: 'Individual', hint: 'O que o próprio personagem vê: quadrados iluminados em linha reta de visão. No escuro, só os vizinhos.' },
   shared: { label: 'Compartilhada', hint: 'A visão individual de todos os jogadores, somada e compartilhada.' },
 };
+
+/** Luz de fora: entra pelas janelas e ilumina os quadrados a céu aberto. */
+export type Ambient = 'geral' | 'dia' | 'nublado' | 'crepusculo' | 'luar' | 'breu';
+
+export interface AmbientInfo {
+  label: string;
+  hint: string;
+  /** Intensidade (0 a 4) nos quadrados a céu aberto. */
+  outside: number;
+  /** Raio, em quadrados, da luz que cada janela joga para dentro. */
+  window: number;
+  /** Céu aberto só se vê até esta distância de quem olha (noite de luar). */
+  near?: number;
+}
+
+/** Na ordem dos botões. */
+export const AMBIENTS: Record<Ambient, AmbientInfo> = {
+  geral: { label: 'Tudo iluminado', hint: 'O mapa inteiro está aceso: vale só a linha de visão.', outside: 4, window: 0 },
+  dia: { label: 'Dia', hint: 'Céu aberto claro; as janelas iluminam até 6 quadrados para dentro.', outside: 4, window: 6 },
+  nublado: { label: 'Nublado', hint: 'Céu aberto claro; as janelas iluminam até 4 quadrados.', outside: 3, window: 4 },
+  crepusculo: { label: 'Crepúsculo', hint: 'Céu aberto à meia-luz; as janelas iluminam até 2 quadrados.', outside: 2, window: 2 },
+  luar: { label: 'Luar', hint: 'Céu aberto só se vê até 6 quadrados; as janelas iluminam o quadrado junto delas.', outside: 1, window: 1, near: 6 },
+  breu: { label: 'Breu', hint: 'Noite fechada: lá fora é escuro e as janelas não iluminam.', outside: 0, window: 0 },
+};
+
+export type LightKind = 'vela' | 'candelabro' | 'lampiao' | 'tocha' | 'lustre' | 'lareira' | 'braseiro' | 'fogueira' | 'outra';
+
+/** Onde a luz está: sobre um móvel, presa na parede, pendurada no teto ou no chão. */
+export type LightMount = 'mesa' | 'parede' | 'teto' | 'chao';
+
+export const LIGHT_MOUNTS: Record<LightMount, string> = { mesa: 'Sobre móvel', parede: 'Na parede', teto: 'No teto', chao: 'No chão' };
+
+/** Raio padrão em quadrados (1 quadrado = 1,5 m). */
+export const LIGHT_KINDS: Record<LightKind, { label: string; radius: number; mount: LightMount }> = {
+  vela: { label: 'Vela', radius: 2, mount: 'mesa' },
+  candelabro: { label: 'Candelabro', radius: 3, mount: 'mesa' },
+  lampiao: { label: 'Lampião', radius: 4, mount: 'parede' },
+  tocha: { label: 'Tocha', radius: 5, mount: 'parede' },
+  lustre: { label: 'Lustre', radius: 6, mount: 'teto' },
+  lareira: { label: 'Lareira', radius: 5, mount: 'chao' },
+  braseiro: { label: 'Braseiro', radius: 4, mount: 'chao' },
+  fogueira: { label: 'Fogueira', radius: 7, mount: 'chao' },
+  outra: { label: 'Luz', radius: 4, mount: 'chao' },
+};
+
+export const MAX_LIGHT_RADIUS = 20;
 
 export type DoorState = 'open' | 'closed' | 'locked';
 
@@ -405,7 +456,34 @@ export interface MapProp {
   hidden: boolean;
 }
 
-export type MapObject = MapDoor | MapProp;
+/** Janela: fica numa parede. Não deixa passar, mas deixa ver e deixa a luz de fora entrar. */
+export interface MapWindow {
+  id: string;
+  kind: 'window';
+  edge: EdgeRef;
+  /** Oculta: para os jogadores é só parede. */
+  hidden: boolean;
+}
+
+/** Fonte de luz num quadrado. Não ocupa espaço: pode ficar sobre um móvel. */
+export interface MapLight {
+  id: string;
+  kind: 'light';
+  light: LightKind;
+  label: string;
+  x: number;
+  y: number;
+  /** Em quadrados. */
+  radius: number;
+  mount: LightMount;
+  /** Na parede: de que lado do quadrado ela fica. */
+  side?: 'n' | 's' | 'e' | 'w';
+  lit: boolean;
+  /** Oculta: os jogadores veem a luz, mas não o objeto. */
+  hidden: boolean;
+}
+
+export type MapObject = MapDoor | MapProp | MapWindow | MapLight;
 
 /**
  * Ficha (PJ/NPC), combatente da fila ou criatura solta no mapa (ameaça fora de combate:
@@ -447,6 +525,10 @@ export interface BattleMap {
   vision?: VisionMode;
   /** Versão antiga de `vision`: true = individual. Só leitura (use `visionOf`). */
   dark?: boolean;
+  /** Quadrados a céu aberto: w*h caracteres '0'/'1'. Sem o campo: tudo é interior. */
+  outside?: string;
+  /** Luz de fora. Sem o campo: tudo iluminado (use `ambientOf`). */
+  ambient?: Ambient;
   createdAt: number;
   updatedAt: number;
 }
@@ -523,6 +605,8 @@ export interface MapGenParams {
   size: HouseSize;
   /** Põe móveis conforme o tipo de cada cômodo. */
   furnish: boolean;
+  /** Põe janelas e fontes de luz (ausente nas ações antigas: sem). */
+  lights: boolean;
   w: number;
   h: number;
   /** Masmorra: salas. Cenário aberto: construções. Casa: quartos. Templo não usa. */
@@ -903,13 +987,15 @@ export type GameAction =
   | MapAction;
 
 /** O desenho do mapa sem tokens: o que o editor desfaz e refaz. */
-export type MapLayout = Pick<BattleMap, 'w' | 'h' | 'cells' | 'wallsH' | 'wallsV' | 'objects'>;
+export type MapLayout = Pick<BattleMap, 'w' | 'h' | 'cells' | 'wallsH' | 'wallsV' | 'objects' | 'outside'>;
 
 export type MapAction =
   /** walls: parede em volta de todo o piso. */
   | { type: 'map/create'; name: string; w: number; h: number; fill?: Terrain; walls?: boolean }
   /** Campos ausentes não mudam. */
-  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode; vision?: VisionMode }
+  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode; vision?: VisionMode; ambient?: Ambient }
+  /** Marca (on) ou desmarca quadrados a céu aberto. Índices y*w+x. */
+  | { type: 'map/outside'; mapId: string; cells: number[]; on: boolean }
   | { type: 'map/delete'; mapId: string }
   | { type: 'map/duplicate'; mapId: string }
   /** dx/dy: quanto o conteúdo anda (para crescer à esquerda ou em cima). O que sair do mapa some; o que entra ganha `fill` (padrão: vazio). */
@@ -1041,6 +1127,13 @@ export interface PlayerMap {
    */
   dark?: boolean;
   dim?: number[];
+  /** Luz de fora (com a visão escura). */
+  ambient?: Ambient;
+  /**
+   * Visão escura: w*h caracteres '0'..'4', a luz em cada quadrado visto
+   * ('0' = visto no escuro, só por estar junto do personagem).
+   */
+  light?: string;
 }
 
 export interface PlayerView {

@@ -5,12 +5,13 @@ import type {
 } from '../model/types';
 import type { AvatarConfig } from '../model/avatar';
 import { avatarFor } from '../model/avatar';
-import { cellLabel, visionOf } from '../model/map';
+import { ambientOf, cellLabel, visionOf } from '../model/map';
+import { carriedLight } from '../rules/derive';
 import {
   buildGrid, canEnd, costTo, followPath, MAX_PATH, metersFor, pathTo, reachFrom, squaresFor, type Grid, type GridPath, type Point, type Reach,
 } from '../rules/grid';
 import { currentCombatant } from './combat';
-import { visibleArea } from '../rules/vision';
+import { sightArea, windowSources, type LightSource, type SightOptions, type Vision } from '../rules/vision';
 
 /** O que os jogadores enxergam do mapa: sem portas secretas nem objetos ocultos. */
 export const visibleObjects = (m: BattleMap): MapObject[] => Object.values(m.objects).filter((o) => !o.hidden);
@@ -37,13 +38,44 @@ export function eyesOf(s: TableState, m: BattleMap, ownerId: string): Point[] {
 }
 
 /**
+ * Fontes de luz do mapa: as luzes acesas (até as ocultas: o jogador vê a luz, não o objeto)
+ * e quem carrega item que ilumina. As janelas entram à parte (dependem das linhas que o jogador vê).
+ */
+export function lightSourcesOf(s: TableState, m: BattleMap): LightSource[] {
+  const out: LightSource[] = [];
+  for (const o of Object.values(m.objects)) if (o.kind === 'light' && o.lit) out.push({ x: o.x, y: o.y, radius: o.radius });
+  for (const t of Object.values(m.tokens)) {
+    if (t.ref.kind !== 'character' || t.hidden) continue;
+    const ch = s.characters[t.ref.id];
+    const r = ch ? carriedLight(ch) : 0;
+    if (r > 0) out.push({ x: t.x, y: t.y, radius: r });
+  }
+  return out;
+}
+
+/** Como a luz se espalha pelo mapa: fontes, janelas, céu aberto e a luz de fora. */
+export function sightOptions(s: TableState, m: BattleMap, objects: MapObject[]): SightOptions {
+  const ambient = ambientOf(m);
+  return {
+    sources: [...lightSourcesOf(s, m), ...windowSources(m, objects, ambient)],
+    ...(m.outside ? { outside: m.outside } : {}),
+    ambient,
+  };
+}
+
+/** O que os personagens do jogador enxergam agora (visão escura). */
+export function playerSight(s: TableState, m: BattleMap, ownerId: string, g: Grid = playerGrid(m)): Vision {
+  return sightArea(g, m.cells, eyesOf(s, m, ownerId), sightOptions(s, m, visibleObjects(m)));
+}
+
+/**
  * Grid em que o jogador se move. Fora da visão aberta, só o que ele vê (e as soleiras das
  * portas): nenhum caminho passa pelo escuro.
  */
 export function playerMoveGrid(s: TableState, m: BattleMap, ownerId: string): Grid {
   const g = playerGrid(m);
   if (visionOf(m) === 'open') return g;
-  const vis = visibleArea(g, m.cells, eyesOf(s, m, ownerId));
+  const vis = playerSight(s, m, ownerId, g);
   const mult = g.mult.slice();
   for (let i = 0; i < mult.length; i++) if (!vis.seen[i] && !vis.dim.has(i)) mult[i] = 0;
   return { ...g, mult };

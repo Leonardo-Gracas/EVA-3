@@ -11,7 +11,7 @@ import { emptyCampaign } from '../model/campaign';
 import { sanitizeAvatar } from '../model/avatar';
 import {
   BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, GM_OWNER, ITEM_SLOTS, ITEM_TYPES, isStackable,
-  THREAT_CATEGORIES, ARC_STATUS,
+  THREAT_CATEGORIES, ARC_STATUS, MAX_ITEM_LIGHT,
 } from '../model/types';
 import { equipBlock } from '../rules/equipment';
 import {
@@ -116,10 +116,12 @@ function cleanItem(raw: unknown): ItemData {
     damage: str(r.damage ?? '', LIMITS.itemDamage, 'Dano'),
     effects: (() => {
       const e = (r.effects && typeof r.effects === 'object' ? r.effects : {}) as Record<string, unknown>;
+      const light = int(e.light ?? 0, 0, MAX_ITEM_LIGHT, 'Alcance da luz');
       return {
         def: int(e.def ?? r.defBonus ?? 0, -20, 20, 'Bônus de DEF'),
         rdPhysical: int(e.rdPhysical ?? 0, -20, 20, 'Bônus de RD física'),
         rdMagic: int(e.rdMagic ?? 0, -20, 20, 'Bônus de RD mágica'),
+        ...(light ? { light } : {}),
       };
     })(),
     value: int(r.value ?? 0, 0, 9_999_999, 'Valor'),

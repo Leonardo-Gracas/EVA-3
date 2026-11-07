@@ -16,6 +16,9 @@ export interface Grid {
   /** Por linha: 0 livre (ou porta aberta), 1 não passa (parede ou porta trancada), 2 porta fechada. */
   blockH: Uint8Array;
   blockV: Uint8Array;
+  /** Por linha: 1 tapa a vista e a luz (parede, porta fechada ou trancada). Janela e porta aberta, 0. */
+  sightH: Uint8Array;
+  sightV: Uint8Array;
 }
 
 /** Valores de `blockH`/`blockV`. */
@@ -36,13 +39,19 @@ export function buildGrid(src: GridSource): Grid {
   const blockV = new Uint8Array(h * (w + 1));
   for (let i = 0; i < blockH.length; i++) blockH[i] = src.wallsH[i] === '1' ? 1 : 0;
   for (let i = 0; i < blockV.length; i++) blockV[i] = src.wallsV[i] === '1' ? 1 : 0;
+  const sightH = blockH.slice();
+  const sightV = blockV.slice();
+  const windows: Array<Extract<MapObject, { kind: 'window' }>> = [];
   for (const o of src.objects) {
     if (o.kind === 'door') {
       const { o: or, x, y } = o.edge;
       const v = o.state === 'open' ? EDGE.free : o.state === 'locked' ? EDGE.wall : EDGE.closedDoor;
-      if (or === 'h' && x >= 0 && x < w && y >= 0 && y <= h) blockH[y * w + x] = v;
-      if (or === 'v' && x >= 0 && x <= w && y >= 0 && y < h) blockV[y * (w + 1) + x] = v;
-    } else if (o.effect !== 'none') {
+      const see = o.state === 'open' ? 0 : 1;
+      if (or === 'h' && x >= 0 && x < w && y >= 0 && y <= h) { blockH[y * w + x] = v; sightH[y * w + x] = see; }
+      if (or === 'v' && x >= 0 && x <= w && y >= 0 && y < h) { blockV[y * (w + 1) + x] = v; sightV[y * (w + 1) + x] = see; }
+    } else if (o.kind === 'window') {
+      windows.push(o);
+    } else if (o.kind === 'prop' && o.effect !== 'none') {
       for (let y = o.y; y < o.y + o.h; y++) {
         for (let x = o.x; x < o.x + o.w; x++) {
           if (x < 0 || y < 0 || x >= w || y >= h) continue;
@@ -53,7 +62,20 @@ export function buildGrid(src: GridSource): Grid {
       }
     }
   }
-  return { w, h, mult, blockH, blockV };
+  // Janela na parede: continua sem passagem, mas a vista atravessa.
+  for (const { edge: { o: or, x, y } } of windows) {
+    if (or === 'h' && x >= 0 && x < w && y >= 0 && y <= h && blockH[y * w + x] === EDGE.wall) sightH[y * w + x] = 0;
+    if (or === 'v' && x >= 0 && x <= w && y >= 0 && y < h && blockV[y * (w + 1) + x] === EDGE.wall) sightV[y * (w + 1) + x] = 0;
+  }
+  return { w, h, mult, blockH, blockV, sightH, sightV };
+}
+
+/** A linha cruzada por um passo reto tapa a vista? */
+export function sightBlocked(g: Grid, x: number, y: number, dx: number, dy: number): boolean {
+  if (dx === 1) return g.sightV[y * (g.w + 1) + x + 1] === 1;
+  if (dx === -1) return g.sightV[y * (g.w + 1) + x] === 1;
+  if (dy === 1) return g.sightH[(y + 1) * g.w + x] === 1;
+  return g.sightH[y * g.w + x] === 1;
 }
 
 const passable = (g: Grid, x: number, y: number) => x >= 0 && y >= 0 && x < g.w && y < g.h && g.mult[y * g.w + x] > 0;

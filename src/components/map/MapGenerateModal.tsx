@@ -50,20 +50,23 @@ export default function MapGenerateModal({ w, h, onApply, onClose }: {
   const [model, setModel] = useState<HouseModel>('casa');
   const [size, setSize] = useState<HouseSize>('normal');
   const [furnish, setFurnish] = useState(true);
+  const [lights, setLights] = useState(true);
   const [d, setD] = useState<Draft>(() => toDraft(cleanMapParams({ ...MAP_GEN_DEFAULTS, w: Math.max(w, GEN_MIN_SIDE), h: Math.max(h, GEN_MIN_SIDE) })));
   const [seed, setSeed] = useState(newSeed);
   const params = useMemo(() => {
     const n = (k: NumKey) => parseInt(d[k], 10);
     return cleanMapParams({
-      preset, shape, model, size, furnish,
+      preset, shape, model, size, furnish, lights,
       w: n('w'), h: n('h'), rooms: n('rooms'), roomMin: n('roomMin'), roomMax: n('roomMax'), corridor: n('corridor'),
       doors: (n('doors') || 0) / 100,
     });
-  }, [d, preset, shape, model, size, furnish]);
+  }, [d, preset, shape, model, size, furnish, lights]);
   const result = useMemo(() => generateMap(params, seed), [params, seed]);
   const objects = useMemo<MapObject[]>(() => [
     ...result.doors.map((edge, i) => ({ id: `p${i}`, kind: 'door' as const, edge, state: 'closed' as const, hidden: false })),
     ...result.props.map((pr, i) => ({ id: `m${i}`, kind: 'prop' as const, ...pr, hidden: false })),
+    ...result.windows.map((edge, i) => ({ id: `j${i}`, kind: 'window' as const, edge, hidden: false })),
+    ...result.lights.map((l, i) => ({ id: `l${i}`, kind: 'light' as const, ...l, lit: true, hidden: false })),
   ], [result]);
   const up = (k: NumKey, v: string) => setD((x) => ({ ...x, [k]: v.replace(/\D/g, '') }));
 
@@ -157,9 +160,13 @@ export default function MapGenerateModal({ w, h, onApply, onClose }: {
         <label className="row small" title="Móveis de acordo com cada cômodo: camas nos quartos, bancos na nave, árvores no campo...">
           <input type="checkbox" checked={furnish} onChange={(e) => setFurnish(e.target.checked)} /> Mobília automática
         </label>
+        <label className="row small" title="Janelas nas paredes que dão para fora; velas e candelabros nas mesas, lareiras acesas, lustres nos salões, lampiões e tochas nas paredes. Algumas salas da masmorra ficam no escuro.">
+          <input type="checkbox" checked={lights} onChange={(e) => setLights(e.target.checked)} /> Janelas e iluminação
+        </label>
         <div className="tiny muted">
           {n} {unit[n === 1 ? 0 : 1]}{short}{kinds ? `: ${kinds}` : ''} · {result.doors.length} porta{result.doors.length === 1 ? '' : 's'}
-          {furnish ? ` · ${result.props.length} móve${result.props.length === 1 ? 'l' : 'is'}` : ''} · {params.w} × {params.h}
+          {furnish ? ` · ${result.props.length} móve${result.props.length === 1 ? 'l' : 'is'}` : ''}
+          {lights ? ` · ${result.windows.length} janela${result.windows.length === 1 ? '' : 's'} · ${result.lights.length} luz${result.lights.length === 1 ? '' : 'es'}` : ''} · {params.w} × {params.h}
         </div>
         <MapCanvas grid={result.layout} objects={objects} tokens={[]} fitKey={`gen:${preset}:${model}:${seed}:${params.w}x${params.h}`} height="min(52vh, 520px)" compact touch="pan" />
       </div>

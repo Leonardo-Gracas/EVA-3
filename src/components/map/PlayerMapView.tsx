@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Clock, Footprints, Hourglass, LocateFixed, Map as MapIcon, Moon, Undo2, X } from 'lucide-react';
 import type { MoveGateKind, PlayerCombatant, PlayerMapMove, PlayerMapToken, PlayerView } from '../../model/types';
-import { MOVE_MODES, VISION_MODES } from '../../model/types';
+import { AMBIENTS, MOVE_MODES, VISION_MODES } from '../../model/types';
 import { cellLabel } from '../../model/map';
 import {
   buildGrid, canEnd, costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point,
@@ -17,6 +17,7 @@ import { CombatStrip, describeCombatant, EndTurnButton } from '../combat/playerC
 import { useTopbarHeight } from '../combat/common';
 import MapCanvas, { type MapFocus, type MapPointer, type PointerKind } from './MapCanvas';
 import { PathModeToggle, usePathMode } from './pathMode';
+import { LightIconsToggle, useLightIcons } from './lightIcons';
 import type { RouteFn } from './useWalk';
 
 const GATE: Record<MoveGateKind, { label: string; cls: string }> = {
@@ -44,6 +45,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   const [armed, setArmed] = useState<Point | null>(null);
   const [sending, setSending] = useState(false);
   const [pathMode, setPathMode] = usePathMode();
+  const [lightIcons, setLightIcons] = useLightIcons();
   /** Quadrado a quadrado: o trajeto que está sendo traçado (começa no personagem). */
   const [draft, setDraftState] = useState<Point[] | null>(null);
   const draftRef = useRef<Point[] | null>(null);
@@ -291,6 +293,9 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
         {m.vision !== 'open' && (
           <span className="badge pmap-dark" title={VISION_MODES[m.vision].hint}><Moon size={11} /> Visão {VISION_MODES[m.vision].label.toLowerCase()}</span>
         )}
+        {m.vision !== 'open' && m.ambient && m.ambient !== 'geral' && (
+          <span className="badge" title={AMBIENTS[m.ambient].hint}>Luz de fora: {AMBIENTS[m.ambient].label.toLowerCase()}</span>
+        )}
         <span className="tiny muted hide-sm pmap-mode-hint">{MOVE_MODES[m.mode].hint}</span>
       </div>
 
@@ -304,6 +309,8 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
         grid={m} objects={m.objects} tokens={tokens} fitKey={m.id}
         reach={reachCells} reachTone={current?.gate ?? 'free'}
         dim={m.dim}
+        light={m.light}
+        showLights={lightIcons}
         path={shown?.cells} pathLabel={pathLabel}
         ghosts={ghosts}
         selectedTokenId={token?.id}
@@ -335,6 +342,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
               <LocateFixed size={14} />
             </button>
           )}
+          {m.objects.some((o) => o.kind === 'light') && <LightIconsToggle on={lightIcons} onChange={setLightIcons} />}
         </>}
         bottom={(
           <div className={`pmap-actions${plan ? ' has-plan' : ''}${myTurn ? ' my-turn' : ''}`}>

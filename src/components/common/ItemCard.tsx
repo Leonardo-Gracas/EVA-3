@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import {
   Backpack, Coins, Crosshair, FlaskConical, Package, Shield, ShieldHalf, Skull, Sparkles, Sun, Sword, type LucideIcon,
 } from 'lucide-react';
-import { ITEM_SLOTS, ITEM_TYPES, isStackable, type ItemData, type ItemSlot, type ItemType } from '../../model/types';
+import { ITEM_SLOTS, ITEM_TYPES, MAP_CELL_M, isStackable, type ItemData, type ItemSlot, type ItemType } from '../../model/types';
 
 const fmt = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
@@ -64,6 +64,12 @@ export default function ItemCard({ it, pv, qty, equipped, actions, stock }: {
   if (it.effects.def) stats.push({ label: 'Defesa', value: fmt(it.effects.def), tone: 'buff', title: 'Bônus de Defesa quando equipado' });
   if (it.effects.rdPhysical) stats.push({ label: 'RD física', value: fmt(it.effects.rdPhysical), tone: 'buff', title: 'Bônus de RD física quando equipado' });
   if (it.effects.rdMagic) stats.push({ label: 'RD mágica', value: fmt(it.effects.rdMagic), tone: 'buff', title: 'Bônus de RD mágica quando equipado' });
+  if (it.effects.light) {
+    stats.push({
+      label: 'Luz', value: `${it.effects.light} q · ${(it.effects.light * MAP_CELL_M).toLocaleString('pt-BR')} m`, tone: 'buff',
+      title: 'Equipado, ilumina em volta do personagem no mapa',
+    });
+  }
 
   return (
     <div className={`item-card${equipped ? ' item-equipped' : ''}${broken ? ' item-broken' : ''}${empty ? ' item-empty' : ''}`}>

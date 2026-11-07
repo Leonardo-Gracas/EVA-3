@@ -2155,6 +2155,33 @@ button.camp-pill { min-height: 36px; }
 .map-prop.is-hidden { opacity: 0.5; outline: 1px dashed var(--info); }
 .map-prop.selected { outline: 2px solid var(--gold-soft); outline-offset: 1px; }
 
+/* Luz: sombra por cima do piso e dos móveis (abaixo dos tokens), mais forte quanto mais escuro. */
+.map-shade-layer.soft { opacity: 0.5; }
+.map-shade-0 { fill: rgba(5, 4, 3, 0.66); }
+.map-shade-1 { fill: rgba(5, 4, 3, 0.5); }
+.map-shade-2 { fill: rgba(5, 4, 3, 0.33); }
+.map-shade-3 { fill: rgba(5, 4, 3, 0.16); }
+/* Céu aberto no editor: hachura azulada leve. */
+.map-sky { fill: rgba(122, 170, 214, 0.1); }
+/* Janela: vidro estreito na parede. */
+.map-window-pane { fill: #3d5568; stroke: #a9c6dc; stroke-width: 0.035; }
+.map-window-sill { stroke: #d6e6f2; stroke-width: 0.03; }
+.map-window.is-hidden { opacity: 0.5; }
+.map-window.is-hidden .map-window-pane { stroke: var(--info); stroke-dasharray: 0.08 0.06; }
+.map-window.selected .map-window-pane { stroke: var(--gold-soft); stroke-width: 0.07; }
+/* Fontes de luz: chama com brilho quente; presa na parede ou no teto, ícone pequeno e discreto. */
+.map-light {
+  position: absolute; display: grid; place-items: center; pointer-events: none; border-radius: 50%; z-index: 1;
+  color: #f2c46d;
+}
+.map-light.lit { background: radial-gradient(circle, rgba(255, 196, 92, 0.42) 0%, rgba(255, 170, 60, 0.12) 55%, transparent 72%); }
+.map-light.lit:not(.hung) svg { filter: drop-shadow(0 0 3px rgba(255, 190, 90, 0.9)); }
+.map-light.hung { opacity: 0.6; color: #e8cf98; }
+.map-light.hung.lit { background: radial-gradient(circle, rgba(255, 196, 92, 0.3) 0%, transparent 70%); }
+.map-light.out { color: rgba(239, 231, 218, 0.38); background: none; }
+.map-light.is-hidden { outline: 1px dashed var(--info); }
+.map-light.selected { outline: 2px solid var(--gold-soft); opacity: 1; }
+
 /* Tokens: o ícone do personagem, com a cor do lado. */
 .map-token { position: absolute; display: grid; place-items: center; pointer-events: none; z-index: 2; transition: left 160ms ease, top 160ms ease; }
 .map-token > .avatar, .map-token-threat {

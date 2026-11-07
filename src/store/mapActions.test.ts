@@ -527,4 +527,115 @@ describe('mapas: visão do jogador', () => {
     expect(m.maps).toEqual({});
     expect(m.activeMapId).toBeNull();
   });
+
+  it('migração: mapa antigo fica com tudo iluminado', () => {
+    const { s, mapId } = setup();
+    const old = structuredClone(s);
+    delete old.maps[mapId].ambient;
+    old.maps[mapId].outside = '0'.repeat(100);
+    const m = migrate(old);
+    expect(m.maps[mapId].ambient).toBe('geral');
+    expect(m.maps[mapId].outside).toBeUndefined();
+  });
+});
+
+describe('mapas: luz', () => {
+  const tocha = {
+    name: 'Tocha', type: 'equipamento' as const, slot: 'uma_mao' as const, description: '', damage: '',
+    effects: { def: 0, rdPhysical: 0, rdMagic: 0, light: 5 }, value: 1, durability: { pv: 3, rd: 0, def: 10 }, pack: 1,
+  };
+  const count = (light: string | undefined, ch: string) => [...(light ?? '')].filter((c) => c === ch).length;
+
+  it('no escuro, só os vizinhos; quem leva tocha ilumina em volta', () => {
+    let { s, mapId, ana, beto } = setup();
+    s = ok(s, gm, { type: 'map/update', mapId, vision: 'individual', ambient: 'breu' });
+    expect(s.log[s.log.length - 1].text).toMatch(/luz externa em Cripta para breu/);
+    let v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.ambient).toBe('breu');
+    // Ana em A1: ela e os 3 vizinhos, no escuro.
+    const VOID = '#';
+    expect([...v.cells].filter((c) => c !== VOID)).toHaveLength(4);
+    expect(count(v.light, '0')).toBe(100);
+    expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
+    // Não se anda pelo escuro.
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 3, y: 0 })).toMatchObject({ ok: false });
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 1, y: 1 }).ok).toBe(true);
+
+    // Beto acende uma tocha: Ana o vê de longe (linha reta livre), com a luz em volta dele.
+    s = ok(s, gm, { type: 'item/add', characterId: beto, item: tocha, qty: 1 });
+    const itemId = s.characters[beto].inventory[0].id;
+    s = ok(s, gm, { type: 'item/equip', characterId: beto, itemId, equipped: true });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.tokens.map((t) => t.name).sort()).toEqual(['Bento', 'Mizael']);
+    expect(v.light![9 * 10 + 9]).toBe('4');
+    expect(v.cells[9 * 10 + 9]).not.toBe(VOID);
+    // E quem leva a tocha vê em volta de si.
+    const vb = buildPlayerView(s, 'p2', new Set()).map!;
+    expect([...vb.cells].filter((c) => c !== VOID).length).toBeGreaterThan(20);
+    // Quebrada ou guardada, apaga.
+    s = ok(s, gm, { type: 'item/equip', characterId: beto, itemId, equipped: false });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
+  });
+
+  it('luz do mapa: acesa ilumina, apagada não; oculta ilumina sem aparecer', () => {
+    let { s, mapId } = setup();
+    s = ok(s, gm, { type: 'map/update', mapId, vision: 'individual', ambient: 'breu' });
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'light', light: 'lustre', label: '', x: 9, y: 9, radius: 3, mount: 'teto', lit: true, hidden: false } });
+    const id = Object.values(s.maps[mapId].objects).find((o) => o.kind === 'light')!.id;
+    let v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.tokens.map((t) => t.name).sort()).toEqual(['Bento', 'Mizael']);
+    expect(v.objects.map((o) => o.kind)).toEqual(['light']);
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { ...s.maps[mapId].objects[id], hidden: true } as never });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.tokens).toHaveLength(2);
+    expect(v.objects).toHaveLength(0);
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { ...s.maps[mapId].objects[id], lit: false } as never });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
+    // Luz inválida: raio fora do limite.
+    expect(run(s, gm, { type: 'map/objectUpsert', mapId, object: { ...s.maps[mapId].objects[id], radius: 99 } as never }).ok).toBe(false);
+  });
+
+  it('janela fica na parede, sai com ela, e acompanha o redimensionar; céu aberto também', () => {
+    let { s, mapId } = setup();
+    const edge = { o: 'v' as const, x: 5, y: 3 };
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'window', edge, hidden: false } });
+    expect(hasWall(s.maps[mapId], edge)).toBe(true);
+    // Porta na mesma linha troca a janela.
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'door', edge, state: 'closed', hidden: false } });
+    expect(Object.values(s.maps[mapId].objects).map((o) => o.kind)).toEqual(['door']);
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'window', edge, hidden: false } });
+    expect(Object.values(s.maps[mapId].objects).map((o) => o.kind)).toEqual(['window']);
+
+    s = ok(s, gm, { type: 'map/outside', mapId, cells: [6, 7], on: true });
+    expect(s.maps[mapId].outside![6]).toBe('1');
+    s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'light', light: 'vela', label: '', x: 2, y: 2, radius: 2, mount: 'mesa', lit: true, hidden: false } });
+    s = ok(s, gm, { type: 'map/resize', mapId, w: 12, h: 12, dx: 1, dy: 1 });
+    const m = s.maps[mapId];
+    expect(m.outside![1 * 12 + 7]).toBe('1');
+    expect(Object.values(m.objects).find((o) => o.kind === 'window')).toMatchObject({ edge: { o: 'v', x: 6, y: 4 } });
+    expect(Object.values(m.objects).find((o) => o.kind === 'light')).toMatchObject({ x: 3, y: 3 });
+
+    s = ok(s, gm, { type: 'map/walls', mapId, edges: [{ o: 'v', x: 6, y: 4 }], on: false });
+    expect(Object.values(s.maps[mapId].objects).map((o) => o.kind)).toEqual(['light']);
+    s = ok(s, gm, { type: 'map/outside', mapId, cells: [1 * 12 + 7, 1 * 12 + 8], on: false });
+    expect(s.maps[mapId].outside).toBeUndefined();
+    expect(run(s, p1, { type: 'map/outside', mapId, cells: [0], on: true })).toMatchObject({ ok: false, error: /mestre/ });
+  });
+
+  it('gerar com janelas e luzes: objetos, céu aberto e a luz de fora passa a valer', () => {
+    let { s, mapId } = setup();
+    s = ok(s, gm, { type: 'map/generate', mapId, seed: 7, params: { ...DUNGEON_DEFAULTS, preset: 'house', w: 30, h: 24, furnish: true, lights: true } as never });
+    const m = s.maps[mapId];
+    const kinds = Object.values(m.objects).map((o) => o.kind);
+    expect(kinds).toContain('window');
+    expect(kinds).toContain('light');
+    expect(m.outside).toMatch(/1/);
+    expect(m.ambient).toBe('dia');
+    // Desfazer leva o céu aberto junto.
+    const layout = { w: m.w, h: m.h, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: {} };
+    s = ok(s, gm, { type: 'map/restore', mapId, layout });
+    expect(s.maps[mapId].outside).toBeUndefined();
+  });
 });

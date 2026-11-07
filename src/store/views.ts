@@ -3,9 +3,9 @@ import type {
   BattleMap, LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerView, TableState,
 } from '../model/types';
 import { TERRAIN_CHAR } from '../model/types';
-import { visionOf } from '../model/map';
-import { visibleArea, type Vision } from '../rules/vision';
-import { combatOn, eyesOf, isTokenTurn, moveBudget, moveGate, playerGrid, tokenCombatant, tokenInfo, visibleObjects } from './maps';
+import { ambientOf, visionOf } from '../model/map';
+import type { Vision } from '../rules/vision';
+import { combatOn, isTokenTurn, moveBudget, moveGate, playerGrid, playerSight, tokenCombatant, tokenInfo, visibleObjects } from './maps';
 import { followPath } from '../rules/grid';
 import { effectivePermissions } from '../model/permissions';
 import { caseShown, publishedCase } from '../model/cases';
@@ -66,7 +66,7 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
   const here = combatOn(s, m);
   // Visão individual ou compartilhada: só o que os personagens enxergam (o resto nem sai daqui).
   const vision = visionOf(m);
-  const vis = vision !== 'open' ? visibleArea(grid, m.cells, eyesOf(s, m, playerId)) : null;
+  const vis = vision !== 'open' ? playerSight(s, m, playerId, grid) : null;
   const sees = (x: number, y: number) => !vis || vis.seen[y * m.w + x] === 1;
   for (const t of Object.values(m.tokens)) {
     const info = tokenInfo(s, t);
@@ -100,7 +100,9 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
   }
   const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, vision, tokens, moves };
   if (!vis) return { ...base, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: visibleObjects(m) };
-  return { ...base, ...darkLayout(m, vis), dark: true, dim: [...vis.dim] };
+  let light = '';
+  for (let i = 0; i < m.w * m.h; i++) light += vis.seen[i] ? vis.light[i] : '0';
+  return { ...base, ...darkLayout(m, vis), dark: true, dim: [...vis.dim], ambient: ambientOf(m), light };
 }
 
 /**
@@ -121,7 +123,9 @@ function darkLayout(m: BattleMap, vis: Vision): Pick<PlayerMap, 'cells' | 'walls
   let wallsV = '';
   for (let i = 0; i < h * (w + 1); i++) wallsV += m.wallsV[i] === '1' && nearV(i % (w + 1), Math.floor(i / (w + 1))) ? '1' : '0';
   const objects = visibleObjects(m).filter((o) => {
-    if (o.kind === 'door') return o.edge.o === 'h' ? nearH(o.edge.x, o.edge.y) : nearV(o.edge.x, o.edge.y);
+    if (o.kind === 'door' || o.kind === 'window') return o.edge.o === 'h' ? nearH(o.edge.x, o.edge.y) : nearV(o.edge.x, o.edge.y);
+    // Luz (acesa ou apagada): só a que está num quadrado visto.
+    if (o.kind === 'light') return vis.seen[o.y * w + o.x] === 1;
     for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) if (vis.seen[y * w + x] === 1) return true;
     return false;
   });

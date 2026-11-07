@@ -4,7 +4,7 @@ import { buildPlayerView } from './views';
 import { migrate, toExport } from './persistence';
 import { caseChanges } from '../model/cases';
 import { emptyCampaign, emptySessionData } from '../model/campaign';
-import { deriveStats } from '../rules/derive';
+import { carriedLight, deriveStats } from '../rules/derive';
 import type { Actor, CharacterDraft, ItemSlot, ItemType, TableState } from '../model/types';
 import { GM_OWNER } from '../model/types';
 import { emptyAttributes } from '../rules/attributes';
@@ -278,6 +278,24 @@ describe('motor', () => {
     d = deriveStats(s.characters[cid]);
     expect([d.def, d.rdPhysical]).toEqual([10, 3]);
     expect(dispatch(s, p1, { type: 'character/rdBonus', characterId: cid, physical: 9, magic: 9 }, ctx).ok).toBe(false);
+  });
+
+  it('itens que iluminam: raio guardado só quando há luz; vale equipado e inteiro', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    const base = { type: 'equipamento' as const, slot: 'uma_mao' as const, description: '', damage: '', value: 1, durability: { pv: 3, rd: 0, def: 10 }, pack: 1 };
+    s = dispatch(s, gm, { type: 'item/add', characterId: cid, qty: 1, item: { ...base, name: 'Tocha', effects: { def: 0, rdPhysical: 0, rdMagic: 0, light: 5 } } }, ctx).state;
+    s = dispatch(s, gm, { type: 'item/add', characterId: cid, qty: 1, item: { ...base, name: 'Corda', effects: { def: 0, rdPhysical: 0, rdMagic: 0, light: 0 } } }, ctx).state;
+    const [torch, rope] = s.characters[cid].inventory;
+    expect(torch.effects.light).toBe(5);
+    expect(rope.effects).toEqual({ def: 0, rdPhysical: 0, rdMagic: 0 });
+    expect(carriedLight(s.characters[cid])).toBe(0);
+    s = dispatch(s, gm, { type: 'item/equip', characterId: cid, itemId: torch.id, equipped: true }, ctx).state;
+    expect(carriedLight(s.characters[cid])).toBe(5);
+    s = dispatch(s, gm, { type: 'item/durability', characterId: cid, itemId: torch.id, pv: 0 }, ctx).state;
+    expect(carriedLight(s.characters[cid])).toBe(0);
+    const tooMuch = dispatch(s, gm, { type: 'item/add', characterId: cid, qty: 1, item: { ...base, name: 'Sol', effects: { def: 0, rdPhysical: 0, rdMagic: 0, light: 99 } } }, ctx);
+    expect(tooMuch.ok).toBe(false);
   });
 
   it('itens equipados: duas mãos, uma proteção, vestes à vontade', () => {

@@ -2,11 +2,14 @@
 // conforme o modo de locomoção (o portão fica no dispatch; aqui só a regra do movimento).
 import { MAX_COMBATANTS, nameInstances, numberInstances, threatInstance } from './combat';
 import type {
-  Actor, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, MapAction, MapDoor, MapLayout, MapObject, MapToken, MoveMode, PropEffect,
-  PropKind, TableState, Terrain, TokenRef, VisionMode,
+  Actor, Ambient, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, LightKind, LightMount, MapAction, MapDoor, MapLayout, MapObject,
+  MapToken, MoveMode, PropEffect, PropKind, TableState, Terrain, TokenRef, VisionMode,
 } from '../model/types';
-import { DOOR_STATES, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS, VISION_MODES } from '../model/types';
-import { blankLayout, edgeIndex, sameEdge, setChars, setWalls, terrainAt, visionOf, wallAround } from '../model/map';
+import {
+  AMBIENTS, DOOR_STATES, LIGHT_KINDS, LIGHT_MOUNTS, MAP_LIMITS, MAX_LIGHT_RADIUS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS,
+  VISION_MODES,
+} from '../model/types';
+import { ambientOf, blankLayout, edgeIndex, sameEdge, setChars, setWalls, terrainAt, visionOf, wallAround } from '../model/map';
 import { generateMap } from '../rules/mapgen';
 import { followPath, pathTo, reachFrom, type Point } from '../rules/grid';
 import type { EngineCtx } from './engine';
@@ -47,8 +50,20 @@ function cleanObject(m: Pick<BattleMap, 'w' | 'h'>, raw: unknown, id: string): M
     const state = typeof r.state === 'string' && r.state in DOOR_STATES ? r.state as DoorState : 'closed';
     return { id, kind: 'door', edge: cleanEdge(m, r.edge), state, hidden };
   }
+  if (r.kind === 'window') return { id, kind: 'window', edge: cleanEdge(m, r.edge), hidden };
+  if (r.kind === 'light') {
+    const light = typeof r.light === 'string' && r.light in LIGHT_KINDS ? r.light as LightKind : 'outra';
+    const mount = typeof r.mount === 'string' && r.mount in LIGHT_MOUNTS ? r.mount as LightMount : LIGHT_KINDS[light].mount;
+    const side = r.side === 'n' || r.side === 's' || r.side === 'e' || r.side === 'w' ? r.side : undefined;
+    return {
+      id, kind: 'light', light, label: str(r.label ?? '', 40, 'Rótulo'),
+      x: int(r.x, 0, m.w - 1, 'Posição'), y: int(r.y, 0, m.h - 1, 'Posição'),
+      radius: int(r.radius ?? LIGHT_KINDS[light].radius, 1, MAX_LIGHT_RADIUS, 'Alcance da luz'),
+      mount, ...(mount === 'parede' && side ? { side } : {}), lit: r.lit === undefined ? true : !!r.lit, hidden,
+    };
+  }
   if (r.kind !== 'prop') return fail('Objeto inválido.');
-  const prop = typeof r.prop === 'string' && r.prop in PROP_KINDS ? r.prop as PropKind : 'outro';
+  const prop =typeof r.prop === 'string' && r.prop in PROP_KINDS ? r.prop as PropKind : 'outro';
   const effect = typeof r.effect === 'string' && r.effect in PROP_EFFECTS ? r.effect as PropEffect : PROP_KINDS[prop].effect;
   const w = int(r.w ?? 1, 1, MAX_PROP_SIDE, 'Largura');
   const h = int(r.h ?? 1, 1, MAX_PROP_SIDE, 'Altura');
@@ -73,6 +88,10 @@ function cleanLayout(raw: unknown, ctx: EngineCtx): MapLayout {
     wallsV: exact(r.wallsV, h * (w + 1), /^[01]*$/, 'Paredes'),
     objects: {},
   };
+  if (r.outside !== undefined) {
+    const outside = exact(r.outside, w * h, /^[01]*$/, 'Céu aberto');
+    if (outside.includes('1')) layout.outside = outside;
+  }
   const objs = Object.values(record(r.objects));
   if (objs.length > MAX_OBJECTS) fail('Objetos demais no mapa.');
   for (const o of objs) {
@@ -114,6 +133,7 @@ function settleTokens(m: BattleMap) {
 
 function applyLayout(m: BattleMap, layout: MapLayout) {
   Object.assign(m, layout);
+  if (!layout.outside?.includes('1')) delete m.outside;
   settleTokens(m);
 }
 
@@ -203,7 +223,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       if (a.walls) wallAround(layout);
       const m: BattleMap = {
         id: ctx.newId(), name: str(a.name, MAX_NAME, 'Nome do mapa', true), ...layout,
-        tokens: {}, mode: 'livre', vision: 'open', createdAt: now, updatedAt: now,
+        tokens: {}, mode: 'livre', vision: 'open', ambient: 'geral', createdAt: now, updatedAt: now,
       };
       s.maps[m.id] = m;
       return m.id;
@@ -219,6 +239,14 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         delete m.dark;
         if (changed && s.activeMapId === m.id) {
           log(s, ctx, { kind: 'system', actorName: who, text: `mudou a visão em ${m.name} para ${VISION_MODES[m.vision].label.toLowerCase()}.` });
+        }
+      }
+      if (a.ambient !== undefined) {
+        if (!(typeof a.ambient === 'string' && a.ambient in AMBIENTS)) fail('Luz externa inválida.');
+        const changed = ambientOf(m) !== a.ambient;
+        m.ambient = a.ambient as Ambient;
+        if (changed && s.activeMapId === m.id) {
+          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a luz externa em ${m.name} para ${AMBIENTS[m.ambient].label.toLowerCase()}.` });
         }
       }
       if (a.mode !== undefined) {
@@ -291,10 +319,24 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         }
       }
       next.wallsV = wv.join('');
+      if (m.outside) {
+        const out = '0'.repeat(w * h).split('');
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const ox = x - dx;
+            const oy = y - dy;
+            if (ox >= 0 && oy >= 0 && ox < m.w && oy < m.h && m.outside[oy * m.w + ox] === '1') out[y * w + x] = '1';
+          }
+        }
+        next.outside = out.join('');
+      }
       for (const o of Object.values(m.objects)) {
-        if (o.kind === 'door') {
+        if (o.kind === 'door' || o.kind === 'window') {
           const edge = { ...o.edge, x: o.edge.x + dx, y: o.edge.y + dy };
           if (edgeIndex(next, edge) >= 0) next.objects[o.id] = { ...o, edge };
+        } else if (o.kind === 'light') {
+          const p = { ...o, x: o.x + dx, y: o.y + dy };
+          if (p.x >= 0 && p.y >= 0 && p.x < w && p.y < h) next.objects[o.id] = p;
         } else {
           const p = { ...o, x: o.x + dx, y: o.y + dy };
           if (p.x >= 0 && p.y >= 0 && p.x + p.w <= w && p.y + p.h <= h) next.objects[o.id] = p;
@@ -317,16 +359,28 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       return;
     }
 
+    case 'map/outside': {
+      const m = getMap(s, a.mapId);
+      if (!Array.isArray(a.cells) || !a.cells.length) fail('Nada para marcar.');
+      if (a.cells.length > m.w * m.h) fail('Quadrados demais de uma vez.');
+      const idx = a.cells.map((i) => int(i, 0, m.w * m.h - 1, 'Quadrado'));
+      const next = setChars(m.outside ?? '0'.repeat(m.w * m.h), idx, a.on ? '1' : '0');
+      if (next.includes('1')) m.outside = next;
+      else delete m.outside;
+      m.updatedAt = now;
+      return;
+    }
+
     case 'map/walls': {
       const m = getMap(s, a.mapId);
       if (!Array.isArray(a.edges) || !a.edges.length) fail('Nenhuma linha escolhida.');
       if (a.edges.length > MAX_EDGES) fail('Linhas demais de uma vez.');
       const edges = a.edges.map((e) => cleanEdge(m, e));
       setWalls(m, edges, !!a.on);
-      // Tirar a parede tira a porta que estava nela.
+      // Tirar a parede tira a porta ou a janela que estava nela.
       if (!a.on) {
         for (const o of Object.values(m.objects)) {
-          if (o.kind === 'door' && edges.some((e) => sameEdge(e, o.edge))) delete m.objects[o.id];
+          if ((o.kind === 'door' || o.kind === 'window') && edges.some((e) => sameEdge(e, o.edge))) delete m.objects[o.id];
         }
       }
       m.updatedAt = now;
@@ -340,10 +394,10 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       if (!existing && Object.keys(m.objects).length >= MAX_OBJECTS) fail('Limite de objetos no mapa.');
       const o = cleanObject(m, a.object, existing?.id ?? ctx.newId());
       if (existing && existing.kind !== o.kind) fail('Objeto inválido.');
-      if (o.kind === 'door') {
-        // Uma porta por linha; a porta fica na parede.
+      if (o.kind === 'door' || o.kind === 'window') {
+        // Uma porta ou janela por linha; as duas ficam na parede.
         for (const x of Object.values(m.objects)) {
-          if (x.kind === 'door' && x.id !== o.id && sameEdge(x.edge, o.edge)) delete m.objects[x.id];
+          if ((x.kind === 'door' || x.kind === 'window') && x.id !== o.id && sameEdge(x.edge, o.edge)) delete m.objects[x.id];
         }
         setWalls(m, [o.edge], true);
       }
@@ -386,7 +440,18 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         const id = ctx.newId();
         layout.objects[id] = { id, kind: 'prop', ...pr, hidden: false };
       }
+      for (const e of d.windows) {
+        const id = ctx.newId();
+        layout.objects[id] = { id, kind: 'window', edge: e, hidden: false };
+      }
+      for (const l of d.lights) {
+        const id = ctx.newId();
+        layout.objects[id] = { id, kind: 'light', ...l, lit: true, hidden: false };
+      }
+      if (d.outside) layout.outside = d.outside;
       applyLayout(m, layout);
+      // Com janelas e luzes, a luz de fora passa a valer (o mestre muda no modo Mesa).
+      if (d.params.lights && ambientOf(m) === 'geral') m.ambient = 'dia';
       m.updatedAt = now;
       return;
     }

@@ -1,11 +1,12 @@
 // Gerador de mapas: escolhe o gerador do tipo pedido e, se pedido, mobilia. Puro e com semente:
 // a prévia do mestre e o motor chegam ao mesmo mapa.
-import type { MapGenParams } from '../../model/types';
+import type { EdgeRef, MapGenParams } from '../../model/types';
 import { TERRAIN_CHAR } from '../../model/types';
 import { generateDungeon } from '../dungeon';
 import { mulberry32 } from '../random';
 import { furnish, type GenProp } from './furnish';
 import { generateHouse } from './house';
+import { type GenLight, illuminate } from './lights';
 import { generateOutdoor } from './outdoor';
 import { cleanMapParams } from './params';
 import { type GenBase, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
@@ -13,12 +14,20 @@ import { generateTemple } from './temple';
 
 export { cleanMapParams, GEN_MIN_SIDE, houseModelDefaults, MAP_GEN_DEFAULTS, PRESET_DEFAULTS } from './params';
 export type { GenProp } from './furnish';
+export type { GenLight } from './lights';
 export { ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
 
 export interface GeneratedMap extends GenBase {
   params: MapGenParams;
   props: GenProp[];
+  windows: EdgeRef[];
+  lights: GenLight[];
+  /** Quadrados a céu aberto ('1'), quando há janelas e luzes. */
+  outside?: string;
 }
+
+/** Teto de objetos do mapa (portas + móveis + janelas + luzes) é 500; sobra folga para o mestre. */
+const OBJECT_BUDGET = 480;
 
 function dungeonBase(p: MapGenParams, seed: number): GenBase {
   const d = generateDungeon(p, seed);
@@ -38,7 +47,11 @@ export function generateMap(raw: Partial<MapGenParams>, seed: number): Generated
     : dungeonBase(p, seed);
   // Sorteio separado: ligar a mobília não muda a planta.
   const props = p.furnish ? furnish(base, p.preset, mulberry32((seed ^ 0x5bd1e995) >>> 0)) : [];
-  return { layout: base.layout, rooms: base.rooms, doors: base.doors, zone: base.zone, params: p, props };
+  // Outro sorteio: ligar janelas e luzes não muda planta nem móveis.
+  const lit = p.lights
+    ? illuminate(base, props, p.preset, mulberry32((seed ^ 0x27d4eb2f) >>> 0), Math.max(0, OBJECT_BUDGET - base.doors.length - props.length))
+    : { windows: [], lights: [] };
+  return { layout: base.layout, rooms: base.rooms, doors: base.doors, zone: base.zone, params: p, props, ...lit };
 }
 
 /** "sala de estar, cozinha, 3 quartos e banheiro". */

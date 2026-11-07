@@ -1,6 +1,6 @@
 import type { GameAction, PlayerView } from '../model/types';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Mensagens maiores que isso (em JSON) o mestre descarta sem responder. */
 export const MAX_MESSAGE_CHARS = 200_000;

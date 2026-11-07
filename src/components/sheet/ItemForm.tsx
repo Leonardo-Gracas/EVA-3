@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import {
-  DEFAULT_DURABILITY, DEFAULT_SLOT, ITEM_SLOTS, ITEM_TYPES, NO_EFFECTS, isStackable, type ItemData, type ItemSlot, type ItemType,
+  DEFAULT_DURABILITY, DEFAULT_SLOT, ITEM_SLOTS, ITEM_TYPES, MAX_ITEM_LIGHT, NO_EFFECTS, isStackable, type ItemData, type ItemSlot, type ItemType,
 } from '../../model/types';
 import { LIMITS } from '../../rules/validate';
+import { metersFor } from '../../rules/grid';
 import Modal from '../common/Modal';
 
 export const EMPTY_ITEM: ItemData = {
@@ -43,6 +44,7 @@ export default function ItemFormModal({
   const [def, setDef] = useState(String(base.effects.def));
   const [effRdP, setEffRdP] = useState(String(base.effects.rdPhysical));
   const [effRdM, setEffRdM] = useState(String(base.effects.rdMagic));
+  const [light, setLight] = useState(String(base.effects.light ?? 0));
   const [value, setValue] = useState(String(base.value));
   const [pack, setPack] = useState(String(base.pack ?? 1));
   const [qty, setQty] = useState(String(initialQty ?? base.pack ?? 1));
@@ -83,7 +85,10 @@ export default function ItemFormModal({
     const item: ItemData = {
       name, type, description, damage,
       slot: type === 'protecao' ? 'veste' : slot,
-      effects: { def: parseInt(def, 10) || 0, rdPhysical: parseInt(effRdP, 10) || 0, rdMagic: parseInt(effRdM, 10) || 0 },
+      effects: {
+        def: parseInt(def, 10) || 0, rdPhysical: parseInt(effRdP, 10) || 0, rdMagic: parseInt(effRdM, 10) || 0,
+        ...(n(light) ? { light: Math.min(MAX_ITEM_LIGHT, n(light)) } : {}),
+      },
       value: n(value),
       durability: { pv: n(pv, 1), rd: n(rd), def: n(dDef) },
       pack: showPack ? packN : 1,
@@ -170,6 +175,16 @@ export default function ItemFormModal({
             </div>
           </div>
           <p className="tiny muted" style={{ marginTop: 6 }}>Somados à ficha de quem usa enquanto o item estiver equipado e inteiro. Valores negativos funcionam como penalidade.</p>
+          <div className="row" style={{ marginTop: 10, alignItems: 'flex-end' }}>
+            <div className="field" style={{ width: 130 }}>
+              <label className="label">Ilumina (quadrados)</label>
+              <Num value={light} onChange={setLight} />
+            </div>
+            <p className="tiny muted grow" style={{ margin: 0 }}>
+              Tocha, lampião, lanterna: equipado, ilumina em volta do personagem no mapa (1 quadrado = 1,5 m; até {MAX_ITEM_LIGHT}).
+              {n(light) > 0 && ` Agora: ${metersFor(Math.min(MAX_ITEM_LIGHT, n(light))).toLocaleString('pt-BR')} m.`}
+            </p>
+          </div>
         </div>
 
         <div>

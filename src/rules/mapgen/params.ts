@@ -19,7 +19,7 @@ export function houseModelDefaults(model: HouseModel): Pick<MapGenParams, 'rooms
 }
 
 export const MAP_GEN_DEFAULTS: MapGenParams = {
-  preset: 'dungeon', shape: 'random', model: 'casa', size: 'normal', furnish: false, w: 40, h: 30, ...PRESET_DEFAULTS.dungeon,
+  preset: 'dungeon', shape: 'random', model: 'casa', size: 'normal', furnish: false, lights: false, w: 40, h: 30, ...PRESET_DEFAULTS.dungeon,
 };
 
 /** Menor lado aceito pelo gerador. */
@@ -45,7 +45,7 @@ export function cleanMapParams(raw: Partial<MapGenParams> | null | undefined): M
   const roomMax = Math.round(clampN(r.roomMax, 3, Math.min(20, Math.min(w, h) - 4), d.roomMax));
   const [rMin, rMax] = preset === 'house' ? [info.rooms[0], info.rooms[1]] : preset === 'outdoor' ? [0, 12] : [1, 40];
   return {
-    preset, shape, model, size, furnish: !!r.furnish,
+    preset, shape, model, size, furnish: !!r.furnish, lights: !!r.lights,
     w, h,
     rooms: Math.round(clampN(r.rooms, rMin, rMax, d.rooms)),
     roomMin: Math.round(clampN(r.roomMin, 2, roomMax, Math.min(d.roomMin, roomMax))),

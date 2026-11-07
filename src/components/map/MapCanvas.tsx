@@ -3,12 +3,12 @@
 // Zoom e pinça vêm da câmera do mural; quem usa o mapa decide o que o ponteiro faz.
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  Archive, Armchair, Bath, Bed, Box, CookingPot, Cylinder, Expand, Flame, Landmark, Library, Maximize2, Minimize2, Minus, Mountain,
-  Package, PersonStanding, Plus, RectangleHorizontal, Shrub, Sofa, Square, Table2, TreePine,
+  Archive, Armchair, Bath, Bed, Box, CookingPot, Cylinder, Expand, Flame, FlameKindling, Lamp, LampCeiling, LampWallUp, Landmark, Library,
+  Lightbulb, Maximize2, Minimize2, Minus, Mountain, Package, PersonStanding, Plus, RectangleHorizontal, Shrub, Sofa, Square, Table2, TreePine,
 } from 'lucide-react';
 import type { AvatarConfig } from '../../model/avatar';
-import type { CombatSide, EdgeRef, MapObject, PropKind, ThreatCategory } from '../../model/types';
-import { PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
+import type { CombatSide, EdgeRef, LightKind, MapLight, MapObject, PropKind, ThreatCategory } from '../../model/types';
+import { LIGHT_KINDS, LIGHT_MOUNTS, PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import type { Point } from '../../rules/grid';
 import Avatar from '../common/Avatar';
 import { ThreatGlyph } from '../gm/ThreatIcon';
@@ -60,6 +60,15 @@ export const PROP_ICONS: Record<PropKind, typeof Box> = {
   outro: Square,
 };
 
+/** Ícone da luz sobre móvel ou no chão. Presa na parede ou no teto usa um ícone discreto de luz suspensa. */
+export const LIGHT_ICONS: Record<LightKind, typeof Box> = {
+  vela: Flame, candelabro: Flame, lampiao: Lamp, tocha: Flame, lustre: LampCeiling,
+  lareira: FlameKindling, braseiro: FlameKindling, fogueira: FlameKindling, outra: Lightbulb,
+};
+
+export const lightIcon = (o: Pick<MapLight, 'light' | 'mount'>): typeof Box =>
+  o.mount === 'teto' ? LampCeiling : o.mount === 'parede' ? LampWallUp : LIGHT_ICONS[o.light] ?? Lightbulb;
+
 interface GridData { w: number; h: number; cells: string; wallsH: string; wallsV: string }
 
 interface Props {
@@ -74,6 +83,14 @@ interface Props {
   dim?: number[];
   /** Visão escura, mestre: o que nenhum jogador vê (sombra leve por cima). */
   fog?: number[];
+  /** Luz em cada quadrado ('0' a '4', w*h): quanto mais escuro, mais sombra por cima. */
+  light?: string;
+  /** Sombra da luz mais leve (o mestre enxerga tudo). */
+  lightSoft?: boolean;
+  /** Mostra os ícones das fontes de luz (padrão: sim). */
+  showLights?: boolean;
+  /** Editor: quadrados a céu aberto, marcados de leve. */
+  sky?: number[];
   reachTone?: 'free' | 'request' | 'blocked';
   path?: Point[] | null;
   /** Texto no fim do caminho ("4 quadrados · 6 m"). */
@@ -171,6 +188,19 @@ export default function MapCanvas(props: Props) {
   const reachD = useMemo(() => (props.reach?.length ? cellsPath(props.reach, w) : ''), [props.reach, w]);
   const dimD = useMemo(() => (props.dim?.length ? cellsPath(props.dim, w) : ''), [props.dim, w]);
   const fogD = useMemo(() => (props.fog?.length ? cellsPath(props.fog, w) : ''), [props.fog, w]);
+  // Sombra por intensidade de luz (4 = aceso, sem sombra). O vazio já é escuro.
+  const shadeD = useMemo(() => {
+    const L = props.light;
+    if (!L) return null;
+    const by: number[][] = [[], [], [], []];
+    for (let i = 0; i < w * h; i++) {
+      const lvl = L.charCodeAt(i) - 48;
+      if (lvl >= 0 && lvl < 4 && grid.cells[i] !== TERRAIN_CHAR.void) by[lvl].push(i);
+    }
+    return by.map((c) => (c.length ? cellsPath(c, w) : ''));
+  }, [props.light, grid.cells, w, h]);
+  const showLights = props.showLights ?? true;
+  const skyD = useMemo(() => (props.sky?.length ? cellsPath(props.sky, w) : ''), [props.sky, w]);
   const previewD = useMemo(() => (props.preview?.cells?.length ? cellsPath(props.preview.cells, w) : ''), [props.preview, w]);
 
   const pointerAt = (e: React.PointerEvent): MapPointer => {
@@ -294,6 +324,7 @@ export default function MapCanvas(props: Props) {
               <path d={layers.difficult} fill={`url(#dif${uid})`} />
               <path d={layers.stairs} fill={`url(#st${uid})`} />
               <path d={layers.grid} className="map-grid" />
+              {skyD && <path d={skyD} className="map-sky" />}
               {dimD && <path d={dimD} className="map-dim" />}
               {fogD && <path d={fogD} className="map-fog" />}
               {reachD &&<path d={reachD} className={`map-reach map-reach-${tone}`} />}
@@ -309,7 +340,9 @@ export default function MapCanvas(props: Props) {
               })}
               {objects.map((o) => (o.kind === 'door'
                 ? <Door key={o.id} edge={o.edge} state={o.state} hidden={o.hidden && !!props.showHidden} selected={props.selectedObjectId === o.id} />
-                : null))}
+                : o.kind === 'window' && (!o.hidden || props.showHidden)
+                  ? <WindowPane key={o.id} edge={o.edge} hidden={o.hidden} selected={props.selectedObjectId === o.id} />
+                  : null))}
               {props.hoverEdge && (() => {
                 const [x1, y1, x2, y2] = edgeCoords(props.hoverEdge);
                 return <line x1={x1} y1={y1} x2={x2} y2={y2} className="map-edge-hover" />;
@@ -332,6 +365,14 @@ export default function MapCanvas(props: Props) {
             </svg>
             {objects.map((o) => (o.kind === 'prop' && (!o.hidden || props.showHidden) ? (
               <PropView key={o.id} o={o} selected={props.selectedObjectId === o.id} />
+            ) : null))}
+            {shadeD && (
+              <svg className={`map-svg map-shade-layer${props.lightSoft ? ' soft' : ''}`} width={size.w} height={size.h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+                {shadeD.map((d, lvl) => (d ? <path key={lvl} d={d} className={`map-shade-${lvl}`} /> : null))}
+              </svg>
+            )}
+            {objects.map((o) => (o.kind === 'light' && (showLights || props.selectedObjectId === o.id) && (!o.hidden || props.showHidden) ? (
+              <LightView key={o.id} o={o} selected={props.selectedObjectId === o.id} />
             ) : null))}
             {tokens.map((t) => {
               const at = walk.pos.get(t.id);
@@ -412,6 +453,42 @@ function Door({ edge, state, hidden, selected }: { edge: EdgeRef; state: string;
       <rect {...leaf} rx={0.04} className="map-door-leaf" />
       {state === 'locked' && <circle cx={(x1 + x2) / 2} cy={(y1 + y2) / 2} r={0.06} className="map-door-lock" />}
     </g>
+  );
+}
+
+/** Janela: vidro estreito sobre a parede, com o caixilho no meio. */
+function WindowPane({ edge, hidden, selected }: { edge: EdgeRef; hidden: boolean; selected: boolean }) {
+  const [x1, y1, x2, y2] = edgeCoords(edge);
+  const horiz = edge.o === 'h';
+  const t = 0.16;
+  const pane = horiz
+    ? { x: x1 + 0.16, y: y1 - t / 2, width: 0.68, height: t }
+    : { x: x1 - t / 2, y: y1 + 0.16, width: t, height: 0.68 };
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  return (
+    <g className={`map-window${hidden ? ' is-hidden' : ''}${selected ? ' selected' : ''}`}>
+      <rect {...pane} className="map-window-pane" />
+      {horiz
+        ? <line x1={pane.x} y1={my} x2={pane.x + pane.width} y2={my} className="map-window-sill" />
+        : <line x1={mx} y1={pane.y} x2={mx} y2={pane.y + pane.height} className="map-window-sill" />}
+    </g>
+  );
+}
+
+/** Fonte de luz: chama sobre o móvel ou no chão; presa na parede ou no teto, um ícone discreto. */
+function LightView({ o, selected }: { o: MapLight; selected: boolean }) {
+  const Icon = lightIcon(o);
+  const hung = o.mount === 'parede' || o.mount === 'teto';
+  // Na parede, o ícone encosta no lado da parede.
+  const shift = o.mount === 'parede' && o.side ? { n: [0, -0.3], s: [0, 0.3], w: [-0.3, 0], e: [0.3, 0] }[o.side] : [0, 0];
+  const box = hung ? 18 : 22;
+  return (
+    <div className={`map-light${hung ? ' hung' : ''}${o.lit ? ' lit' : ' out'}${o.hidden ? ' is-hidden' : ''}${selected ? ' selected' : ''}`}
+      title={`${o.label || LIGHT_KINDS[o.light].label} · ${LIGHT_MOUNTS[o.mount].toLowerCase()} · ${o.radius} q${o.lit ? '' : ' · apagada'}`}
+      style={{ left: (o.x + 0.5 + shift[0]) * CELL - box / 2, top: (o.y + 0.5 + shift[1]) * CELL - box / 2, width: box, height: box }}>
+      <Icon size={hung ? 11 : 14} />
+    </div>
   );
 }
 

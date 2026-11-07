@@ -103,12 +103,15 @@ const CONSUMIVEIS: ItemData[] = [
   item('consumivel', 'Sal grosso (saco)', '', 3, 'Uma linha de sal que entidades menores não atravessam.'),
   item('consumivel', 'Coquetel molotov', '2d6', 10, 'Arremesso (alcance curto). 2d6 de fogo na área e 1d6 por rodada até apagar.'),
   item('consumivel', 'Granada de fragmentação', '4d6', 200, 'Arremesso (alcance médio). 4d6 em raio de 5 m; DES(15) reduz à metade.'),
-  item('consumivel', 'Sinalizador', '1d4', 8, 'Ilumina 30 m por 10 minutos. Arremessado, causa 1d4 de fogo.'),
+  item('consumivel', 'Sinalizador', '1d4', 8, 'Ilumina 30 m por 10 minutos. Arremessado, causa 1d4 de fogo.', { effects: { light: 20 } }),
+  item('consumivel', 'Velas', '', 2, 'Maço de seis velas de sebo. Acesa e equipada, ilumina 3 m em volta; cada uma dura cerca de uma hora.', { pack: 6, effects: { light: 2 } }),
   item('consumivel', 'Seringa de adrenalina', '', 60, 'Uma ação: quem está com 0 PV ou menos volta a 1 PV e acorda. Uma vez por dia por pessoa.'),
 ];
 
 const EQUIPAMENTOS: ItemData[] = [
-  item('equipamento', 'Lanterna tática', '', 15, 'Feixe forte, alcance de 30 m. Pode ofuscar: DES(15) do alvo ou perde a próxima ação.', { slot: 'uma_mao' }),
+  item('equipamento', 'Lanterna tática', '', 15, 'Feixe forte, alcance de 30 m. Pode ofuscar: DES(15) do alvo ou perde a próxima ação.', { slot: 'uma_mao', effects: { light: 8 } }),
+  item('equipamento', 'Tocha', '1d4', 1, 'Pano embebido em óleo num cabo de madeira. Equipada e acesa, ilumina 7,5 m em volta por cerca de uma hora. Golpeada, causa 1d4 de fogo.', { slot: 'uma_mao', effects: { light: 5 }, durability: { pv: 3, rd: 0 } }),
+  item('equipamento', 'Lampião a óleo', '', 12, 'Lanterna de vidro com pavio. Equipado, ilumina 6 m em volta; o óleo dura umas seis horas.', { slot: 'uma_mao', effects: { light: 4 }, durability: { pv: 3, rd: 0 } }),
   item('equipamento', 'Kit de arrombamento', '', 50, 'Gazuas e tensores. +5 em testes de DES para abrir fechaduras.', { slot: 'uma_mao' }),
   item('equipamento', 'Kit de ferramentas', '', 40, 'Chaves, alicates e chaves de fenda. +5 para consertar ou desmontar mecanismos.', { slot: 'uma_mao' }),
   item('equipamento', 'Kit forense', '', 120, 'Pó revelador, luvas, sacos de evidência e luz UV. +5 em INT para examinar cenas.', { slot: 'uma_mao' }),
@@ -120,7 +123,7 @@ const EQUIPAMENTOS: ItemData[] = [
   item('equipamento', 'Máscara de gás', '', 70, 'Imune a gases e fumaça por 1 hora por filtro.'),
   item('equipamento', 'Óculos de visão noturna', '', 400, 'Enxerga no escuro até 30 m. Luz forte ofusca quem usa.'),
   item('equipamento', 'Mochila', '', 10, 'Carrega o que não cabe nos bolsos.'),
-  item('equipamento', 'Isqueiro', '', 2, 'Fogo à mão.', { slot: 'uma_mao', durability: { pv: 2, rd: 1 } }),
+  item('equipamento', 'Isqueiro', '', 2, 'Fogo à mão. Aceso, ilumina o quadrado de quem segura e os vizinhos.', { slot: 'uma_mao', effects: { light: 1 }, durability: { pv: 2, rd: 1 } }),
 ];
 
 export const PLACEHOLDER_ITEMS: ItemData[] = [

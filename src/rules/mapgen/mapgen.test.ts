@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapPreset } from '../../model/types';
+import type { EdgeRef, HouseModel, HouseShape, HouseSize, MapGenParams, MapPreset } from '../../model/types';
 import { HOUSE_MODELS, HOUSE_SIZES, PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import { edgeKey, hasWall, isOpen, terrainAt } from '../../model/map';
 import { generateDungeon } from '../dungeon';
@@ -78,12 +78,35 @@ function checkCommon(g: GeneratedMap) {
   expect(m.cells).toHaveLength(m.w * m.h);
   expect(m.wallsH).toHaveLength((m.h + 1) * m.w);
   expect(m.wallsV).toHaveLength(m.h * (m.w + 1));
-  expect(g.doors.length + g.props.length).toBeLessThanOrEqual(500);
+  expect(g.doors.length + g.props.length + g.windows.length + g.lights.length).toBeLessThanOrEqual(500);
   const open = (x: number, y: number) => isOpen(terrainAt(m, x, y));
   for (const d of g.doors) {
     expect(hasWall(m, d)).toBe(true);
     const [a, b] = d.o === 'h' ? [[d.x, d.y - 1], [d.x, d.y]] : [[d.x - 1, d.y], [d.x, d.y]];
     expect(open(a[0], a[1]) && open(b[0], b[1])).toBe(true);
+  }
+  // Janela: numa parede sem porta, entre um quadrado coberto e um a céu aberto.
+  const doorKeys = new Set(g.doors.map(edgeKey));
+  const sky = (x: number, y: number) => g.outside?.[y * m.w + x] === '1';
+  for (const wnd of g.windows) {
+    expect(hasWall(m, wnd)).toBe(true);
+    expect(doorKeys.has(edgeKey(wnd))).toBe(false);
+    const [a, b] = wnd.o === 'h' ? [[wnd.x, wnd.y - 1], [wnd.x, wnd.y]] : [[wnd.x - 1, wnd.y], [wnd.x, wnd.y]];
+    expect(open(a[0], a[1]) && open(b[0], b[1])).toBe(true);
+    expect(sky(a[0], a[1]) !== sky(b[0], b[1])).toBe(true);
+  }
+  expect(new Set(g.windows.map(edgeKey)).size).toBe(g.windows.length);
+  // Luz: num quadrado aberto, uma por quadrado; na parede, encostada numa parede de verdade.
+  const lit = new Set<number>();
+  for (const l of g.lights) {
+    expect(open(l.x, l.y)).toBe(true);
+    expect(l.radius).toBeGreaterThan(0);
+    expect(lit.has(l.y * m.w + l.x)).toBe(false);
+    lit.add(l.y * m.w + l.x);
+    if (l.mount === 'parede') {
+      const e = { n: { o: 'h', x: l.x, y: l.y }, s: { o: 'h', x: l.x, y: l.y + 1 }, w: { o: 'v', x: l.x, y: l.y }, e: { o: 'v', x: l.x + 1, y: l.y } }[l.side!] as EdgeRef;
+      expect(hasWall(m, e)).toBe(true);
+    }
   }
   const used = new Set<number>();
   for (const p of g.props) {
@@ -116,6 +139,37 @@ describe('gerador de mapas', () => {
       expect(bare.layout.wallsV).toBe(a.layout.wallsV);
       expect(bare.doors).toEqual(a.doors);
     }
+  });
+
+  it('janelas e luzes: coerentes com o ambiente, sem mexer na planta nem nos móveis', () => {
+    let withWindows = 0;
+    for (const preset of ['dungeon', 'house', 'temple', 'outdoor'] as MapPreset[]) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const g = generateMap(params(preset, { lights: true, ...size(seed) }), seed);
+        checkCommon(g);
+        const plain = generateMap(params(preset, { ...size(seed) }), seed);
+        expect(g.layout).toEqual(plain.layout);
+        expect(g.props).toEqual(plain.props);
+        expect(plain.windows).toHaveLength(0);
+        expect(plain.lights).toHaveLength(0);
+        expect(generateMap(params(preset, { lights: true, ...size(seed) }), seed)).toEqual(g);
+        if (preset === 'dungeon') {
+          expect(g.windows).toHaveLength(0);
+          expect(g.outside).toBeUndefined();
+        } else {
+          expect(g.outside).toMatch(/1/);
+        }
+        if (preset === 'house' || preset === 'temple') {
+          expect(g.lights.length).toBeGreaterThan(0);
+          if (g.windows.length) withWindows++;
+        }
+        // Luz sobre móvel fica em cima de um móvel.
+        for (const l of g.lights.filter((x) => x.mount === 'mesa')) {
+          expect(g.props.some((p) => l.x >= p.x && l.y >= p.y && l.x < p.x + p.w && l.y < p.y + p.h)).toBe(true);
+        }
+      }
+    }
+    expect(withWindows).toBeGreaterThanOrEqual(36);
   });
 
   it('masmorra sem mobília é a mesma de antes', () => {

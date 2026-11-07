@@ -194,6 +194,19 @@ export function conditionOf(ch: Character, d: Derived = deriveStats(ch)): Condit
   return 'ok';
 }
 
+/**
+ * Raio de luz que a ficha carrega, em quadrados: o maior entre os itens equipados, inteiros
+ * e não esgotados (tocha acesa na mão, lampião no cinto).
+ */
+export function carriedLight(ch: Pick<Character, 'inventory'>): number {
+  let r = 0;
+  for (const it of ch.inventory ?? []) {
+    if (!it.equipped || (it.pv ?? 1) <= 0 || (it.qty ?? 1) <= 0) continue;
+    r = Math.max(r, it.effects?.light ?? 0);
+  }
+  return r;
+}
+
 /** Bônus total de teste de um atributo: valor + bônus de nível par. */
 export function testModifier(ch: Pick<Character, 'attributes' | 'levels'>, attr: AttrKey): number {
   return ch.attributes[attr] + Math.floor(ch.levels.length / 2);

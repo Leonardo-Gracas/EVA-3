@@ -56,7 +56,7 @@ export default function Inventory({ ch, readOnly }: { ch: Character; readOnly?: 
         {ch.inventory.map((it) => {
           const stackable = isStackable(it);
           // Munição e consumíveis não se equipam nem levam dano no dia a dia: menos botões no cartão.
-          const equippable = !stackable || it.equipped || !!(it.effects.def || it.effects.rdPhysical || it.effects.rdMagic);
+          const equippable = !stackable || it.equipped || !!(it.effects.def || it.effects.rdPhysical || it.effects.rdMagic || it.effects.light);
           const block = it.equipped ? null : equipBlock(ch.inventory, it);
           return (
             <ItemCard key={it.id} it={it} pv={it.pv} qty={it.qty} equipped={it.equipped}

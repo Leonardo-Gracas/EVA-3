@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import { Copy, Eye, EyeOff, Flag, Map as MapIcon, Moon, Pencil, Plus, Swords, Trash2 } from 'lucide-react';
 import type { TableState, Terrain } from '../../model/types';
-import { MAP_CELL_M, MAP_LIMITS, MOVE_MODES, VISION_MODES } from '../../model/types';
-import { visionOf } from '../../model/map';
+import { AMBIENTS, MAP_CELL_M, MAP_LIMITS, MOVE_MODES, VISION_MODES } from '../../model/types';
+import { ambientOf, visionOf } from '../../model/map';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
@@ -79,6 +79,7 @@ export default function MapsPanel({ table, openId, setOpenId }: {
                 <span className="row-wrap" style={{ gap: 6 }}>
                   <span className="badge">{MOVE_MODES[m.mode].label}</span>
                   {visionOf(m) !== 'open' && <span className="badge pmap-dark"><Moon size={11} /> Visão {VISION_MODES[visionOf(m)].label.toLowerCase()}</span>}
+                  {visionOf(m) !== 'open' && ambientOf(m) !== 'geral' && <span className="badge">Luz de fora: {AMBIENTS[ambientOf(m)].label.toLowerCase()}</span>}
                   {active && <span className="badge badge-gold"><Eye size={11} /> Aberto aos jogadores</span>}
                   {linked && <span className="badge badge-err"><Swords size={11} /> Combate</span>}
                 </span>
