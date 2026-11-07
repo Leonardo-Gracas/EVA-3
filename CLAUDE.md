@@ -15,6 +15,26 @@ Se o projeto não estiver indexado (ou o índice estiver desatualizado após mud
 rode `index_repository` antes. Grep/Glob/Read ficam para textos, configs e arquivos não-código,
 e sempre leia o arquivo antes de editá-lo.
 
+## Publicar: sempre subir ao terminar
+
+Ao terminar qualquer alteração (com `npx tsc --noEmit -p .` e `npm test` passando), suba sem perguntar:
+
+1. Commit no `main` só com os arquivos da tarefa, mensagem em português.
+2. `git push origin main`. O Netlify publica o site sozinho a cada push no `main`.
+3. Se a pasta `server/` mudou, publique também o servidor de salas: `npx wrangler deploy` dentro de `server/`
+   (o `publicar.ps1` faz o mesmo, mas espera Enter no fim).
+
+Se a verificação falhar, não suba: corrija ou avise.
+
+O Git em `C:\Program Files\Git` está sem o suporte a HTTPS (o push falha com `git: 'remote-https' is not a git command`).
+Use o Git do GitHub Desktop, no PowerShell:
+
+```powershell
+$gd = (Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop\app-*" -Directory | Sort-Object Name | Select-Object -Last 1).FullName + '\resources\app\git'
+$env:PATH = "$gd\cmd;$gd\mingw64\bin;$gd\usr\bin;$env:PATH"
+git push origin main
+```
+
 ## Projeto
 
 - React + TypeScript + Vite. Verificação: `npx tsc --noEmit -p .` e `npm test`.
