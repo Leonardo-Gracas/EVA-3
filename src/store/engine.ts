@@ -28,7 +28,7 @@ import {
 } from './combat';
 import { Fail, fail, int, log, record, str } from './guard';
 import { applyMapAction, describeMapMove, dropTokens, getMap, releaseTokens } from './mapActions';
-import { moveGate } from './maps';
+import { moveGate, planPlayerMove } from './maps';
 
 export interface EngineCtx {
   now: () => number;
@@ -1659,8 +1659,15 @@ interface PlayerGate {
 function playerGate(s: TableState, actor: Extract<Actor, { role: 'player' }>, a: GameAction): PlayerGate | null {
   if (a.type === 'map/move') {
     // No mapa, quem decide é o modo de locomoção (e a fila do combate), não o painel.
-    const g = moveGate(s, getMap(s, a.mapId), a.characterId!);
-    return { kind: 'map_move', perm: g.gate === 'free' ? 'free' : g.gate, blocked: g.reason ?? 'Você não pode se mover agora.' };
+    const m = getMap(s, a.mapId);
+    const g = moveGate(s, m, a.characterId!);
+    let perm: ActionPermission = g.gate;
+    // Na própria vez, passar do deslocamento vira pedido.
+    if (perm === 'free' && g.extra) {
+      const plan = planPlayerMove(s, m, a.characterId!, a.x, a.y, a.path);
+      if (!('error' in plan) && plan.over) perm = 'request';
+    }
+    return { kind: 'map_move', perm, blocked: g.reason ?? 'Você não pode se mover agora.' };
   }
   const key = permissionFor(a);
   if (!key) return null;

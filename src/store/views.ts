@@ -3,6 +3,7 @@ import type {
   BattleMap, LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerView, TableState,
 } from '../model/types';
 import { TERRAIN_CHAR } from '../model/types';
+import { visionOf } from '../model/map';
 import { visibleArea, type Vision } from '../rules/vision';
 import { combatOn, eyesOf, isTokenTurn, moveBudget, moveGate, playerGrid, tokenCombatant, tokenInfo, visibleObjects } from './maps';
 import { followPath } from '../rules/grid';
@@ -63,8 +64,9 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
   const moves: PlayerMapMove[] = [];
   const grid = playerGrid(m);
   const here = combatOn(s, m);
-  // Visão escura: só o cômodo dos próprios personagens (o resto nem sai daqui).
-  const vis = m.dark ? visibleArea(grid, m.cells, eyesOf(s, m, playerId)) : null;
+  // Visão individual ou compartilhada: só o que os personagens enxergam (o resto nem sai daqui).
+  const vision = visionOf(m);
+  const vis = vision !== 'open' ? visibleArea(grid, m.cells, eyesOf(s, m, playerId)) : null;
   const sees = (x: number, y: number) => !vis || vis.seen[y * m.w + x] === 1;
   for (const t of Object.values(m.tokens)) {
     const info = tokenInfo(s, t);
@@ -90,11 +92,13 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
       const b = moveBudget(s, t, g.accumulate);
       moves.push({
         characterId: ch!.id, tokenId: t.id, squares: b.squares, remaining: b.remaining, parity: b.parity, gate: g.gate,
+        ...(g.unlimited ? { unlimited: true } : {}),
+        ...(g.extra ? { extra: true } : {}),
         ...(g.reason ? { reason: g.reason } : {}),
       });
     }
   }
-  const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, tokens, moves };
+  const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, vision, tokens, moves };
   if (!vis) return { ...base, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: visibleObjects(m) };
   return { ...base, ...darkLayout(m, vis), dark: true, dim: [...vis.dim] };
 }

@@ -2193,8 +2193,85 @@ button.camp-pill { min-height: 36px; }
 /* Editor. */
 .map-head { gap: 8px; }
 .map-name { max-width: 260px; font-family: var(--font-display); font-size: 15px; }
-.map-editor { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
-.map-side { gap: 12px; }
+/* Mapa fixo à esquerda, na altura que sobra da tela (--map-h, medido no JS); a lateral rola sozinha. */
+.map-page { gap: 10px; }
+.map-editor { --map-h: calc(100vh - 180px); display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.map-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; height: var(--map-h); }
+.map-side { gap: 12px; max-height: var(--map-h); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 2px; }
+.map-fill { flex: 1 1 0; min-height: 0; }
+.map-fill .map-wrap { flex: 1 1 0; min-height: 200px; }
+.btn-gold-on { background: var(--gold-dim); border-color: var(--border-gold); color: var(--gold-soft); }
+
+/* Barra embaixo do mapa (Mesa): modos do mapa, filtro e quem dá para colocar. */
+.tbar { display: flex; flex-direction: column; gap: 6px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); }
+.map-full .tbar { border-radius: 0; border-width: 1px 0 0; }
+.tbar-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.map-modes.tbar-seg { display: inline-flex; flex: none; }
+.tbar-seg .map-mode { flex: none; padding: 5px 8px; }
+/* Só o modo escolhido mostra o nome; os outros, só o ícone (nome na dica). */
+.tbar-seg .map-mode:not(.on) .tbar-seg-label { display: none; }
+.tbar-filters { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-base); }
+.tbar-filters button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: var(--text-secondary); }
+.tbar-filters button b { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tbar-filters button:hover { color: var(--text-primary); }
+.tbar-filters button.on { background: var(--gold-dim); color: var(--gold-soft); }
+.tbar-filters button.on b { color: var(--gold); }
+.tbar-search { flex: 1 1 100px; max-width: 180px; }
+.tbar-search .input { padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
+.tbar-list { display: flex; align-items: center; gap: 6px; min-height: 40px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
+.tbar-list .tok-empty { padding: 6px 2px; }
+.tbar-chip {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; max-width: 190px; padding: 3px 4px 3px 3px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--bg-base); cursor: grab;
+}
+.tbar-chip:hover { border-color: var(--border-light); }
+.tbar-chip:active { cursor: grabbing; }
+.tbar-chip.armed { border-color: var(--gold); border-style: dashed; background: var(--gold-dim); }
+.tbar-chip.first-book { position: relative; margin-left: 10px; }
+.tbar-chip.first-book::before { content: ''; position: absolute; left: -9px; top: 15%; bottom: 15%; border-left: 1px solid var(--border-light); }
+.tbar-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: inherit; padding-right: 4px; }
+.tbar-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.tbar-book { font-size: 13px; color: var(--text-muted); }
+.tbar-quick { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--text-muted); flex-shrink: 0; }
+.tbar-quick:hover { background: var(--bg-hover); color: var(--text-primary); }
+.tok-sel { gap: 8px; }
+
+/* Ícone "i": informações objetivas ao passar o mouse ou tocar. */
+.infotip { position: relative; display: inline-flex; flex-shrink: 0; }
+.infotip-btn { color: var(--text-muted); }
+.infotip.open .infotip-btn { color: var(--gold-soft); }
+.infotip-pop {
+  display: none; position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: max-content; max-width: min(320px, 80vw);
+  flex-direction: column; gap: 6px; padding: 10px 12px; font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left;
+  text-transform: none; letter-spacing: 0; white-space: normal; color: var(--text-secondary);
+  background: var(--bg-surface); border: 1px solid var(--border-gold); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.infotip-pop.right { left: auto; right: 0; }
+.infotip-pop.up { top: auto; bottom: calc(100% + 6px); }
+.infotip:hover .infotip-pop, .infotip.open .infotip-pop { display: flex; }
+.infotip-pop b { color: var(--text-primary); }
+.infotip-pop .warn { color: var(--warning); }
+@media (hover: none) { .infotip:not(.open):hover .infotip-pop { display: none; } }
+
+/* Combate sem mapa: plano aberto com quem está na fila. */
+.fc-plane {
+  position: relative; flex: 1 1 0; min-height: 220px; overflow: auto; padding: 18px; border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light); background: radial-gradient(ellipse at center, #1c1712 0%, var(--map-void) 75%);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 18px;
+}
+.fc-plane.drop { border-color: var(--gold); border-style: dashed; }
+.fc-side { display: flex; flex-wrap: wrap; gap: 14px; }
+.fc-tok {
+  display: flex; flex-direction: column; align-items: center; gap: 5px; width: 84px; padding: 6px 4px; border-radius: var(--radius);
+  color: inherit; border: 1px solid transparent;
+}
+.fc-tok:hover { background: rgba(239, 231, 218, 0.04); }
+.fc-tok.on { border-color: var(--border-gold); background: var(--gold-dim); }
+.fc-tok.turn .tok-pic { box-shadow: 0 0 0 2px var(--side), 0 0 0 5px rgba(227, 196, 124, 0.4); }
+.fc-tok.down { opacity: 0.45; }
+.fc-tok.is-hidden { opacity: 0.55; }
+.fc-tok-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.fc-empty { margin: auto; text-align: center; color: var(--text-muted); font-size: 13px; }
 .map-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .map-swatches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .map-swatch {
@@ -2271,6 +2348,10 @@ button.camp-pill { min-height: 36px; }
 
 @media (max-width: 900px) {
   .map-editor { grid-template-columns: minmax(0, 1fr); }
+  .map-main { height: auto; }
+  .map-fill .map-wrap { flex: none; height: 62vh; }
+  .fc-plane { flex: none; height: 50vh; }
+  .map-side { max-height: none; overflow: visible; }
 }
 @media (max-width: 560px) {
   .map-tool-label { display: none; }

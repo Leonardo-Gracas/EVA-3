@@ -3,10 +3,10 @@
 import { MAX_COMBATANTS, nameInstances, numberInstances, threatInstance } from './combat';
 import type {
   Actor, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, MapAction, MapDoor, MapLayout, MapObject, MapToken, MoveMode, PropEffect,
-  PropKind, TableState, Terrain, TokenRef,
+  PropKind, TableState, Terrain, TokenRef, VisionMode,
 } from '../model/types';
-import { DOOR_STATES, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS } from '../model/types';
-import { blankLayout, edgeIndex, sameEdge, setChars, setWalls, terrainAt, wallAround } from '../model/map';
+import { DOOR_STATES, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS, VISION_MODES } from '../model/types';
+import { blankLayout, edgeIndex, sameEdge, setChars, setWalls, terrainAt, visionOf, wallAround } from '../model/map';
 import { generateMap } from '../rules/mapgen';
 import { followPath, pathTo, reachFrom, type Point } from '../rules/grid';
 import type { EngineCtx } from './engine';
@@ -203,7 +203,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       if (a.walls) wallAround(layout);
       const m: BattleMap = {
         id: ctx.newId(), name: str(a.name, MAX_NAME, 'Nome do mapa', true), ...layout,
-        tokens: {}, mode: 'livre', createdAt: now, updatedAt: now,
+        tokens: {}, mode: 'livre', vision: 'open', createdAt: now, updatedAt: now,
       };
       s.maps[m.id] = m;
       return m.id;
@@ -212,10 +212,13 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
     case 'map/update': {
       const m = getMap(s, a.mapId);
       if (a.name !== undefined) m.name = str(a.name, MAX_NAME, 'Nome do mapa', true);
-      if (a.dark !== undefined && !!a.dark !== !!m.dark) {
-        m.dark = !!a.dark;
-        if (s.activeMapId === m.id) {
-          log(s, ctx, { kind: 'system', actorName: who, text: m.dark ? `apagou as luzes em ${m.name}: cada um só vê o cômodo onde está.` : `acendeu as luzes em ${m.name}.` });
+      if (a.vision !== undefined) {
+        if (!(typeof a.vision === 'string' && a.vision in VISION_MODES)) fail('Modo de visão inválido.');
+        const changed = visionOf(m) !== a.vision;
+        m.vision = a.vision as VisionMode;
+        delete m.dark;
+        if (changed && s.activeMapId === m.id) {
+          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a visão em ${m.name} para ${VISION_MODES[m.vision].label.toLowerCase()}.` });
         }
       }
       if (a.mode !== undefined) {

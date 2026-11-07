@@ -1,5 +1,5 @@
 // Leitura e escrita das strings do mapa: terreno por quadrado e paredes nas linhas.
-import type { BattleMap, EdgeRef, MapLayout, MapObject, Terrain } from './types';
+import type { BattleMap, EdgeRef, MapLayout, MapObject, Terrain, VisionMode } from './types';
 import { MAP_LIMITS, TERRAIN_CHAR } from './types';
 
 const CHAR_TERRAIN: Record<string, Terrain> = Object.fromEntries(
@@ -109,5 +109,12 @@ export function fixMap(m: BattleMap): BattleMap {
   m.objects ??= {};
   m.tokens ??= {};
   m.mode ??= 'livre';
+  m.vision = visionOf(m);
+  delete m.dark;
   return m;
+}
+
+/** Modo de visão do mapa (mapas antigos guardavam só `dark`). */
+export function visionOf(m: Pick<BattleMap, 'vision' | 'dark'>): VisionMode {
+  return m.vision ?? (m.dark ? 'individual' : 'open');
 }

@@ -325,10 +325,21 @@ export const TERRAINS: Record<Terrain, { label: string; hint: string }> = {
 
 export type MoveMode = 'livre' | 'turno' | 'permissao';
 
+/** Na ordem dos botões. */
 export const MOVE_MODES: Record<MoveMode, { label: string; hint: string }> = {
-  livre: { label: 'Livre', hint: 'Todos se movem quando quiserem, até o deslocamento a cada movimento.' },
-  turno: { label: 'Por turno', hint: 'Segue a fila do combate vinculado. Quem está fora da fila pede ao mestre.' },
-  permissao: { label: 'Permissionado', hint: 'Todo movimento de jogador vira um pedido ao mestre.' },
+  permissao: { label: 'Permissionado', hint: 'Vai a qualquer lugar que vê, sem limite de alcance. O mestre aprova cada movimento.' },
+  livre: { label: 'Livre', hint: 'Vai a qualquer lugar que vê, sem limite de alcance e sem pedir.' },
+  turno: { label: 'Turnos', hint: 'Na própria vez, anda até o deslocamento sem pedir. Passar disso vira pedido ao mestre.' },
+};
+
+/** O que os jogadores enxergam do mapa. */
+export type VisionMode = 'open' | 'individual' | 'shared';
+
+/** Na ordem dos botões. */
+export const VISION_MODES: Record<VisionMode, { label: string; hint: string }> = {
+  open: { label: 'Aberta', hint: 'O mapa todo.' },
+  individual: { label: 'Individual', hint: 'Só onde o próprio personagem chega andando. Porta fechada tapa a vista.' },
+  shared: { label: 'Compartilhada', hint: 'A visão individual de todos os jogadores, somada e compartilhada.' },
 };
 
 export type DoorState = 'open' | 'closed' | 'locked';
@@ -432,7 +443,9 @@ export interface BattleMap {
   objects: Record<string, MapObject>;
   tokens: Record<string, MapToken>;
   mode: MoveMode;
-  /** Visão escura: cada jogador só vê o cômodo dos próprios personagens (porta fechada tapa a vista). */
+  /** O que os jogadores enxergam. Sem o campo: `dark` decide (mapas antigos). */
+  vision?: VisionMode;
+  /** Versão antiga de `vision`: true = individual. Só leitura (use `visionOf`). */
   dark?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -896,7 +909,7 @@ export type MapAction =
   /** walls: parede em volta de todo o piso. */
   | { type: 'map/create'; name: string; w: number; h: number; fill?: Terrain; walls?: boolean }
   /** Campos ausentes não mudam. */
-  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode; dark?: boolean }
+  | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode; vision?: VisionMode }
   | { type: 'map/delete'; mapId: string }
   | { type: 'map/duplicate'; mapId: string }
   /** dx/dy: quanto o conteúdo anda (para crescer à esquerda ou em cima). O que sair do mapa some; o que entra ganha `fill` (padrão: vazio). */
@@ -1001,6 +1014,10 @@ export interface PlayerMapMove {
   remaining: number;
   parity: 0 | 1;
   gate: MoveGateKind;
+  /** Sem limite de alcance (permissionado, livre, fora do combate): vai a qualquer lugar que vê. */
+  unlimited?: boolean;
+  /** Na própria vez: passar de `remaining` vira pedido ao mestre. */
+  extra?: boolean;
   reason?: string;
 }
 
@@ -1013,6 +1030,7 @@ export interface PlayerMap {
   wallsH: string;
   wallsV: string;
   mode: MoveMode;
+  vision: VisionMode;
   /** Sem os ocultos: porta secreta some e fica a parede. */
   objects: MapObject[];
   tokens: PlayerMapToken[];

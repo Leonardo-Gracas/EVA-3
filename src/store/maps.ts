@@ -5,7 +5,7 @@ import type {
 } from '../model/types';
 import type { AvatarConfig } from '../model/avatar';
 import { avatarFor } from '../model/avatar';
-import { cellLabel } from '../model/map';
+import { cellLabel, visionOf } from '../model/map';
 import {
   buildGrid, canEnd, costTo, followPath, MAX_PATH, metersFor, pathTo, reachFrom, squaresFor, type Grid, type GridPath, type Point, type Reach,
 } from '../rules/grid';
@@ -21,21 +21,28 @@ export const playerGrid = (m: BattleMap): Grid => buildGrid({ ...m, objects: vis
 /** Grid completo, do mestre. */
 export const fullGrid = (m: BattleMap): Grid => buildGrid({ ...m, objects: Object.values(m.objects) });
 
-/** Onde estão os personagens (visíveis) de um jogador neste mapa: de onde ele enxerga. */
+/**
+ * De onde o jogador enxerga: os personagens (visíveis) dele neste mapa. Na visão
+ * compartilhada, os personagens de todos os jogadores.
+ */
 export function eyesOf(s: TableState, m: BattleMap, ownerId: string): Point[] {
+  const shared = visionOf(m) === 'shared';
   return Object.values(m.tokens).flatMap((t) => {
     const info = t.ref.kind === 'character' ? tokenInfo(s, t) : null;
-    return info && !info.hidden && s.characters[t.ref.id]?.ownerId === ownerId ? [{ x: t.x, y: t.y }] : [];
+    const ch = t.ref.kind === 'character' ? s.characters[t.ref.id] : undefined;
+    if (!info || info.hidden || !ch) return [];
+    const sees = shared ? ch.kind === 'pc' && ch.status === 'approved' : ch.ownerId === ownerId;
+    return sees ? [{ x: t.x, y: t.y }] : [];
   });
 }
 
 /**
- * Grid em que o jogador se move. Na visão escura, só o que ele vê (e as soleiras das portas):
- * nenhum caminho passa pelo escuro.
+ * Grid em que o jogador se move. Fora da visão aberta, só o que ele vê (e as soleiras das
+ * portas): nenhum caminho passa pelo escuro.
  */
 export function playerMoveGrid(s: TableState, m: BattleMap, ownerId: string): Grid {
   const g = playerGrid(m);
-  if (!m.dark) return g;
+  if (visionOf(m) === 'open') return g;
   const vis = visibleArea(g, m.cells, eyesOf(s, m, ownerId));
   const mult = g.mult.slice();
   for (let i = 0; i < mult.length; i++) if (!vis.seen[i] && !vis.dim.has(i)) mult[i] = 0;
@@ -99,23 +106,32 @@ export function isTokenTurn(s: TableState, m: BattleMap, tok: MapToken): boolean
 
 export interface MoveGate {
   gate: MoveGateKind;
-  /** O gasto soma no turno (modo por turno, na vez do personagem). */
+  /** O gasto soma no turno (modo por turnos, na vez do personagem). */
   accumulate: boolean;
+  /** Sem limite de alcance: vai a qualquer lugar que vê. */
+  unlimited: boolean;
+  /** Na vez, com limite: passar do deslocamento vira pedido ao mestre. */
+  extra: boolean;
   reason?: string;
 }
 
-/** Como o jogador move a ficha agora, conforme o modo de locomoção do mapa. */
+/**
+ * Como o jogador move a ficha agora, conforme o modo de locomoção do mapa.
+ * Permissionado: qualquer lugar que vê, com a aprovação do mestre. Livre: o mesmo, sem pedir.
+ * Turnos: na própria vez, até o deslocamento sem pedir (além dele, pedindo).
+ */
 export function moveGate(s: TableState, m: BattleMap, characterId: string): MoveGate {
-  if (s.activeMapId !== m.id) return { gate: 'blocked', accumulate: false, reason: 'Este mapa não está aberto para os jogadores.' };
-  if (m.mode === 'livre') return { gate: 'free', accumulate: false };
-  if (m.mode === 'permissao') return { gate: 'request', accumulate: false, reason: 'O mestre aprova cada movimento.' };
+  const open = { accumulate: false, unlimited: true, extra: false };
+  if (s.activeMapId !== m.id) return { ...open, gate: 'blocked', reason: 'Este mapa não está aberto para os jogadores.' };
+  if (m.mode === 'livre') return { ...open, gate: 'free' };
+  if (m.mode === 'permissao') return { ...open, gate: 'request', reason: 'O mestre aprova cada movimento.' };
   const c = s.combat;
-  if (!c || c.mapId !== m.id || !c.round) return { gate: 'request', accumulate: false, reason: 'Fora de combate: peça ao mestre.' };
+  if (!c || c.mapId !== m.id || !c.round) return { ...open, gate: 'request', reason: 'Fora de combate: peça ao mestre.' };
   const tok = tokenOfCharacter(m, characterId);
   const cb = tok ? tokenCombatant(s, tok) : undefined;
-  if (!cb) return { gate: 'request', accumulate: false, reason: 'Fora da fila do combate: peça ao mestre.' };
-  if (currentCombatant(c)?.id === cb.id) return { gate: 'free', accumulate: true };
-  return { gate: 'blocked', accumulate: false, reason: 'Aguarde sua vez.' };
+  if (!cb) return { ...open, gate: 'request', reason: 'Fora da fila do combate: peça ao mestre.' };
+  if (currentCombatant(c)?.id === cb.id) return { gate: 'free', accumulate: true, unlimited: false, extra: true };
+  return { gate: 'blocked', accumulate: false, unlimited: false, extra: false, reason: 'Aguarde sua vez.' };
 }
 
 export interface MoveBudget {
@@ -156,13 +172,18 @@ export interface PlannedMove {
   path: GridPath;
   budget: MoveBudget;
   accumulate: boolean;
+  /** O caminho passa do deslocamento que resta (no modo por turnos, vira pedido). */
+  over: boolean;
 }
 
-/** Alcance do jogador para a ficha: o mesmo cálculo da tela dele. */
+/**
+ * Até onde o jogador chega com a ficha: o mesmo cálculo da tela dele. Sem limite de
+ * alcance: o deslocamento só decide se o movimento precisa de pedido (modo por turnos).
+ */
 export function playerReach(s: TableState, m: BattleMap, tok: MapToken, accumulate: boolean): { reach: Reach; budget: MoveBudget } {
   const budget = moveBudget(s, tok, accumulate);
   const owner = tok.ref.kind === 'character' ? s.characters[tok.ref.id]?.ownerId ?? '' : '';
-  const reach = reachFrom(playerMoveGrid(s, m, owner), tok, budget.remaining, budget.parity, occupiedCells(s, m, tok.id, true));
+  const reach = reachFrom(playerMoveGrid(s, m, owner), tok, Infinity, budget.parity, occupiedCells(s, m, tok.id, true));
   return { reach, budget };
 }
 
@@ -198,18 +219,14 @@ export function planPlayerMove(s: TableState, m: BattleMap, characterId: string,
     const budget = moveBudget(s, token, accumulate);
     const walked = followPath(playerMoveGrid(s, m, s.characters[characterId]?.ownerId ?? ''), cells, budget.parity);
     if (!walked) return { error: 'O caminho passa por onde não dá para andar.' };
-    if (walked.cost > budget.remaining) {
-      return { error: budget.remaining ? 'O caminho passa do deslocamento.' : 'Sem deslocamento restante neste turno.' };
-    }
     if (occupiedCells(s, m, token.id, true).has(y * m.w + x)) return { error: 'Já tem alguém nesse quadrado.' };
-    return { token, path: { cells, cost: walked.cost, parity: walked.parity }, budget, accumulate };
+    return { token, path: { cells, cost: walked.cost, parity: walked.parity }, budget, accumulate, over: walked.cost > budget.remaining };
   }
   const { reach, budget } = playerReach(s, m, token, accumulate);
-  if (costTo(reach, x, y) < 0) {
-    return { error: budget.remaining ? 'Fora do alcance do deslocamento.' : 'Sem deslocamento restante neste turno.' };
-  }
+  if (costTo(reach, x, y) < 0) return { error: 'Não dá para chegar aí.' };
   if (!canEnd(reach, x, y)) return { error: 'Já tem alguém nesse quadrado.' };
-  return { token, path: pathTo(reach, x, y)!, budget, accumulate };
+  const p = pathTo(reach, x, y)!;
+  return { token, path: p, budget, accumulate, over: p.cost > budget.remaining };
 }
 
 /** "C7 em Cripta (4 quadrados, 6 m)". */

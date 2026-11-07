@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Clock, Footprints, Hourglass, LocateFixed, Map as MapIcon, Moon, Undo2, X } from 'lucide-react';
 import type { MoveGateKind, PlayerCombatant, PlayerMapMove, PlayerMapToken, PlayerView } from '../../model/types';
-import { MOVE_MODES } from '../../model/types';
+import { MOVE_MODES, VISION_MODES } from '../../model/types';
 import { cellLabel } from '../../model/map';
 import {
   buildGrid, canEnd, costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point,
@@ -65,11 +65,18 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
 
   const grid = useMemo(() => buildGrid(m), [m]);
   const occupied = useMemo(() => new Set(m.tokens.filter((t) => t.id !== token?.id).map((t) => t.y * m.w + t.x)), [m.tokens, m.w, token?.id]);
+  // Aonde dá para ir: tudo o que se vê. O deslocamento só decide se precisa pedir (por turnos).
   const reach = useMemo(
-    () => (token && current ? reachFrom(grid, token, current.remaining, current.parity, occupied) : null),
+    () => (token && current ? reachFrom(grid, token, Infinity, current.parity, occupied) : null),
     [grid, token, current, occupied],
   );
-  const reachCells = useMemo(() => (reach && current?.gate !== 'blocked' ? reachableCells(reach) : []), [reach, current?.gate]);
+  // Destaque: o deslocamento que resta, quando há limite.
+  const reachCells = useMemo(() => {
+    if (!token || !current || current.unlimited || current.gate === 'blocked') return [];
+    return reachableCells(reachFrom(grid, token, current.remaining, current.parity, occupied));
+  }, [grid, token, current, occupied]);
+  /** Gate de um movimento com esse custo: na vez, passar do deslocamento vira pedido. */
+  const gateFor = (cost: number): MoveGateKind => (current?.gate === 'free' && current.extra && cost > current.remaining ? 'request' : current?.gate ?? 'blocked');
 
   // O rascunho e o destino escolhido só valem enquanto o personagem está onde começam.
   useEffect(() => {
@@ -145,10 +152,8 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   const extendTo = (cell: Point) => {
     if (!token || !current) return;
     const base = draftRef.current ?? [{ x: token.x, y: token.y }];
-    const next = extendPath(grid, base, cell, current.parity, current.remaining);
-    if (!same(next[next.length - 1], cell) && !dragging.current) {
-      toast(current.remaining ? 'Não dá para seguir por aí.' : 'Sem deslocamento restante neste turno.', 'info');
-    }
+    const next = extendPath(grid, base, cell, current.parity, Infinity);
+    if (!same(next[next.length - 1], cell) && !dragging.current) toast('Não dá para seguir por aí.', 'info');
     setDraft(next);
   };
 
@@ -225,7 +230,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
 
     if (!reach || costTo(reach, x, y) <= 0 || !canEnd(reach, x, y)) {
       setArmed(null);
-      toast(current.remaining ? 'Fora do alcance.' : 'Sem deslocamento restante neste turno.', 'info');
+      toast('Não dá para chegar aí.', 'info');
       return;
     }
     // No toque, o primeiro toque escolhe o destino; o botão (ou outro toque no mesmo quadrado) confirma.
@@ -262,17 +267,17 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
     focusOn(t, { zoom: FOCUS_ZOOM, ping: true, smooth: true });
   };
 
-  const request = current?.gate === 'request';
+  const request = gateFor(shown?.cost ?? 0) === 'request';
   const pathLabel = shown ? `${squaresText(shown.cost)} · ${meters(shown.cost)}${request ? ' · pedir' : ''}` : undefined;
   const steps = draft ? draft.length - 1 : 0;
-  const noneLeft = !!current && current.remaining === 0 && current.gate !== 'blocked';
+  const noneLeft = !!current && !current.unlimited && current.remaining === 0 && current.gate !== 'blocked';
 
   const hint = !current
-    ? m.dark ? 'Está escuro: sem seu personagem no mapa, você não vê nada.' : 'Seu personagem não está neste mapa. O mestre coloca os tokens.'
+    ? m.dark ? 'Sem seu personagem no mapa, você não vê nada.' : 'Seu personagem não está neste mapa. O mestre coloca os tokens.'
     : current.gate === 'blocked'
       ? `${current.reason ?? 'Aguarde.'}${turnCb && !myTurn ? ` Vez de ${turnCb.name}.` : ''}`
       : noneLeft
-        ? 'Sem deslocamento restante neste turno.'
+        ? 'Sem deslocamento: andar mais vira pedido ao mestre.'
         : pathMode === 'exact'
           ? steps > 0 ? 'Continue tocando nos quadrados do trajeto.' : 'Toque nos quadrados, um a um, ou arraste a ficha.'
           : 'Toque no destino (ou arraste a ficha).';
@@ -283,7 +288,9 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
         <MapIcon size={14} className="gold" />
         <strong className="pmap-name">{m.name}</strong>
         <span className="badge" title={MOVE_MODES[m.mode].hint}>{MOVE_MODES[m.mode].label}</span>
-        {m.dark && <span className="badge pmap-dark" title="Você só vê o cômodo onde seu personagem está. Porta fechada tapa a vista."><Moon size={11} /> Escuro</span>}
+        {m.vision !== 'open' && (
+          <span className="badge pmap-dark" title={VISION_MODES[m.vision].hint}><Moon size={11} /> Visão {VISION_MODES[m.vision].label.toLowerCase()}</span>
+        )}
         <span className="tiny muted hide-sm pmap-mode-hint">{MOVE_MODES[m.mode].hint}</span>
       </div>
 
@@ -350,7 +357,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
               </>
             ) : (
               <>
-                {current && current.gate !== 'blocked' && !noneLeft && <PathModeToggle mode={pathMode} onChange={setPathMode} />}
+                {current && current.gate !== 'blocked' && <PathModeToggle mode={pathMode} onChange={setPathMode} />}
                 <span className="pmap-hint tiny muted">
                   {current?.gate === 'blocked' && <Hourglass size={12} />} {hint}
                 </span>
@@ -366,12 +373,23 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
 
 /** Deslocamento do turno: um tracinho por quadrado (gastos, do caminho escolhido e livres). */
 function MoveMeter({ mv, plan, name }: { mv: PlayerMapMove; plan: number; name?: string }) {
+  if (mv.unlimited) {
+    const title = `${mv.gate === 'request' ? 'Vai a qualquer lugar que vê; o mestre aprova' : mv.gate === 'free' ? 'Vai a qualquer lugar que vê' : mv.reason ?? 'Aguarde.'}`;
+    return (
+      <span className={`pmap-meter tone-${mv.gate}`} title={title} aria-label={title}>
+        <Footprints size={14} />
+        {name && <span className="pmap-meter-name hide-xs">{name}</span>}
+        <span className="tiny muted">sem limite</span>
+        <span className={`badge ${GATE[mv.gate].cls} pmap-gate`}>{GATE[mv.gate].label}</span>
+      </span>
+    );
+  }
   const spent = mv.squares - mv.remaining;
   const after = Math.max(0, mv.remaining - plan);
   const segs = mv.squares > 0 && mv.squares <= 16;
   const title = mv.gate === 'blocked'
     ? (mv.reason ?? 'Aguarde.')
-    : `Restam ${mv.remaining} de ${mv.squares} quadrados (${meters(mv.remaining)})${mv.gate === 'request' ? ' · o mestre aprova' : ''}`;
+    : `Restam ${mv.remaining} de ${mv.squares} quadrados (${meters(mv.remaining)})${mv.gate === 'request' ? ' · o mestre aprova' : mv.extra ? ' · passar disso vira pedido' : ''}`;
   return (
     <span className={`pmap-meter tone-${mv.gate}`} title={title} aria-label={title}>
       <Footprints size={14} />

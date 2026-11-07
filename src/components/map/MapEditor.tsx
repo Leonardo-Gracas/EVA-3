@@ -2,14 +2,15 @@
 // redimensionar, com desfazer. Mesa: tokens, alcance e movimento sem limite.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, Armchair, BrickWall, Check, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Link2, Link2Off, Lock, Unlock, MousePointer2, Paintbrush,
-  Moon, Redo2, Scaling, Sun, Swords, Trash2, Undo2, Users, Wand2, X,
+  ArrowLeft, Armchair, BrickWall, Check, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Footprints, Hand, Hourglass, Link2, Link2Off, Lock, Unlock,
+  MousePointer2, MousePointerClick, Paintbrush, Pencil, Redo2, Scaling, Sun, Swords, Trash2, Undo2, User, Users, Wand2, X,
 } from 'lucide-react';
 import type {
   BattleMap, DoorState, EdgeRef, GameAction, MapDoor, MapLayout, MapObject, MapProp, MoveMode, PlaceRef, PropEffect, PropKind, TableState, Terrain,
+  VisionMode,
 } from '../../model/types';
-import { DOOR_STATES, MAP_CELL_M, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS } from '../../model/types';
-import { cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt } from '../../model/map';
+import { DOOR_STATES, MAP_CELL_M, MAP_LIMITS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS, VISION_MODES } from '../../model/types';
+import { cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt, visionOf } from '../../model/map';
 import { costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point } from '../../rules/grid';
 import { fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, tokenCombatant } from '../../store/maps';
 import { visibleArea } from '../../rules/vision';
@@ -24,7 +25,9 @@ import MapCanvas, { PROP_ICONS, type MapFocus, type MapPointer, type PointerKind
 import MapGenerateModal from './MapGenerateModal';
 import { edgesBetween, lineCells, rectCells } from './mapRender';
 import { gmTokens } from './tokens';
-import TokensPanel, { type Armed } from './TokensPanel';
+import { mapPlaceables, OnMapList, SelectedToken, TokenBar, type Armed } from './TokensPanel';
+import InfoTip from '../common/InfoTip';
+import { useFitHeight } from './useFitHeight';
 import { PathModeToggle, usePathMode } from './pathMode';
 import type { RouteFn } from './useWalk';
 
@@ -54,6 +57,7 @@ const metersLabel = (sq: number) => `${sq} quadrado${sq === 1 ? '' : 's'} · ${m
 export default function MapEditor({ table, map, onBack }: { table: TableState; map: BattleMap; onBack: () => void }) {
   const { act } = useAct();
   const linked = table.combat?.mapId === map.id;
+  const active = table.activeMapId === map.id;
   const [mode, setMode] = useState<Mode>(() => (linked || Object.keys(map.tokens).length ? 'play' : 'edit'));
   const [tool, setTool] = useState<Tool>('terrain');
   const [terrain, setTerrain] = useState<Terrain>('floor');
@@ -81,6 +85,8 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   const [name, setName] = useState(map.name);
   useEffect(() => setName(map.name), [map.name]);
 
+  const gridRef = useRef<HTMLDivElement>(null);
+  useFitHeight(gridRef);
   const run = useCallback((a: GameAction) => act(a), [act]);
   const undo = useUndo(map.id, run);
   const mapRef = useRef(map);
@@ -154,9 +160,9 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     setSelTok(tok ?? null);
     if (tok) lookAt(tok);
   };
-  // Visão escura: o mestre vê tudo, com sombra no que nenhum jogador vê agora.
+  // Visão individual ou compartilhada: o mestre vê tudo, com sombra no que nenhum jogador vê agora.
   const fog = useMemo(() => {
-    if (!map.dark || mode !== 'play') return undefined;
+    if (visionOf(map) === 'open' || mode !== 'play') return undefined;
     const eyes = Object.values(map.tokens).flatMap((t) => {
       const ch = t.ref.kind === 'character' ? table.characters[t.ref.id] : undefined;
       return ch && ch.kind === 'pc' && ch.status === 'approved' && !t.hidden ? [{ x: t.x, y: t.y }] : [];
@@ -496,24 +502,58 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       onState={(state) => act({ type: 'map/door', mapId: map.id, objectId: popDoor.id, state }, DOOR_DONE[state])} />,
   } : null;
 
-  const playHint = armed
-    ? `Clique num quadrado para colocar ${armed.name}. Esc cancela.`
-    : pathMode === 'exact'
-      ? 'Escolha um token e clique quadrado a quadrado (ou arraste a partir dele). Clique no fim, ou Enter, para andar.'
-      : 'Toque num token para ver o alcance; arraste ou toque no destino para mover. Toque numa porta para abrir ou trancar.';
+  const playHint = pathMode === 'exact'
+    ? 'Escolha um token e clique quadrado a quadrado (ou arraste a partir dele). Clique no fim, ou Enter, para andar.'
+    : 'Toque num token para ver o alcance; arraste ou toque no destino para mover. Toque numa porta para abrir ou trancar.';
   const steps = draft ? draft.length - 1 : 0;
   const playDock = (
     <>
       <PathModeToggle mode={pathMode} onChange={setPathMode} />
-      {steps > 0 ? (
+      {armed ? (
+        <span className="tok-hint">
+          <MousePointerClick size={14} />
+          <span>Clique no mapa: <strong>{armed.name}</strong>{armed.repeat ? ' (cada clique, mais uma)' : ''}</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => setArmed(null)}>{armed.repeat ? 'Pronto' : 'Cancelar'}</button>
+        </span>
+      ) : steps > 0 ? (
         <span className="map-draft-bar">
           <span className="tiny muted">{steps} passo{steps === 1 ? '' : 's'}</span>
           <button className="btn btn-sm btn-ghost" onClick={() => setDraft(draft!.slice(0, -1))} title="Voltar um passo (Backspace)"><Undo2 size={13} /> Passo</button>
           <button className="btn btn-sm btn-ghost" onClick={() => setDraft(null)} title="Apagar o trajeto (Esc)"><X size={13} /> Limpar</button>
           <button className="btn btn-sm btn-primary" disabled={!draftWalk} onClick={sendDraft} title="Andar pelo trajeto (Enter)"><Check size={13} /> Mover</button>
         </span>
-      ) : <span className="tiny muted map-dock-hint">{playHint}</span>}
+      ) : <InfoTip label="Como mover" up>{playHint}</InfoTip>}
     </>
+  );
+
+  // Barra embaixo do mapa (Mesa): modos do mapa e quem dá para colocar.
+  const { items: placeables, queue } = useMemo(() => mapPlaceables(table, map), [table, map]);
+  const armedKey = armed ? `${armed.ref.kind}:${armed.ref.id}` : null;
+  const vision = visionOf(map);
+  const tokenBar = (
+    <TokenBar
+      items={placeables}
+      armedKey={armedKey}
+      onPick={(it) => setArmed(armedKey === it.key ? null : { ref: it.ref, name: it.name, repeat: !!it.repeat })}
+      onQuick={(it) => void act({ type: 'map/tokenPlace', mapId: map.id, refs: [it.ref] })}
+      controls={<MapModes map={map} />}
+      extra={queue.length > 0 && (
+        <button className="btn btn-sm btn-ghost" onClick={() => void act({ type: 'map/tokenPlace', mapId: map.id, refs: queue }, 'Fila do combate no mapa.')}
+          title="Põe no mapa todos da fila que ainda não estão nele">
+          <Swords size={13} /> Fila ({queue.length})
+        </button>
+      )}
+      empty="Todas as fichas aprovadas já estão no mapa. Crie ameaças na aba NPCs e Ameaças."
+      info={(
+        <>
+          <span><b>Locomoção · {MOVE_MODES[map.mode].label}:</b> {MOVE_MODES[map.mode].hint}</span>
+          <span><b>Visão · {VISION_MODES[vision].label}:</b> {VISION_MODES[vision].hint}{vision !== 'open' ? ' Na Mesa, a sombra marca o que nenhum jogador vê.' : ''}</span>
+          {map.mode === 'turno' && !linked && <span className="warn">Turnos sem combate neste mapa: todo movimento de jogador vira pedido.</span>}
+          <span><b>Colocar:</b> arraste até o quadrado, ou clique e depois clique no mapa. O + põe perto do centro.</span>
+          <span><b>∞</b> = do livro de ameaças: cada vez entra uma nova{combat && linked ? ', no fim da fila' : ', solta no mapa'}.</span>
+        </>
+      )}
+    />
   );
 
   const saveName = () => {
@@ -523,21 +563,26 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   };
 
   return (
-    <div className="col gap-lg">
+    <div className="col map-page">
       <div className="row-wrap map-head">
         <button className="btn btn-sm btn-ghost" onClick={onBack}><ArrowLeft size={14} /> Mapas</button>
         <input className="input map-name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={saveName}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Nome do mapa" />
-        <span className="tiny muted">{map.w} × {map.h} · {(map.w * MAP_CELL_M).toLocaleString('pt-BR')} × {(map.h * MAP_CELL_M).toLocaleString('pt-BR')} m</span>
+        <span className="tiny muted hide-sm">{map.w} × {map.h} · {(map.w * MAP_CELL_M).toLocaleString('pt-BR')} × {(map.h * MAP_CELL_M).toLocaleString('pt-BR')} m</span>
         <span className="spacer" />
+        <button className={`btn btn-sm${active ? ' btn-gold-on' : ' btn-ghost'}`}
+          onClick={() => act({ type: 'map/activate', mapId: active ? null : map.id }, active ? 'Mapa escondido dos jogadores.' : 'Mapa aberto aos jogadores.')}
+          title={active ? 'Os jogadores veem este mapa (e as mudanças na hora). Clique para esconder.' : 'Os jogadores não veem este mapa. Clique para mostrar.'}>
+          {active ? <><Eye size={14} /> Aberto aos jogadores</> : <><EyeOff size={14} /> Mostrar aos jogadores</>}
+        </button>
         <SubTabs<Mode> label="Modo do editor" value={mode} onChange={setMode} tabs={[
-          { id: 'edit', label: 'Editar', icon: <Paintbrush size={14} /> },
+          { id: 'edit', label: 'Editar', icon: <Pencil size={14} /> },
           { id: 'play', label: 'Mesa', icon: <Users size={14} />, total: Object.keys(map.tokens).length },
         ]} />
       </div>
 
-      <div className="map-editor">
-        <div className="col" style={{ minWidth: 0 }}>
+      <div className="map-editor" ref={gridRef}>
+        <div className="map-main">
           {mode === 'edit' && (
             <div className="map-tools">
               {TOOLS.map((t) => (
@@ -551,6 +596,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             </div>
           )}
           <MapCanvas
+            fill
             grid={map} objects={objects} tokens={shownTokens} fitKey={map.id}
             reach={guide?.cells} reachTone={guide?.turn ? 'free' : 'request'}
             fog={fog}
@@ -570,11 +616,11 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             focus={camera}
             top={mode === 'play' && combat && combatHere ? <TurnBar table={table} combat={combat} /> : undefined}
             dock={mode === 'edit' ? <span className="tiny muted map-dock-hint">{TOOLS.find((t) => t.id === tool)?.hint}</span> : playDock}
+            bottom={mode === 'play' ? tokenBar : undefined}
           />
         </div>
 
         <aside className="col map-side">
-          {mode === 'edit' && <SessionCard table={table} map={map} />}
           {mode === 'edit' ? (
             <>
               {tool === 'terrain' && (
@@ -617,43 +663,49 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             </>
           ) : (
             <>
-              {/* Na mesa: a fila do combate (quando há), depois os tokens. */}
+              {/* Na mesa: a fila do combate com todos do mapa, o token escolhido e quem está no mapa. */}
               {combat && combatHere ? (
                 <div className="card col ct-card">
-                  {!linked && (
+                  {linked ? (
+                    <div className="row-wrap">
+                      <span className="badge badge-err"><Swords size={11} /> Combate neste mapa</span>
+                      <span className="spacer" />
+                      {missing > 0 && (
+                        <button className="btn btn-sm btn-ghost" onClick={() => void combatAll()} title="Põe no fim da fila quem está no mapa e ainda não luta">
+                          <Users size={13} /> + {missing} do mapa
+                        </button>
+                      )}
+                      <button className="btn btn-sm btn-ghost btn-icon" onClick={() => act({ type: 'map/link', mapId: null })}
+                        title="Desvincular: a fila continua, sem mapa" aria-label="Desvincular o combate do mapa"><Link2Off size={13} /></button>
+                    </div>
+                  ) : (
                     <div className="tok-hint">
                       <Swords size={14} /><span>Combate sem mapa.</span><span className="spacer" />
                       <button className="btn btn-sm" onClick={() => void combatAll()}><Link2 size={13} /> Usar este mapa</button>
                     </div>
                   )}
-                  {linked && missing > 0 && (
-                    <button className="btn btn-sm btn-ghost" onClick={() => void combatAll()} title="Põe no fim da fila quem está no mapa e ainda não luta">
-                      <Users size={13} /> Pôr na fila {missing === 1 ? 'quem falta' : `os ${missing} que faltam`} do mapa
-                    </button>
-                  )}
                   <CombatTracker table={table} combat={combat} focusId={focusCb} onFocus={focusFromTracker} />
                 </div>
               ) : combat ? (
                 <div className="card col">
-                  <div className="card-title" style={{ margin: 0 }}><Swords size={14} /> Combate em outro mapa</div>
-                  <div className="tiny muted">A fila está ligada a {table.maps[combat.mapId!]?.name ?? 'outro mapa'}.</div>
+                  <div className="card-title" style={{ margin: 0 }}><Swords size={14} /> Combate em {table.maps[combat.mapId!]?.name ?? 'outro mapa'}</div>
                   <button className="btn btn-sm" onClick={() => void combatAll()}><Link2 size={13} /> Trazer o combate para cá</button>
                 </div>
               ) : (
-                <div className="card col">
-                  <button className="btn btn-primary" disabled={!missing} onClick={() => void combatAll()}>
+                <div className="card row">
+                  <button className="btn btn-primary grow" disabled={!missing} onClick={() => void combatAll()}>
                     <Swords size={15} /> Combate com todos do mapa{missing ? ` (${missing})` : ''}
                   </button>
-                  <div className="tiny muted">
+                  <InfoTip label="Sobre o combate" align="right">
                     {missing
-                      ? 'Abre a fila com todos que estão no mapa, na ordem: jogadores, NPCs e ameaças. Quem for colocado depois entra no fim da fila.'
+                      ? 'Abre a fila com todos que estão no mapa: jogadores, NPCs e ameaças. Quem for colocado depois entra no fim da fila.'
                       : 'Coloque fichas e ameaças no mapa para abrir um combate com elas.'}
-                  </div>
+                  </InfoTip>
                 </div>
               )}
-              <TokensPanel table={table} map={map} selTok={selTok} setSelTok={setSelTok} armed={armed} setArmed={setArmed}
+              <SelectedToken table={table} map={map} selTok={selTok} setSelTok={setSelTok}
                 guide={guide ? { squares: guide.budget.squares, remaining: guide.budget.remaining, turn: guide.turn } : null} />
-              <SessionCard table={table} map={map} />
+              <OnMapList table={table} map={map} selTok={selTok} setSelTok={setSelTok} />
             </>
           )}
         </aside>
@@ -675,59 +727,36 @@ function propRect(a: { x: number; y: number }, b: { x: number; y: number }) {
   return { x, y, w: Math.min(10, Math.abs(a.x - b.x) + 1), h: Math.min(10, Math.abs(a.y - b.y) + 1) };
 }
 
-/** Modo de locomoção, mostrar aos jogadores e vínculo com o combate. */
-function SessionCard({ table, map }: { table: TableState; map: BattleMap }) {
+const MOVE_ICONS: Record<MoveMode, JSX.Element> = {
+  permissao: <Hand size={13} />, livre: <Footprints size={13} />, turno: <Hourglass size={13} />,
+};
+const VISION_ICONS: Record<VisionMode, JSX.Element> = {
+  open: <Sun size={13} />, individual: <User size={13} />, shared: <Users size={13} />,
+};
+
+/** Locomoção e visão do mapa: dois seletores compactos (detalhes no "i" da barra). */
+function MapModes({ map }: { map: BattleMap }) {
   const { act } = useAct();
-  const active = table.activeMapId === map.id;
-  const combat = table.combat;
-  const linked = combat?.mapId === map.id;
+  const vision = visionOf(map);
   return (
-    <div className={`card col${active ? ' card-gold' : ''}`}>
-      <div className="card-title">Mesa</div>
-      <button className={`btn btn-sm${active ? '' : ' btn-primary'}`}
-        onClick={() => act({ type: 'map/activate', mapId: active ? null : map.id }, active ? 'Mapa escondido dos jogadores.' : 'Mapa aberto aos jogadores.')}>
-        {active ? <><EyeOff size={14} /> Esconder dos jogadores</> : <><Eye size={14} /> Mostrar aos jogadores</>}
-      </button>
-      {active && <div className="tiny muted">Os jogadores veem as mudanças na hora.</div>}
-      <div className="field">
-        <span className="label">Locomoção</span>
-        <div className="map-modes" role="radiogroup" aria-label="Modo de locomoção">
-          {(Object.keys(MOVE_MODES) as MoveMode[]).map((m) => (
-            <button key={m} role="radio" aria-checked={map.mode === m} className={`map-mode${map.mode === m ? ' on' : ''}`}
-              onClick={() => act({ type: 'map/update', mapId: map.id, mode: m })} title={MOVE_MODES[m].hint}>
-              {MOVE_MODES[m].label}
-            </button>
-          ))}
-        </div>
-        <span className="tiny muted">{MOVE_MODES[map.mode].hint}</span>
-      </div>
-      <div className="field">
-        <span className="label">Visão</span>
-        <div className="map-modes map-modes-2" role="radiogroup" aria-label="Visão dos jogadores">
-          <button role="radio" aria-checked={!map.dark} className={`map-mode${!map.dark ? ' on' : ''}`}
-            onClick={() => act({ type: 'map/update', mapId: map.id, dark: false })} title="Os jogadores veem o mapa inteiro">
-            <Sun size={12} /> Tudo à vista
+    <>
+      <span className="map-modes tbar-seg" role="radiogroup" aria-label="Locomoção">
+        {(Object.keys(MOVE_MODES) as MoveMode[]).map((m) => (
+          <button key={m} role="radio" aria-checked={map.mode === m} className={`map-mode${map.mode === m ? ' on' : ''}`}
+            onClick={() => act({ type: 'map/update', mapId: map.id, mode: m })} title={`Locomoção ${MOVE_MODES[m].label.toLowerCase()}: ${MOVE_MODES[m].hint}`}>
+            {MOVE_ICONS[m]}<span className="tbar-seg-label">{MOVE_MODES[m].label}</span>
           </button>
-          <button role="radio" aria-checked={!!map.dark} className={`map-mode${map.dark ? ' on' : ''}`}
-            onClick={() => act({ type: 'map/update', mapId: map.id, dark: true })} title="Cada jogador só vê o cômodo onde o personagem dele está">
-            <Moon size={12} /> Escuro
+        ))}
+      </span>
+      <span className="map-modes tbar-seg" role="radiogroup" aria-label="Visão dos jogadores">
+        {(Object.keys(VISION_MODES) as VisionMode[]).map((v) => (
+          <button key={v} role="radio" aria-checked={vision === v} className={`map-mode${vision === v ? ' on' : ''}`}
+            onClick={() => act({ type: 'map/update', mapId: map.id, vision: v })} title={`Visão ${VISION_MODES[v].label.toLowerCase()}: ${VISION_MODES[v].hint}`}>
+            {VISION_ICONS[v]}<span className="tbar-seg-label">{VISION_MODES[v].label}</span>
           </button>
-        </div>
-        <span className="tiny muted">
-          {map.dark
-            ? 'Cada jogador só vê o cômodo do próprio personagem; porta fechada tapa a vista, aberta deixa ver o outro lado. Na Mesa, a sombra marca o que nenhum jogador vê.'
-            : 'Os jogadores veem o mapa inteiro (menos o que estiver oculto).'}
-        </span>
-      </div>
-      {combat && linked && (
-        <div className="row-wrap">
-          <span className="badge badge-err"><Swords size={11} /> Combate neste mapa{combat.round ? ` · rodada ${combat.round}` : ''}</span>
-          <span className="spacer" />
-          <button className="btn btn-sm btn-ghost" onClick={() => act({ type: 'map/link', mapId: null })} title="A fila continua, sem mapa"><Link2Off size={13} /> Desvincular</button>
-        </div>
-      )}
-      {map.mode === 'turno' && !linked && <div className="tiny" style={{ color: 'var(--warning)' }}>Por turno sem combate neste mapa: todo movimento de jogador vira pedido.</div>}
-    </div>
+        ))}
+      </span>
+    </>
   );
 }
 

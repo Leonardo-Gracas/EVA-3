@@ -2,11 +2,13 @@
 import { useState } from 'react';
 import { Copy, Eye, EyeOff, Map as MapIcon, Moon, Pencil, Plus, Swords, Trash2 } from 'lucide-react';
 import type { TableState, Terrain } from '../../model/types';
-import { MAP_CELL_M, MAP_LIMITS, MOVE_MODES } from '../../model/types';
+import { MAP_CELL_M, MAP_LIMITS, MOVE_MODES, VISION_MODES } from '../../model/types';
+import { visionOf } from '../../model/map';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
 import MapEditor from './MapEditor';
+import FreeCombat from './FreeCombat';
 import { CombatTracker, TurnBar } from '../combat/CombatTracker';
 
 export default function MapsPanel({ table, openId, setOpenId }: {
@@ -14,18 +16,20 @@ export default function MapsPanel({ table, openId, setOpenId }: {
 }) {
   const { act } = useAct();
   const [creating, setCreating] = useState(false);
+  /** Tela do combate sem mapa aberta. */
+  const [free, setFree] = useState(false);
   const maps = Object.values(table.maps).sort((a, b) => a.createdAt - b.createdAt);
   const open = openId ? table.maps[openId] : undefined;
+  const combat = table.combat;
 
   if (open) return <MapEditor table={table} map={open} onBack={() => setOpenId(null)} />;
+  if (free && combat && !combat.mapId) return <FreeCombat table={table} combat={combat} onBack={() => setFree(false)} />;
 
-  const combat = table.combat;
   const combatMap = combat?.mapId ? table.maps[combat.mapId] : undefined;
-  const pcs = Object.values(table.characters).filter((c) => c.kind === 'pc' && c.status === 'approved');
-  /** Combate sem mapa (na imaginação): a fila já vem com os personagens dos jogadores. */
+  /** Combate sem mapa: fila vazia; o mestre arrasta quem luta para o plano. */
   const freeCombat = async () => {
     const r = await act({ type: 'combat/create' });
-    if (r.ok && pcs.length) await act({ type: 'combat/add', refs: pcs.map((c) => ({ kind: 'character' as const, id: c.id })) });
+    if (r.ok) setFree(true);
   };
 
   return (
@@ -36,7 +40,7 @@ export default function MapsPanel({ table, openId, setOpenId }: {
           <div className="tiny muted">Grid de quadrados de {MAP_CELL_M.toLocaleString('pt-BR')} m. Os jogadores só veem o mapa que você mostrar. O combate fica no mapa, na Mesa.</div>
         </div>
         {!combat && (
-          <button className="btn btn-ghost btn-sm" onClick={() => void freeCombat()} title="Fila de combate sem mapa, com os personagens dos jogadores">
+          <button className="btn btn-sm" onClick={() => void freeCombat()} title="Abre um combate num plano aberto, sem mapa: os jogadores veem só a fila">
             <Swords size={14} /> Combate sem mapa
           </button>
         )}
@@ -47,7 +51,9 @@ export default function MapsPanel({ table, openId, setOpenId }: {
         <div className="card col ct-card ct-card-wide">
           <div className="row-wrap">
             <div className="card-title grow" style={{ margin: 0 }}><Swords size={14} /> Combate{combatMap ? ` · ${combatMap.name}` : ' sem mapa'}</div>
-            {combatMap && <button className="btn btn-sm btn-primary" onClick={() => setOpenId(combatMap.id)}><MapIcon size={13} /> Abrir o mapa</button>}
+            {combatMap
+              ? <button className="btn btn-sm btn-primary" onClick={() => setOpenId(combatMap.id)}><MapIcon size={13} /> Abrir o mapa</button>
+              : <button className="btn btn-sm btn-primary" onClick={() => setFree(true)}><Swords size={13} /> Abrir o combate</button>}
           </div>
           <TurnBar table={table} combat={combat} />
           <CombatTracker table={table} combat={combat} />
@@ -72,7 +78,7 @@ export default function MapsPanel({ table, openId, setOpenId }: {
                 <span className="tiny muted">{m.w} × {m.h} quadrados · {tokens} token{tokens === 1 ? '' : 's'}</span>
                 <span className="row-wrap" style={{ gap: 6 }}>
                   <span className="badge">{MOVE_MODES[m.mode].label}</span>
-                  {m.dark && <span className="badge pmap-dark"><Moon size={11} /> Escuro</span>}
+                  {visionOf(m) !== 'open' && <span className="badge pmap-dark"><Moon size={11} /> Visão {VISION_MODES[visionOf(m)].label.toLowerCase()}</span>}
                   {active && <span className="badge badge-gold"><Eye size={11} /> Aberto aos jogadores</span>}
                   {linked && <span className="badge badge-err"><Swords size={11} /> Combate</span>}
                 </span>

@@ -97,6 +97,8 @@ interface Props {
   dock?: ReactNode;
   /** Altura da área visível (fora da tela cheia). */
   height?: string;
+  /** Ocupa a altura do pai (flex), em vez de `height`. */
+  fill?: boolean;
   compact?: boolean;
   /** Caminho que o token percorre ao mudar de lugar (sem: linha reta). */
   route?: RouteFn;
@@ -260,10 +262,10 @@ export default function MapCanvas(props: Props) {
   const tone = props.reachTone ?? 'free';
 
   return (
-    <div className={`map-shell${fullscreen.full ? ' map-full' : ''}${props.compact ? ' map-compact' : ''}`}>
+    <div className={`map-shell${fullscreen.full ? ' map-full' : ''}${props.compact ? ' map-compact' : ''}${props.fill ? ' map-fill' : ''}`}>
       {props.top}
       <div ref={wrapRef} className={`map-wrap${props.touch === 'none' ? ' map-touch-draw' : ''}`}
-        style={fullscreen.full ? undefined : { height: props.height ?? 'min(70vh, 760px)' }}>
+        style={fullscreen.full || props.fill ? undefined : { height: props.height ?? 'min(70vh, 760px)' }}>
         <div style={{ width: size.w * zoom, height: size.h * zoom, position: 'relative' }}>
           <div className="map-board" style={{ width: size.w, height: size.h, transform: `scale(${zoom})` }}
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel}

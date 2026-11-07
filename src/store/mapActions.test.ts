@@ -179,12 +179,15 @@ describe('mapas: edição', () => {
 });
 
 describe('mapas: locomoção', () => {
-  it('livre: até o deslocamento a cada movimento, sem acumular', () => {
+  it('livre: vai a qualquer lugar que vê, sem limite de alcance e sem pedir', () => {
     let { s, mapId, ana } = setup();
-    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 7, y: 0 })).toMatchObject({ ok: false, error: /alcance/ });
-    s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 6, y: 0 });
+    // 9 quadrados, além dos 6 de deslocamento.
+    s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 0 });
+    expect(pos(s, mapId, ana)).toEqual({ x: 9, y: 0 });
     s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 3 });
     expect(pos(s, mapId, ana)).toEqual({ x: 9, y: 3 });
+    expect(s.requests).toHaveLength(0);
+    expect(buildPlayerView(s, 'p1', new Set()).map!.moves[0]).toMatchObject({ gate: 'free', unlimited: true });
     // Ficha alheia, quadrado ocupado.
     expect(run(s, p2, { type: 'map/move', mapId, characterId: ana, x: 8, y: 3 })).toMatchObject({ ok: false, error: /não é sua/ });
     expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 9 })).toMatchObject({ ok: false });
@@ -223,19 +226,20 @@ describe('mapas: locomoção', () => {
     expect(door(0).state).toBe('open');
   });
 
-  it('visão escura: cada um só vê o próprio cômodo; porta fechada tapa a vista, aberta deixa ver', () => {
+  it('visão individual: cada um só vê o próprio cômodo; porta fechada tapa a vista, aberta deixa ver', () => {
     let { s, mapId, ana } = setup();
     // Parede em x=5 de cima a baixo, com uma porta fechada em F1.
     const wall = Array.from({ length: 10 }, (_, y) => ({ o: 'v' as const, x: 5, y }));
     s = ok(s, gm, { type: 'map/walls', mapId, edges: wall, on: true });
     s = ok(s, gm, { type: 'map/objectUpsert', mapId, object: { id: '', kind: 'door', edge: { o: 'v', x: 5, y: 0 }, state: 'closed', hidden: false } });
     const doorId = Object.values(s.maps[mapId].objects).find((o) => o.kind === 'door')!.id;
-    s = ok(s, gm, { type: 'map/update', mapId, dark: true });
-    expect(s.log[s.log.length - 1].text).toMatch(/apagou as luzes/);
+    s = ok(s, gm, { type: 'map/update', mapId, vision: 'individual' });
+    expect(s.log[s.log.length - 1].text).toMatch(/visão em Cripta para individual/);
 
     // Ana (A1) vê a metade esquerda; do outro lado, só a soleira F1, à meia-luz. Beto não aparece.
     let v = buildPlayerView(s, 'p1', new Set()).map!;
     expect(v.dark).toBe(true);
+    expect(v.vision).toBe('individual');
     expect(v.dim).toEqual([5]);
     expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
     const VOID = v.cells[9 * 10 + 9];
@@ -267,8 +271,16 @@ describe('mapas: locomoção', () => {
     expect(v.tokens.map((t) => t.name)).toEqual(['Mizael']);
     // Trancada: nem soleira.
     expect(v.dim).toEqual([]);
-    // Luzes acesas: tudo de volta.
-    s = ok(s, gm, { type: 'map/update', mapId, dark: false });
+    // Compartilhada: Ana vê também o que Beto vê (a metade direita, com ele).
+    s = ok(s, gm, { type: 'map/update', mapId, vision: 'shared' });
+    v = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(v.vision).toBe('shared');
+    expect(v.tokens.map((t) => t.name).sort()).toEqual(['Bento', 'Mizael']);
+    expect(v.cells[6]).not.toBe(VOID);
+    // Ver não é chegar: a parede e a porta trancada continuam no caminho.
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 6, y: 1 })).toMatchObject({ ok: false });
+    // Aberta: tudo de volta.
+    s = ok(s, gm, { type: 'map/update', mapId, vision: 'open' });
     v = buildPlayerView(s, 'p1', new Set()).map!;
     expect(v.dark).toBeUndefined();
     expect(v.tokens).toHaveLength(2);
@@ -293,7 +305,7 @@ describe('mapas: locomoção', () => {
     expect(buildPlayerView(s, 'p1', new Set()).map).toBeNull();
   });
 
-  it('permissionado: todo movimento vira pedido; o novo substitui o anterior', () => {
+  it('permissionado: todo movimento vira pedido, sem limite de alcance; o novo substitui o anterior', () => {
     let { s, mapId, ana } = setup();
     s = ok(s, gm, { type: 'map/update', mapId, mode: 'permissao' });
     const r = run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 3, y: 0 });
@@ -305,8 +317,10 @@ describe('mapas: locomoção', () => {
     expect(pending).toHaveLength(1);
     expect(pending[0].permission).toBe('map_move');
     expect(pending[0].summary).toMatch(/C3 em Cripta \(3 quadrados, 4,5 m\)/);
-    // Pedido que daria erro nem entra.
-    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 0 })).toMatchObject({ ok: false, error: /alcance/ });
+    // Pedido que daria erro nem entra (quadrado ocupado).
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 9 })).toMatchObject({ ok: false, error: /Já tem alguém/ });
+    // Longe, além do deslocamento: vira pedido também.
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 0 })).toMatchObject({ ok: true, requested: true });
     s = ok(s, gm, { type: 'request/resolve', requestId: pending[0].id, approve: true });
     expect(pos(s, mapId, ana)).toEqual({ x: 2, y: 2 });
     s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 3, y: 3 });
@@ -341,7 +355,15 @@ describe('mapas: locomoção', () => {
     let mv = buildPlayerView(s, 'p1', new Set()).map!.moves[0];
     expect(mv).toMatchObject({ squares: 6, remaining: 3, parity: 0, gate: 'free' });
     s = ok(s, p1, { type: 'map/move', mapId, characterId: ana, x: 5, y: 2 });
-    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 6, y: 2 })).toMatchObject({ ok: false, error: /Sem deslocamento/ });
+    expect(buildPlayerView(s, 'p1', new Set()).map!.moves[0]).toMatchObject({ remaining: 0, gate: 'free', extra: true });
+    // Passar do deslocamento na vez vira pedido; aprovado, anda.
+    const over = run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 6, y: 2 });
+    expect(over).toMatchObject({ ok: true, requested: true });
+    s = over.state;
+    expect(pos(s, mapId, ana)).toEqual({ x: 5, y: 2 });
+    s = ok(s, gm, { type: 'request/resolve', requestId: s.requests[s.requests.length - 1].id, approve: true });
+    expect(pos(s, mapId, ana)).toEqual({ x: 6, y: 2 });
+    expect(buildPlayerView(s, 'p1', new Set()).map!.moves[0]).toMatchObject({ remaining: 0 });
 
     // Beto está fora da fila: pede ao mestre.
     expect(run(s, p2, { type: 'map/move', mapId, characterId: beto, x: 8, y: 9 })).toMatchObject({ ok: true, requested: true });
@@ -439,11 +461,12 @@ describe('mapas: locomoção', () => {
     expect([tok.x, tok.y]).toEqual([2, 0]);
     expect(tok.trail).toEqual(path);
     expect(buildPlayerView(s, 'p2', new Set()).map!.tokens.find((t) => t.id === tok.id)!.trail).toEqual(path);
-    // Caminho que não começa no personagem, que pula ou que passa do deslocamento: recusado.
+    // Caminho que não começa no personagem ou que pula: recusado.
     expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 4, y: 0, path: [{ x: 3, y: 0 }, { x: 4, y: 0 }] })).toMatchObject({ ok: false, error: /não liga/ });
     expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 4, y: 0, path: [{ x: 2, y: 0 }, { x: 4, y: 0 }] })).toMatchObject({ ok: false, error: /não dá para andar/ });
+    // No livre não há limite: o trajeto longo vale.
     const long = Array.from({ length: 8 }, (_, i) => ({ x: 2 + i, y: 0 }));
-    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 0, path: long })).toMatchObject({ ok: false, error: /passa do deslocamento/ });
+    expect(run(s, p1, { type: 'map/move', mapId, characterId: ana, x: 9, y: 0, path: long })).toMatchObject({ ok: true });
     // Mestre também traça, sem limite.
     s = ok(s, gm, { type: 'map/move', mapId, tokenId: tok.id, x: 2, y: 2, path: [{ x: 2, y: 0 }, { x: 3, y: 1 }, { x: 2, y: 2 }] });
     expect(s.maps[mapId].tokens[tok.id].trail).toHaveLength(3);
@@ -490,7 +513,7 @@ describe('mapas: visão do jogador', () => {
     expect(v.tokens.map((t) => t.name).sort()).toEqual(['Desconhecido', 'Mizael']);
     expect(v.tokens.find((t) => t.mine)).toMatchObject({ characterId: ana, side: 'pc' });
     expect(v.objects).toHaveLength(0);
-    expect(v.moves).toEqual([{ characterId: ana, tokenId: expect.any(String), squares: 6, remaining: 6, parity: 0, gate: 'free' }]);
+    expect(v.moves).toEqual([{ characterId: ana, tokenId: expect.any(String), squares: 6, remaining: 6, parity: 0, gate: 'free', unlimited: true }]);
     // Beto não vê a própria ficha oculta como dele para mover.
     expect(buildPlayerView(s, 'p2', new Set()).map!.moves).toHaveLength(0);
   });
