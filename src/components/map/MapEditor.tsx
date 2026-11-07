@@ -225,7 +225,10 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     const t = map.tokens[tokenId];
     if (!t || (t.x === x && t.y === y)) return;
     const r = await act({ type: 'map/move', mapId: map.id, tokenId, x, y, ...(path ? { path } : {}) });
-    if (r.ok && path) setDraft(null);
+    if (!r.ok) return;
+    if (path) setDraft(null);
+    // Moveu: o token sai de foco, para o próximo clique não movê-lo de novo sem querer.
+    setSelTok((cur) => (cur === tokenId ? null : cur));
   };
 
   /** Quadrado a quadrado: leva o trajeto do token escolhido até `cell` (ou corta nele). O mestre não tem limite. */

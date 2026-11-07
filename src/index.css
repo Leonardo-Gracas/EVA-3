@@ -1879,23 +1879,34 @@ button.camp-pill { min-height: 36px; }
 .music-dock {
   position: fixed; right: 16px; bottom: var(--music-bottom, 16px); z-index: 950; width: 400px; max-width: calc(100vw - 32px);
   display: flex; flex-direction: column; gap: 8px;
-  transition: transform 220ms ease, clip-path 220ms ease;
+  --music-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  transition: transform 320ms var(--music-ease), clip-path 320ms var(--music-ease);
 }
 /* Faixa invisível embaixo: o mouse não "cai" no vão entre a barra e a borda da tela. */
 .music-dock::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--music-bottom, 16px); }
-/* Guardada: desce e mostra só a beirada de cima (14 px), com um tracinho de puxar. */
+/*
+ * Guardada: desce e mostra só a beirada de cima (14 px), com um tracinho de puxar no meio.
+ * O recorte também anima (os dois estados são inset(), para o navegador interpolar), e descer
+ * espera um instante: passar o mouse de raspão não faz a barra pular.
+ */
 .music-dock.music-tucked {
   transform: translateY(calc(100% + var(--music-tuck, 16px) - 14px));
-  clip-path: inset(0 0 calc(100% - 14px) 0 round var(--radius-lg) var(--radius-lg) 0 0);
+  clip-path: inset(0 0 calc(100% - 14px) 0 round 14px 14px 0 0);
+  transition-delay: 220ms;
 }
-.music-dock.music-tucked:hover, .music-dock.music-tucked:has(:focus-visible), .music-dock.music-peek { transform: none; clip-path: none; }
+.music-dock.music-tucked:hover, .music-dock.music-tucked:has(:focus-visible), .music-dock.music-peek {
+  transform: none; clip-path: inset(-90px -60px -40px -60px round 0); transition-delay: 0ms;
+}
 .music-tucked .music-bar { position: relative; }
+/* Guardada, o conteúdo (play inclusive) some por inteiro; fica só a faixa com o tracinho. */
+.music-tucked .music-bar > * { opacity: 0; transition: opacity 180ms ease 200ms; }
+.music-tucked:hover .music-bar > *, .music-tucked:has(:focus-visible) .music-bar > *, .music-peek .music-bar > * { opacity: 1; transition-delay: 80ms; }
 .music-tucked .music-bar::before {
-  content: ''; position: absolute; top: 4px; left: 50%; width: 48px; height: 3px; margin-left: -24px; border-radius: 2px;
-  background: var(--gold-soft); opacity: 0.85; transition: opacity var(--transition);
+  content: ''; position: absolute; top: 5px; left: 50%; width: 48px; height: 4px; transform: translateX(-50%); border-radius: 2px;
+  background: var(--gold-soft); opacity: 0.85; transition: opacity 180ms ease 240ms;
 }
-.music-tucked:hover .music-bar::before, .music-peek .music-bar::before { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .music-dock { transition: none; } }
+.music-tucked:hover .music-bar::before, .music-tucked:has(:focus-visible) .music-bar::before, .music-peek .music-bar::before { opacity: 0; transition-delay: 0ms; }
+@media (prefers-reduced-motion: reduce) { .music-dock, .music-tucked .music-bar > *, .music-tucked .music-bar::before { transition: none; } }
 .music-bar {
   display: flex; align-items: center; gap: 2px; padding: 6px; min-height: 56px;
   background: var(--bg-elevated); border: 1px solid var(--border-gold); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
