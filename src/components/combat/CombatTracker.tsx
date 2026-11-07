@@ -1,7 +1,7 @@
 // Combate do mestre, em versão compacta para ficar ao lado do mapa: a barra de turno e a
 // fila. Cada linha mostra o essencial (vez, PV, condições) e o botão de dano; tocar na linha
 // abre as outras ações dela. A faixa da esquerda marca alvos para dano e condição em grupo.
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Eye, EyeOff, FileText, Flag, Heart, Play, Plus, Skull, Tag, X, Zap,
 } from 'lucide-react';
@@ -101,8 +101,11 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
   const [group, setGroup] = useState(false);
   const [ending, setEnding] = useState(false);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropAt, setDropAt] = useState<number | null>(null);
+  /** Arraste da fila (mouse): a ordem prévia, que vira `combat/move` ao soltar. */
+  const [drag, setDrag] = useState<{ id: string; order: string[] } | null>(null);
+  const listRef = useRef<HTMLOListElement>(null);
+  /** Acabou de arrastar: o clique que vem junto não abre a linha. */
+  const justDragged = useRef(false);
 
   // Quem saiu da fila sai da seleção.
   useEffect(() => {
@@ -143,24 +146,68 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
   const downIds = entries.filter((e) => e.info.down).map((e) => e.cb.id);
   const selIds = [...selected];
 
-  // Arrastar para reordenar (mouse). No toque, ↑↓ na linha aberta.
-  const onDragStart = (e: DragEvent, id: string) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); };
-  const onDragOver = (e: DragEvent, idx: number) => {
-    if (!dragId) return;
-    e.preventDefault();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDropAt(e.clientY < r.top + r.height / 2 ? idx : idx + 1);
+  /**
+   * Arrastar para reordenar (mouse; no toque, ↑↓ na linha aberta). Quem arrasta quer mover:
+   * um pouco para baixo já troca com o de baixo, um pouco para cima com o de cima, e passar
+   * por cima de outra linha leva até ela. A fila salva ao soltar.
+   */
+  const startDrag = (e: ReactPointerEvent, id: string) => {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    const ids = entries.map((x) => x.cb.id);
+    const y0 = e.clientY;
+    let base = y0;
+    let order: string[] | null = null;
+    const STEP = 8;
+    const onMove = (ev: PointerEvent) => {
+      if (!order) {
+        if (Math.abs(ev.clientY - y0) < 4) return;
+        order = ids;
+        document.body.classList.add('ct-sorting');
+      }
+      const dy = ev.clientY - base;
+      if (Math.abs(dy) < STEP) return;
+      const cur = order.indexOf(id);
+      // Linha sob o ponteiro, na ordem que está na tela.
+      const rows = [...(listRef.current?.querySelectorAll<HTMLElement>('li[data-id]') ?? [])];
+      let under = cur;
+      if (rows.length) {
+        const first = rows[0].getBoundingClientRect();
+        const last = rows[rows.length - 1].getBoundingClientRect();
+        if (ev.clientY < first.top) under = 0;
+        else if (ev.clientY > last.bottom) under = rows.length - 1;
+        else {
+          const hit = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return ev.clientY >= b.top - 2 && ev.clientY <= b.bottom + 2; });
+          if (hit >= 0) under = order.indexOf(rows[hit].dataset.id!);
+        }
+      }
+      const to = Math.max(0, Math.min(order.length - 1, dy > 0 ? Math.max(cur + 1, under) : Math.min(cur - 1, under)));
+      base = ev.clientY;
+      if (to === cur) return;
+      const next = order.filter((x) => x !== id);
+      next.splice(to, 0, id);
+      order = next;
+      setDrag({ id, order: next });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      document.body.classList.remove('ct-sorting');
+      if (!order) return;
+      justDragged.current = true;
+      setTimeout(() => { justDragged.current = false; }, 0);
+      const to = order.indexOf(id);
+      const from = ids.indexOf(id);
+      if (to === from) { setDrag(null); return; }
+      // Posição na fila de verdade: onde estava quem ocupava esse lugar.
+      const target = combat.order.findIndex((x) => x.id === ids[to]);
+      void Promise.resolve(move(id, target)).finally(() => setDrag(null));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    if (dragId && dropAt !== null) {
-      const from = combat.order.findIndex((x) => x.id === dragId);
-      const to = dropAt > from ? dropAt - 1 : dropAt;
-      if (from >= 0 && to !== from) void move(dragId, to);
-    }
-    setDragId(null);
-    setDropAt(null);
-  };
+  const shown = drag ? drag.order.flatMap((id) => entries.filter((x) => x.cb.id === id)) : entries;
 
   const adjustEntry = adjust ? entries.find((e) => e.cb.id === adjust.id) : undefined;
   const sheetEntry = sheetFor ? entries.find((e) => e.cb.id === sheetFor) : undefined;
@@ -191,27 +238,27 @@ export function CombatTracker({ table, combat, focusId, onFocus }: {
         </div>
       )}
 
-      <ol className={`ct-list${selected.size ? ' ct-targeting' : ''}`} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropAt(null); }}>
-        {entries.map(({ cb, info }, idx) => {
+      <ol ref={listRef} className={`ct-list${selected.size ? ' ct-targeting' : ''}${drag ? ' ct-list-sorting' : ''}`}>
+        {shown.map(({ cb, info }, idx) => {
           const isTurn = cb.id === current?.id;
           const isNext = cb.id === upNext?.id;
           const sel = selected.has(cb.id);
           const open = cb.id === openId;
           const cond = chips(cb);
           return (
-            <li key={cb.id}
+            <li key={cb.id} data-id={cb.id}
               className={[
                 'ct-row', sideClass(info.side), isTurn && 'on', info.down && 'down', sel && 'sel', open && 'open',
-                dragId === cb.id && 'dragging', dropAt === idx && 'drop-before', dropAt === idx + 1 && idx === entries.length - 1 && 'drop-after',
-              ].filter(Boolean).join(' ')}
-              draggable onDragStart={(e) => onDragStart(e, cb.id)} onDragOver={(e) => onDragOver(e, idx)} onDrop={onDrop}
-              onDragEnd={() => { setDragId(null); setDropAt(null); }}>
+                drag?.id === cb.id && 'dragging',
+              ].filter(Boolean).join(' ')}>
               <button className="ct-target" aria-pressed={sel} onClick={(e) => toggleSel(cb.id, e.shiftKey)}
                 title={sel ? 'Desmarcar alvo' : 'Marcar como alvo (Shift: intervalo)'} aria-label={`${sel ? 'Desmarcar' : 'Marcar'} ${info.name} como alvo`}>
                 {sel ? <Check size={14} strokeWidth={3} /> : <Crosshair size={14} />}
               </button>
-              <button className="ct-main" onClick={() => setFocus(open ? '' : cb.id)} aria-expanded={open}
-                title={open ? info.name : `${info.name}: mais ações`}>
+              <button className="ct-main" aria-expanded={open}
+                onPointerDown={(e) => startDrag(e, cb.id)}
+                onClick={() => { if (!justDragged.current) setFocus(open ? '' : cb.id); }}
+                title={open ? `${info.name} (arraste para mudar a ordem)` : `${info.name}: mais ações (arraste para mudar a ordem)`}>
                 <span className="ct-pic">
                   {info.character
                     ? <Avatar config={info.character.avatar} size={28} />

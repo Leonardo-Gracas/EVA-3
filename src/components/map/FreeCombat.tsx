@@ -10,7 +10,7 @@ import InfoTip from '../common/InfoTip';
 import { useFitHeight } from './useFitHeight';
 import { CombatTracker, TurnBar, useEntries } from '../combat/CombatTracker';
 import { TOKEN_DRAG_TYPE } from './MapCanvas';
-import { combatPlaceables, Pic, TokenBar } from './TokensPanel';
+import { combatPlaceables, Pic, TokenBar, TokenRail, type PlaceItem } from './TokensPanel';
 
 const SIDES: Array<{ id: CombatSide; label: string }> = [
   { id: 'pc', label: 'Jogadores' }, { id: 'npc', label: 'NPCs' }, { id: 'threat', label: 'Ameaças' },
@@ -31,6 +31,7 @@ export default function FreeCombat({ table, combat, onBack }: { table: TableStat
 
   const add = (refs: CombatantRef[]) => { if (refs.length) void act({ type: 'combat/add', refs }); };
   const pcsOut = items.filter((it) => it.side === 'pc');
+  const pickItem = (it: PlaceItem) => { const r = asCombatRef(it.ref); if (r) add([r]); };
 
   const isPlace = (e: DragEvent) => e.dataTransfer.types.includes(TOKEN_DRAG_TYPE);
   const onDrop = (e: DragEvent) => {
@@ -56,6 +57,17 @@ export default function FreeCombat({ table, combat, onBack }: { table: TableStat
 
       <div className="map-editor" ref={gridRef}>
         <div className="map-main">
+          <div className="map-body fc-body">
+          <TokenRail
+            items={items.filter((it) => it.side !== 'pc')}
+            onPick={pickItem}
+            info={(
+              <>
+                <span><b>Pôr na fila:</b> arraste até o plano ou clique.</span>
+                <span><b>∞</b> = do livro de ameaças: cada vez entra uma nova.</span>
+              </>
+            )}
+          />
           <div className={`fc-plane${over ? ' drop' : ''}`} aria-label="Plano do combate"
             onDragOver={(e) => { if (isPlace(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOver(true); } }}
             onDragLeave={(e) => { if (e.currentTarget === e.target) setOver(false); }}
@@ -81,22 +93,18 @@ export default function FreeCombat({ table, combat, onBack }: { table: TableStat
               );
             })}
           </div>
+          </div>
           <TokenBar
-            items={items}
-            onPick={(it) => { const r = asCombatRef(it.ref); if (r) add([r]); }}
+            items={pcsOut}
+            onPick={pickItem}
             extra={pcsOut.length > 1 && (
               <button className="btn btn-sm btn-ghost" title="Põe na fila todos os personagens dos jogadores"
                 onClick={() => add(pcsOut.flatMap((it) => { const r = asCombatRef(it.ref); return r ? [r] : []; }))}>
-                <Users size={13} /> Jogadores ({pcsOut.length})
+                <Users size={13} /> Todos ({pcsOut.length})
               </button>
             )}
-            empty="Todas as fichas aprovadas já estão na fila. Crie ameaças na aba NPCs e Ameaças."
-            info={(
-              <>
-                <span><b>Pôr na fila:</b> arraste até o plano ou clique.</span>
-                <span><b>∞</b> = do livro de ameaças: cada vez entra uma nova.</span>
-              </>
-            )}
+            empty="Todos os personagens dos jogadores já estão na fila."
+            info={<span><b>Pôr na fila:</b> arraste até o plano ou clique.</span>}
           />
         </div>
 

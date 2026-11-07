@@ -1256,12 +1256,10 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 .ct-row.sel { border-color: rgba(214, 69, 79, 0.75); }
 .ct-row.down { opacity: 0.55; }
 .ct-row.down .ct-name { text-decoration: line-through; text-decoration-color: var(--text-muted); }
-.ct-row.dragging { opacity: 0.35; }
-.ct-row.drop-before::before, .ct-row.drop-after::after {
-  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--gold); box-shadow: 0 0 8px var(--gold);
-}
-.ct-row.drop-before::before { top: -1px; }
-.ct-row.drop-after::after { bottom: -1px; }
+/* Arrastando na fila: a linha pega fica em destaque e as outras abrem espaço na hora. */
+.ct-list-sorting .ct-row { transition: none; }
+.ct-row.dragging { z-index: 2; border-color: var(--gold-soft); box-shadow: 0 0 0 1px var(--gold-soft) inset, 0 8px 22px rgba(0, 0, 0, 0.55); }
+body.ct-sorting, body.ct-sorting * { cursor: grabbing !important; user-select: none; }
 
 /* Faixa de alvo: a lateral da linha, na cor do lado; marcada, vira mira vermelha. */
 .ct-target {
@@ -2202,23 +2200,49 @@ button.camp-pill { min-height: 36px; }
 .map-fill .map-wrap { flex: 1 1 0; min-height: 200px; }
 .btn-gold-on { background: var(--gold-dim); border-color: var(--border-gold); color: var(--gold-soft); }
 
-/* Barra embaixo do mapa (Mesa): modos do mapa, filtro e quem dá para colocar. */
-.tbar { display: flex; flex-direction: column; gap: 6px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); }
+/* Mapa com barra à esquerda: os dois na mesma altura (também na tela cheia). */
+.map-body-plain { display: contents; }
+.map-body { display: flex; gap: 6px; min-height: 0; }
+.map-body > .map-wrap { flex: 1 1 0; min-width: 0; }
+.map-fill .map-body, .map-full .map-body { flex: 1 1 0; }
+.map-fill .map-body > .map-wrap { min-height: 0; }
+.fc-body { flex: 1 1 0; }
+.fc-body > .fc-plane { flex: 1 1 0; min-width: 0; }
+
+/* Barra embaixo do mapa (Mesa): os personagens dos jogadores para colocar. */
+.tbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); }
 .map-full .tbar { border-radius: 0; border-width: 1px 0 0; }
-.tbar-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.map-modes.tbar-seg { display: inline-flex; flex: none; }
-.tbar-seg .map-mode { flex: none; padding: 5px 8px; }
-/* Só o modo escolhido mostra o nome; os outros, só o ícone (nome na dica). */
-.tbar-seg .map-mode:not(.on) .tbar-seg-label { display: none; }
-.tbar-filters { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-base); }
-.tbar-filters button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: var(--text-secondary); }
-.tbar-filters button b { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.tbar-filters button:hover { color: var(--text-primary); }
-.tbar-filters button.on { background: var(--gold-dim); color: var(--gold-soft); }
-.tbar-filters button.on b { color: var(--gold); }
-.tbar-search { flex: 1 1 100px; max-width: 180px; }
-.tbar-search .input { padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
-.tbar-list { display: flex; align-items: center; gap: 6px; min-height: 40px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
+.tbar-list { display: flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: 0; min-height: 40px; overflow-x: auto; padding: 2px 0; scrollbar-width: thin; }
+
+/* Barra à esquerda do mapa: regras do mapa, NPCs e ameaças. */
+.trail {
+  display: flex; flex-direction: column; gap: 8px; width: 200px; flex-shrink: 0; min-height: 0; padding: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface);
+}
+.map-full .trail { border-radius: 0; border-width: 0 1px 0 0; }
+.trail-head { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.trail-head > .infotip { position: absolute; top: -4px; right: -4px; }
+.trail-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); padding: 2px 2px 0; }
+.trail-modes { display: flex; flex-direction: column; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-base); }
+.trail-modes .map-mode { justify-content: flex-start; gap: 7px; padding: 5px 8px; }
+.trail-search .input { padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
+.trail-list { display: flex; flex-direction: column; gap: 3px; flex: 1 1 0; min-height: 80px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
+.trail-group {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 5px; padding: 6px 2px 3px; background: var(--bg-surface);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+}
+.trail-group b { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.trail-group .spacer { flex: 1; }
+.trail-mini { padding: 2px 6px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.trail-sep { height: 1px; margin: 3px 2px; background: var(--border); }
+.trail-row {
+  display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 3px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: grab;
+}
+.trail-row:hover { background: rgba(239, 231, 218, 0.04); border-color: var(--border); }
+.trail-row:active { cursor: grabbing; }
+.trail-row.armed { border-color: var(--gold); border-style: dashed; background: var(--gold-dim); }
+.trail-row .tbar-main { flex: 1; }
+.trail-row .tbar-name { max-width: none; flex: 1; text-align: left; }
 .tbar-list .tok-empty { padding: 6px 2px; }
 .tbar-chip {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; max-width: 190px; padding: 3px 4px 3px 3px;
@@ -2227,8 +2251,6 @@ button.camp-pill { min-height: 36px; }
 .tbar-chip:hover { border-color: var(--border-light); }
 .tbar-chip:active { cursor: grabbing; }
 .tbar-chip.armed { border-color: var(--gold); border-style: dashed; background: var(--gold-dim); }
-.tbar-chip.first-book { position: relative; margin-left: 10px; }
-.tbar-chip.first-book::before { content: ''; position: absolute; left: -9px; top: 15%; bottom: 15%; border-left: 1px solid var(--border-light); }
 .tbar-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: inherit; padding-right: 4px; }
 .tbar-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .tbar-book { font-size: 13px; color: var(--text-muted); }
@@ -2349,11 +2371,17 @@ button.camp-pill { min-height: 36px; }
 @media (max-width: 900px) {
   .map-editor { grid-template-columns: minmax(0, 1fr); }
   .map-main { height: auto; }
+  .map-fill .map-body, .fc-body { flex: none; }
   .map-fill .map-wrap { flex: none; height: 62vh; }
+  .map-fill .map-body > .map-wrap { flex: 1 1 0; }
+  .trail { width: 170px; }
   .fc-plane { flex: none; height: 50vh; }
   .map-side { max-height: none; overflow: visible; }
 }
 @media (max-width: 560px) {
+  .map-body { flex-direction: column; }
+  .map-fill .map-body > .map-wrap, .fc-body > .fc-plane { flex: none; }
+  .trail { width: auto; max-height: 260px; }
   .map-tool-label { display: none; }
   .map-name { max-width: none; flex: 1 1 140px; }
 }

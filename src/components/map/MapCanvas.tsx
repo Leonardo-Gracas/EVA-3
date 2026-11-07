@@ -114,6 +114,8 @@ interface Props {
   /** Acima do mapa e abaixo da barra, dentro da moldura: continuam à vista na tela cheia. */
   top?: ReactNode;
   bottom?: ReactNode;
+  /** Barra ao lado esquerdo do mapa, na mesma altura (também na tela cheia). */
+  left?: ReactNode;
 }
 
 export interface MapFocus { x: number; y: number; n: number; zoom?: number; ping?: boolean; smooth?: boolean }
@@ -264,6 +266,8 @@ export default function MapCanvas(props: Props) {
   return (
     <div className={`map-shell${fullscreen.full ? ' map-full' : ''}${props.compact ? ' map-compact' : ''}${props.fill ? ' map-fill' : ''}`}>
       {props.top}
+      <div className={props.left ? 'map-body' : 'map-body-plain'}>
+      {props.left}
       <div ref={wrapRef} className={`map-wrap${props.touch === 'none' ? ' map-touch-draw' : ''}`}
         style={fullscreen.full || props.fill ? undefined : { height: props.height ?? 'min(70vh, 760px)' }}>
         <div style={{ width: size.w * zoom, height: size.h * zoom, position: 'relative' }}>
@@ -360,6 +364,7 @@ export default function MapCanvas(props: Props) {
             );
           })()}
         </div>
+      </div>
       </div>
       <div className="map-dock">
         {props.dock}

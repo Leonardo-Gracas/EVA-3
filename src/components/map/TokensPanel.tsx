@@ -1,6 +1,6 @@
-// Tokens do mestre. Embaixo do mapa, a barra horizontal de quem dá para colocar (arraste
-// até o quadrado, ou clique e depois clique no mapa). Na lateral, o token escolhido e a
-// lista de quem já está no mapa.
+// Tokens do mestre. Embaixo do mapa, a barra dos jogadores; à esquerda, a barra com as regras
+// do mapa, NPCs e ameaças (arraste até o quadrado, ou clique e depois clique no mapa).
+// Na lateral direita, o token escolhido e a lista de quem já está no mapa.
 import { useMemo, useState } from 'react';
 import { Eye, EyeOff, Plus, Search, Trash2, X } from 'lucide-react';
 import type { AvatarConfig } from '../../model/avatar';
@@ -17,12 +17,6 @@ import InfoTip from '../common/InfoTip';
 import { ThreatGlyph } from '../gm/ThreatIcon';
 import { TOKEN_DRAG_TYPE } from './MapCanvas';
 import { gmTokens } from './tokens';
-
-type Filter = 'all' | CombatSide;
-
-const FILTERS: Array<{ id: Filter; label: string }> = [
-  { id: 'all', label: 'Todos' }, { id: 'pc', label: 'PJs' }, { id: 'npc', label: 'NPCs' }, { id: 'threat', label: 'Ameaças' },
-];
 
 /** O que está armado para colocar com um clique no mapa. */
 export interface Armed { ref: PlaceRef; name: string; /** Molde do livro: cada clique cria mais uma. */ repeat: boolean }
@@ -109,72 +103,104 @@ export function combatPlaceables(table: TableState, combat: Combat): PlaceItem[]
 }
 
 /**
- * Barra horizontal de quem dá para colocar. `controls`: o que vem antes do filtro (modos do
- * mapa); `extra`: depois (atalhos). Clicar chama `onPick`; arrastar leva o ref (TOKEN_DRAG_TYPE).
+ * Barra horizontal embaixo do mapa: os personagens dos jogadores para colocar. `extra`: atalho
+ * no fim. Clicar chama `onPick`; arrastar leva o ref (TOKEN_DRAG_TYPE).
  */
-export function TokenBar({ items, armedKey, onPick, onQuick, controls, extra, info, empty }: {
+export function TokenBar({ items, armedKey, onPick, onQuick, extra, info, empty }: {
   items: PlaceItem[];
   armedKey?: string | null;
   onPick: (it: PlaceItem) => void;
   /** Botão "+" de cada item (pôr direto, sem escolher o quadrado). */
   onQuick?: (it: PlaceItem) => void;
-  controls?: React.ReactNode;
   extra?: React.ReactNode;
   info: React.ReactNode;
   empty: string;
 }) {
-  const [q, setQ] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
-  const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: 0, pc: 0, npc: 0, threat: 0 };
-    for (const e of items) { c.all++; c[e.side]++; }
-    return c;
-  }, [items]);
-  const shown = items.filter((e) => (filter === 'all' || e.side === filter) && (!q.trim() || fold(e.name).includes(fold(q.trim()))));
-  const firstBook = shown.findIndex((e) => e.repeat);
-
   return (
     <div className="tbar">
-      <div className="tbar-head">
-        {controls}
-        <InfoTip label="Informações" up>{info}</InfoTip>
-        <span className="tbar-filters" role="tablist" aria-label="Tipo">
-          {FILTERS.map((f) => (
-            <button key={f.id} role="tab" aria-selected={filter === f.id} className={filter === f.id ? 'on' : ''} onClick={() => setFilter(f.id)}>
-              {f.label}<b>{counts[f.id]}</b>
-            </button>
-          ))}
-        </span>
-        <label className="tok-search tbar-search">
-          <Search size={13} />
-          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" aria-label="Buscar token" />
-        </label>
-        {extra}
+      <InfoTip label="Informações" up>{info}</InfoTip>
+      <div className="tbar-list" role="list" aria-label="Jogadores">
+        {items.length === 0 && <span className="tok-empty">{empty}</span>}
+        {items.map((e) => <PlaceChip key={e.key} e={e} armed={armedKey === e.key} onPick={onPick} onQuick={onQuick} />)}
       </div>
-      <div className="tbar-list" role="list">
-        {shown.length === 0 && <span className="tok-empty">{items.length ? 'Nada com esse filtro.' : empty}</span>}
-        {shown.map((e, i) => (
-          <div key={e.key} role="listitem" className={`tbar-chip side-${e.side}${armedKey === e.key ? ' armed' : ''}${i === firstBook ? ' first-book' : ''}`} draggable
-            title={`${e.name} · ${e.sub}${e.repeat ? ' · do livro: cada vez, mais uma' : ''}`}
-            onDragStart={(ev) => {
-              ev.dataTransfer.setData(TOKEN_DRAG_TYPE, JSON.stringify(e.ref));
-              ev.dataTransfer.setData('text/plain', e.name);
-              ev.dataTransfer.effectAllowed = 'copy';
-            }}>
-            <button className="tbar-main" onClick={() => onPick(e)}>
-              <Pic e={e} size={28} />
-              <span className="tbar-name">{e.name}</span>
-              {e.repeat && <span className="tbar-book" aria-label="do livro">∞</span>}
-            </button>
-            {onQuick && (
-              <button className="tbar-quick" onClick={() => onQuick(e)} title="Pôr no piso livre perto do centro" aria-label={`Pôr ${e.name} no mapa`}>
-                <Plus size={13} />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+      {extra}
     </div>
+  );
+}
+
+/** Item arrastável: arraste até o mapa (ou o plano), ou clique. */
+function PlaceChip({ e, armed, onPick, onQuick, rail }: {
+  e: PlaceItem; armed: boolean; onPick: (it: PlaceItem) => void; onQuick?: (it: PlaceItem) => void; rail?: boolean;
+}) {
+  return (
+    <div role="listitem" className={`${rail ? 'trail-row' : 'tbar-chip'} side-${e.side}${armed ? ' armed' : ''}`} draggable
+      title={`${e.name} · ${e.sub}${e.repeat ? ' · do livro: cada vez, mais uma' : ''}`}
+      onDragStart={(ev) => {
+        ev.dataTransfer.setData(TOKEN_DRAG_TYPE, JSON.stringify(e.ref));
+        ev.dataTransfer.setData('text/plain', e.name);
+        ev.dataTransfer.effectAllowed = 'copy';
+      }}>
+      <button className="tbar-main" onClick={() => onPick(e)}>
+        <Pic e={e} size={rail ? 26 : 28} />
+        <span className="tbar-name">{e.name}</span>
+        {e.repeat && <span className="tbar-book" aria-label="do livro">∞</span>}
+      </button>
+      {onQuick && (
+        <button className="tbar-quick" onClick={() => onQuick(e)} title="Pôr no piso livre perto do centro" aria-label={`Pôr ${e.name} no mapa`}>
+          <Plus size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Barra vertical à esquerda do mapa: as regras do mapa (`controls`) em cima e, embaixo,
+ * NPCs e ameaças para colocar (da fila e do livro), com busca.
+ */
+export function TokenRail({ items, armedKey, onPick, onQuick, controls, threatsExtra, info }: {
+  items: PlaceItem[];
+  armedKey?: string | null;
+  onPick: (it: PlaceItem) => void;
+  onQuick?: (it: PlaceItem) => void;
+  controls?: React.ReactNode;
+  /** Ao lado do título das ameaças (atalho da fila). */
+  threatsExtra?: React.ReactNode;
+  info: React.ReactNode;
+}) {
+  const [q, setQ] = useState('');
+  const match = (e: PlaceItem) => !q.trim() || fold(e.name).includes(fold(q.trim()));
+  const npcs = items.filter((e) => e.side === 'npc' && match(e));
+  const threats = items.filter((e) => e.side === 'threat' && !e.repeat && match(e));
+  const book = items.filter((e) => e.side === 'threat' && e.repeat && match(e));
+  const row = (e: PlaceItem) => <PlaceChip key={e.key} e={e} rail armed={armedKey === e.key} onPick={onPick} onQuick={onQuick} />;
+
+  return (
+    <aside className="trail" aria-label="Regras, NPCs e ameaças">
+      {controls && (
+        <div className="trail-head">
+          {controls}
+          <InfoTip label="Informações">{info}</InfoTip>
+        </div>
+      )}
+      <div className="row" style={{ gap: 4 }}>
+        <label className="tok-search trail-search grow">
+          <Search size={13} />
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" aria-label="Buscar NPC ou ameaça" />
+        </label>
+        {!controls && <InfoTip label="Informações">{info}</InfoTip>}
+      </div>
+      <div className="trail-list" role="list">
+        <div className="trail-group">NPCs <b>{npcs.length}</b></div>
+        {npcs.length === 0 && <div className="tok-empty">{q ? 'Nada com essa busca.' : 'Nenhum NPC para colocar.'}</div>}
+        {npcs.map(row)}
+        <div className="trail-group">Ameaças <b>{threats.length + book.length}</b><span className="spacer" />{threatsExtra}</div>
+        {threats.map(row)}
+        {book.length > 0 && threats.length > 0 && <div className="trail-sep" />}
+        {book.map(row)}
+        {threats.length + book.length === 0 && <div className="tok-empty">{q ? 'Nada com essa busca.' : 'Crie ameaças na aba NPCs e Ameaças.'}</div>}
+      </div>
+    </aside>
   );
 }
 

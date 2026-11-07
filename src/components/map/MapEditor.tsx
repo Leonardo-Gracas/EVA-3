@@ -25,7 +25,7 @@ import MapCanvas, { PROP_ICONS, type MapFocus, type MapPointer, type PointerKind
 import MapGenerateModal from './MapGenerateModal';
 import { edgesBetween, lineCells, rectCells } from './mapRender';
 import { gmTokens } from './tokens';
-import { mapPlaceables, OnMapList, SelectedToken, TokenBar, type Armed } from './TokensPanel';
+import { mapPlaceables, OnMapList, SelectedToken, TokenBar, TokenRail, type Armed, type PlaceItem } from './TokensPanel';
 import InfoTip from '../common/InfoTip';
 import { useFitHeight } from './useFitHeight';
 import { PathModeToggle, usePathMode } from './pathMode';
@@ -526,30 +526,38 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
     </>
   );
 
-  // Barra embaixo do mapa (Mesa): modos do mapa e quem dá para colocar.
+  // Mesa: embaixo do mapa, os jogadores; à esquerda, as regras do mapa, NPCs e ameaças.
   const { items: placeables, queue } = useMemo(() => mapPlaceables(table, map), [table, map]);
   const armedKey = armed ? `${armed.ref.kind}:${armed.ref.id}` : null;
   const vision = visionOf(map);
+  const pick = (it: PlaceItem) => setArmed(armedKey === it.key ? null : { ref: it.ref, name: it.name, repeat: !!it.repeat });
+  const quick = (it: PlaceItem) => void act({ type: 'map/tokenPlace', mapId: map.id, refs: [it.ref] });
+  const placeHelp = <span><b>Colocar:</b> arraste até o quadrado, ou clique e depois clique no mapa. O + põe perto do centro.</span>;
   const tokenBar = (
     <TokenBar
-      items={placeables}
-      armedKey={armedKey}
-      onPick={(it) => setArmed(armedKey === it.key ? null : { ref: it.ref, name: it.name, repeat: !!it.repeat })}
-      onQuick={(it) => void act({ type: 'map/tokenPlace', mapId: map.id, refs: [it.ref] })}
+      items={placeables.filter((it) => it.side === 'pc')}
+      armedKey={armedKey} onPick={pick} onQuick={quick}
+      empty="Todos os personagens dos jogadores já estão no mapa."
+      info={placeHelp}
+    />
+  );
+  const tokenRail = (
+    <TokenRail
+      items={placeables.filter((it) => it.side !== 'pc')}
+      armedKey={armedKey} onPick={pick} onQuick={quick}
       controls={<MapModes map={map} />}
-      extra={queue.length > 0 && (
-        <button className="btn btn-sm btn-ghost" onClick={() => void act({ type: 'map/tokenPlace', mapId: map.id, refs: queue }, 'Fila do combate no mapa.')}
+      threatsExtra={queue.length > 0 && (
+        <button className="btn btn-sm btn-ghost trail-mini" onClick={() => void act({ type: 'map/tokenPlace', mapId: map.id, refs: queue }, 'Fila do combate no mapa.')}
           title="Põe no mapa todos da fila que ainda não estão nele">
-          <Swords size={13} /> Fila ({queue.length})
+          <Swords size={12} /> Fila {queue.length}
         </button>
       )}
-      empty="Todas as fichas aprovadas já estão no mapa. Crie ameaças na aba NPCs e Ameaças."
       info={(
         <>
           <span><b>Locomoção · {MOVE_MODES[map.mode].label}:</b> {MOVE_MODES[map.mode].hint}</span>
           <span><b>Visão · {VISION_MODES[vision].label}:</b> {VISION_MODES[vision].hint}{vision !== 'open' ? ' Na Mesa, a sombra marca o que nenhum jogador vê.' : ''}</span>
           {map.mode === 'turno' && !linked && <span className="warn">Turnos sem combate neste mapa: todo movimento de jogador vira pedido.</span>}
-          <span><b>Colocar:</b> arraste até o quadrado, ou clique e depois clique no mapa. O + põe perto do centro.</span>
+          {placeHelp}
           <span><b>∞</b> = do livro de ameaças: cada vez entra uma nova{combat && linked ? ', no fim da fila' : ', solta no mapa'}.</span>
         </>
       )}
@@ -617,6 +625,7 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
             top={mode === 'play' && combat && combatHere ? <TurnBar table={table} combat={combat} /> : undefined}
             dock={mode === 'edit' ? <span className="tiny muted map-dock-hint">{TOOLS.find((t) => t.id === tool)?.hint}</span> : playDock}
             bottom={mode === 'play' ? tokenBar : undefined}
+            left={mode === 'play' ? tokenRail : undefined}
           />
         </div>
 
@@ -734,28 +743,30 @@ const VISION_ICONS: Record<VisionMode, JSX.Element> = {
   open: <Sun size={13} />, individual: <User size={13} />, shared: <Users size={13} />,
 };
 
-/** Locomoção e visão do mapa: dois seletores compactos (detalhes no "i" da barra). */
+/** Locomoção e visão do mapa, empilhadas na barra da esquerda (detalhes no "i"). */
 function MapModes({ map }: { map: BattleMap }) {
   const { act } = useAct();
   const vision = visionOf(map);
   return (
     <>
-      <span className="map-modes tbar-seg" role="radiogroup" aria-label="Locomoção">
+      <div className="trail-label">Locomoção</div>
+      <div className="trail-modes" role="radiogroup" aria-label="Locomoção">
         {(Object.keys(MOVE_MODES) as MoveMode[]).map((m) => (
           <button key={m} role="radio" aria-checked={map.mode === m} className={`map-mode${map.mode === m ? ' on' : ''}`}
-            onClick={() => act({ type: 'map/update', mapId: map.id, mode: m })} title={`Locomoção ${MOVE_MODES[m].label.toLowerCase()}: ${MOVE_MODES[m].hint}`}>
-            {MOVE_ICONS[m]}<span className="tbar-seg-label">{MOVE_MODES[m].label}</span>
+            onClick={() => act({ type: 'map/update', mapId: map.id, mode: m })} title={MOVE_MODES[m].hint}>
+            {MOVE_ICONS[m]}{MOVE_MODES[m].label}
           </button>
         ))}
-      </span>
-      <span className="map-modes tbar-seg" role="radiogroup" aria-label="Visão dos jogadores">
+      </div>
+      <div className="trail-label">Visão</div>
+      <div className="trail-modes" role="radiogroup" aria-label="Visão dos jogadores">
         {(Object.keys(VISION_MODES) as VisionMode[]).map((v) => (
           <button key={v} role="radio" aria-checked={vision === v} className={`map-mode${vision === v ? ' on' : ''}`}
-            onClick={() => act({ type: 'map/update', mapId: map.id, vision: v })} title={`Visão ${VISION_MODES[v].label.toLowerCase()}: ${VISION_MODES[v].hint}`}>
-            {VISION_ICONS[v]}<span className="tbar-seg-label">{VISION_MODES[v].label}</span>
+            onClick={() => act({ type: 'map/update', mapId: map.id, vision: v })} title={VISION_MODES[v].hint}>
+            {VISION_ICONS[v]}{VISION_MODES[v].label}
           </button>
         ))}
-      </span>
+      </div>
     </>
   );
 }
