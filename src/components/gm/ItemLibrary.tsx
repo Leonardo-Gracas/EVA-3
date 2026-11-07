@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, Coins, Gift, Pencil, Plus, Trash2 } from 'lucide-react';
-import { ITEM_SLOTS, ITEM_TYPES, isStackable, type Character, type ItemData, type ItemType, type LibraryItem, type TableState } from '../../model/types';
+import { ChevronDown, Coins, Flame, Gift, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ITEM_SLOTS, ITEM_TYPES, MAP_CELL_M, isStackable, type Character, type ItemData, type ItemType, type LibraryItem, type TableState } from '../../model/types';
 import { useAct } from '../act';
 import Avatar from '../common/Avatar';
 import ConfirmButton from '../common/ConfirmButton';
@@ -9,13 +9,16 @@ import { Chip, FilterBar, FilterGroup, QuickFilter, SearchInput, SortSelect, mat
 import { ItemIcon, TYPE_ICON } from '../common/ItemCard';
 import Modal from '../common/Modal';
 import ItemFormModal from '../sheet/ItemForm';
+import { missingLightItems } from '../../store/placeholder';
+import { toast } from '../common/toast';
 
-type Prop = 'dano' | 'bonus' | 'valor';
+type Prop = 'dano' | 'bonus' | 'luz' | 'valor';
 type Sort = 'nome' | 'tipo' | 'valor-desc' | 'valor-asc' | 'recentes';
 
 const PROPS: Array<{ id: Prop; label: string; test: (i: ItemData) => boolean; title: string }> = [
   { id: 'dano', label: 'Causa dano', test: (i) => !!i.damage.trim(), title: 'Itens com dano definido' },
   { id: 'bonus', label: 'Dá bônus', test: (i) => !!(i.effects.def || i.effects.rdPhysical || i.effects.rdMagic), title: 'Defesa ou RD para quem equipa' },
+  { id: 'luz', label: 'Ilumina', test: (i) => !!i.effects.light, title: 'Equipado, ilumina em volta do personagem no mapa' },
   { id: 'valor', label: 'Tem valor', test: (i) => i.value > 0, title: 'Itens com valor em moedas' },
 ];
 
@@ -63,6 +66,39 @@ export default function ItemLibrary({ table }: { table: TableState }) {
     }
   }, [all, q, types, props, sort]);
 
+  // Itens de iluminação que ainda não estão na biblioteca (mesas de antes da iluminação).
+  const lightGap = useMemo(() => missingLightItems(table.itemLibrary), [table.itemLibrary]);
+  const lightCount = lightGap.add.length + lightGap.update.length;
+  const [addingLights, setAddingLights] = useState(false);
+  const addLights = async () => {
+    setAddingLights(true);
+    const actions = [
+      ...lightGap.update.map((u) => ({ type: 'library/upsert' as const, item: u.item, itemId: u.id })),
+      ...lightGap.add.map((item) => ({ type: 'library/upsert' as const, item })),
+    ];
+    let done = 0;
+    for (const a of actions) {
+      if (!(await act(a)).ok) break;
+      done++;
+    }
+    setAddingLights(false);
+    if (done) {
+      toast(`Itens de iluminação na biblioteca: ${done}.`, 'ok');
+      setTypes([]);
+      setProps(['luz']);
+      setQ('');
+    }
+  };
+  const lightBtn = lightCount > 0 && (
+    <button className="btn btn-sm" disabled={addingLights} onClick={() => void addLights()}
+      title={[
+        lightGap.add.length ? `Adiciona: ${lightGap.add.map((i) => i.name).join(', ')}.` : '',
+        lightGap.update.length ? `Passa a iluminar: ${lightGap.update.map((u) => u.item.name).join(', ')}.` : '',
+      ].filter(Boolean).join(' ')}>
+      <Flame size={14} /><span className="hide-xs">Itens de iluminação</span> ({lightCount})
+    </button>
+  );
+
   const active = !!q.trim() || types.length > 0 || props.length > 0;
   const clear = () => { setQ(''); setTypes([]); setProps([]); };
   const createBtn = (
@@ -77,6 +113,7 @@ export default function ItemLibrary({ table }: { table: TableState }) {
         <h2>Biblioteca de itens</h2>
         {all.length > 0 && <span className="page-head-count">{all.length}</span>}
         <span className="spacer" />
+        {lightBtn}
         {all.length === 0 && createBtn}
       </div>
       {all.length > 0 && (
@@ -134,11 +171,15 @@ function keyStat(it: ItemData): { text: string; tone: 'dmg' | 'buff' | 'mixed' }
     rdPhysical ? `RD ${fmt(rdPhysical)}` : '',
     rdMagic ? `RDM ${fmt(rdMagic)}` : '',
   ].filter(Boolean);
+  if (it.effects.light) parts.push(`Luz ${lightText(it.effects.light)}`);
   // Verde só quando tudo é bônus; com alguma penalidade, cor neutra.
   return parts.length ? { text: parts.join(' · '), tone: def < 0 || rdPhysical < 0 || rdMagic < 0 ? 'mixed' : 'buff' } : null;
 }
 
 const signTone = (n: number) => (n < 0 ? 'dmg' : 'buff');
+
+/** "5 q · 7,5 m". */
+const lightText = (sq: number) => `${sq} q · ${(sq * MAP_CELL_M).toLocaleString('pt-BR')} m`;
 
 /**
  * Linha da biblioteca: ícone, nome, tipo e o número principal. Tocar abre os detalhes
@@ -153,6 +194,7 @@ function LibraryRow({ it, open, onToggle, onGive, onEdit, onDelete }: {
     it.effects.def && { label: 'Defesa', value: fmt(it.effects.def), tone: signTone(it.effects.def) },
     it.effects.rdPhysical && { label: 'RD física', value: fmt(it.effects.rdPhysical), tone: signTone(it.effects.rdPhysical) },
     it.effects.rdMagic && { label: 'RD mágica', value: fmt(it.effects.rdMagic), tone: signTone(it.effects.rdMagic) },
+    it.effects.light && { label: 'Ilumina', value: lightText(it.effects.light), tone: 'buff' },
     it.pack > 1 && { label: 'Pacote', value: `${it.pack} un.` },
     it.value > 0 && { label: it.pack > 1 ? 'Valor do pacote' : 'Valor', value: it.value.toLocaleString('pt-BR') },
     { label: 'Durabilidade', value: `${it.durability.pv} PV · RD ${it.durability.rd} · DEF ${it.durability.def}` },
