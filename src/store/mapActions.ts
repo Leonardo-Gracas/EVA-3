@@ -10,7 +10,7 @@ import {
   VISION_MODES,
 } from '../model/types';
 import { ambientOf, blankLayout, edgeIndex, sameEdge, setChars, setWalls, terrainAt, visionOf, wallAround } from '../model/map';
-import { generateMap } from '../rules/mapgen';
+import { generateFloors, generateMap, type GeneratedMap } from '../rules/mapgen';
 import { followPath, pathTo, reachFrom, type Point } from '../rules/grid';
 import type { EngineCtx } from './engine';
 import { fail, int, log, record, str } from './guard';
@@ -131,6 +131,29 @@ function settleTokens(m: BattleMap) {
   }
 }
 
+/** Desenho pronto do gerador, com ids novos para portas, móveis, janelas e luzes. */
+function generatedLayout(d: GeneratedMap, ctx: EngineCtx): MapLayout {
+  const layout = d.layout;
+  for (const e of d.doors) {
+    const id = ctx.newId();
+    layout.objects[id] = { id, kind: 'door', edge: e, state: 'closed', hidden: false };
+  }
+  for (const pr of d.props) {
+    const id = ctx.newId();
+    layout.objects[id] = { id, kind: 'prop', ...pr, hidden: false };
+  }
+  for (const e of d.windows) {
+    const id = ctx.newId();
+    layout.objects[id] = { id, kind: 'window', edge: e, hidden: false };
+  }
+  for (const l of d.lights) {
+    const id = ctx.newId();
+    layout.objects[id] = { id, kind: 'light', ...l, lit: true, hidden: false };
+  }
+  if (d.outside) layout.outside = d.outside;
+  return layout;
+}
+
 function applyLayout(m: BattleMap, layout: MapLayout) {
   Object.assign(m, layout);
   if (!layout.outside?.includes('1')) delete m.outside;
@@ -229,6 +252,35 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       return m.id;
     }
 
+    case 'map/build': {
+      const name = str(a.name, MAX_NAME, 'Nome do mapa', true);
+      const seed = int(a.seed, 0, 2 ** 31, 'Semente');
+      const floors = generateFloors(record(a.params), seed);
+      if (Object.keys(s.maps).length + floors.length > MAX_MAPS) {
+        fail(floors.length > 1 ? `Limite de mapas atingido: não cabem ${floors.length} andares.` : 'Limite de mapas atingido.');
+      }
+      const group = floors.length > 1 ? ctx.newId() : '';
+      let first: string | undefined;
+      floors.forEach((d, level) => {
+        const layout = generatedLayout(d, ctx);
+        const label = d.label;
+        const m: BattleMap = {
+          id: ctx.newId(),
+          name: label ? `${name.slice(0, MAX_NAME - label.length - 3)} · ${label}` : name,
+          ...layout,
+          tokens: {}, mode: 'livre', vision: 'open',
+          // Com janelas e luzes, a luz de fora passa a valer (o mestre muda no modo Mesa).
+          ambient: d.params.lights ? 'dia' : 'geral',
+          ...(group ? { floor: { group, level, label, ...(d.params.preset === 'dungeon' ? { down: true } : {}) } } : {}),
+          createdAt: now + level, updatedAt: now,
+        };
+        if (!layout.outside?.includes('1')) delete m.outside;
+        s.maps[m.id] = m;
+        first ??= m.id;
+      });
+      return first;
+    }
+
     case 'map/update': {
       const m = getMap(s, a.mapId);
       if (a.name !== undefined) m.name = str(a.name, MAX_NAME, 'Nome do mapa', true);
@@ -280,6 +332,8 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         createdAt: now,
         updatedAt: now,
       };
+      // A cópia é um mapa solto, fora do prédio.
+      delete copy.floor;
       // Instâncias de ameaça pertencem ao combate, não ao desenho.
       for (const t of Object.values(copy.tokens)) if (t.ref.kind === 'combatant') delete copy.tokens[t.id];
       s.maps[copy.id] = copy;
@@ -430,26 +484,9 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
     case 'map/generate': {
       const m = getMap(s, a.mapId);
       const seed = int(a.seed, 0, 2 ** 31, 'Semente');
-      const d = generateMap(record(a.params), seed);
-      const layout = d.layout;
-      for (const e of d.doors) {
-        const id = ctx.newId();
-        layout.objects[id] = { id, kind: 'door', edge: e, state: 'closed', hidden: false };
-      }
-      for (const pr of d.props) {
-        const id = ctx.newId();
-        layout.objects[id] = { id, kind: 'prop', ...pr, hidden: false };
-      }
-      for (const e of d.windows) {
-        const id = ctx.newId();
-        layout.objects[id] = { id, kind: 'window', edge: e, hidden: false };
-      }
-      for (const l of d.lights) {
-        const id = ctx.newId();
-        layout.objects[id] = { id, kind: 'light', ...l, lit: true, hidden: false };
-      }
-      if (d.outside) layout.outside = d.outside;
-      applyLayout(m, layout);
+      // O editor gera um andar só (os andares nascem juntos, na criação do mapa).
+      const d = generateMap({ ...record(a.params), floors: 1 }, seed);
+      applyLayout(m, generatedLayout(d, ctx));
       // Com janelas e luzes, a luz de fora passa a valer (o mestre muda no modo Mesa).
       if (d.params.lights && ambientOf(m) === 'geral') m.ambient = 'dia';
       m.updatedAt = now;
@@ -590,6 +627,36 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       const m = getMap(s, a.mapId);
       for (const id of tokenIds(m, a.tokenIds)) m.tokens[id].hidden = !!a.hidden;
       return;
+    }
+
+    case 'map/tokenFloor': {
+      const m = getMap(s, a.mapId);
+      const to = getMap(s, a.toMapId);
+      if (to.id === m.id || !m.floor || to.floor?.group !== m.floor.group) fail('Escolha outro andar do mesmo mapa.');
+      const ids = tokenIds(m, a.tokenIds);
+      const have = new Map(Object.values(to.tokens).map((t) => [refKey(t.ref), t]));
+      let last: string | undefined;
+      for (const id of ids) {
+        const t = m.tokens[id];
+        delete m.tokens[id];
+        const ex = t.ref.kind === 'creature' ? undefined : have.get(refKey(t.ref));
+        if (ex) {
+          // A ficha já tinha token no outro andar: ele vai para a escada.
+          Object.assign(ex, freeCellNear(to, t.x, t.y, ex.id));
+          delete ex.trail;
+          last = ex.id;
+          continue;
+        }
+        if (Object.keys(to.tokens).length >= MAX_TOKENS) fail(`Máximo de ${MAX_TOKENS} tokens no mapa.`);
+        const moved: MapToken = { ...t, ...freeCellNear(to, t.x, t.y) };
+        delete moved.trail;
+        to.tokens[moved.id] = moved;
+        have.set(refKey(moved.ref), moved);
+        last = moved.id;
+      }
+      m.updatedAt = now;
+      to.updatedAt = now;
+      return last;
     }
 
     case 'map/move': {

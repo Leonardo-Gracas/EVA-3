@@ -544,11 +544,20 @@ function field(f: Furnisher) {
   }
 }
 
+export interface FurnishOptions {
+  /** Masmorra: escadas soltas na primeira sala e na mais longe (`both`, padrão), só na primeira ou nenhuma. */
+  stairs?: 'both' | 'entry' | 'none';
+  /** Árvores e arbustos no quintal (padrão: sim). O andar de cima não tem quintal. */
+  yard?: boolean;
+}
+
 /**
  * Mobília para o mapa gerado. Muda o terreno só na masmorra (escadas de entrada e saída)
  * e dá tipo às salas da masmorra.
  */
-export function furnish(base: GenBase, preset: MapPreset, r: SeededRng): GenProp[] {
+export function furnish(base: GenBase, preset: MapPreset, r: SeededRng, opts: FurnishOptions = {}): GenProp[] {
+  const stairs = opts.stairs ?? 'both';
+  const yardOn = opts.yard ?? true;
   const f = new Furnisher(base, r, Math.max(0, OBJECT_BUDGET - base.doors.length));
   const { w } = f;
 
@@ -562,7 +571,8 @@ export function furnish(base: GenBase, preset: MapPreset, r: SeededRng): GenProp
       const d = Math.abs(x - x0) + Math.abs(y - y0);
       return d > b.d ? { rm, d } : b;
     }, { rm: base.rooms[0], d: -1 }).rm;
-    for (const rm of new Set([base.rooms[0], far])) {
+    const spots = stairs === 'both' ? [base.rooms[0], far] : stairs === 'entry' ? [base.rooms[0]] : [];
+    for (const rm of new Set(spots)) {
       const cs = [[rm.x, rm.y], [rm.x + rm.w - 1, rm.y], [rm.x, rm.y + rm.h - 1], [rm.x + rm.w - 1, rm.y + rm.h - 1]];
       const spot = shuffle(r, cs).find(([x, y]) => f.canUse(x, y));
       if (spot) f.cells[spot[1] * w + spot[0]] = TERRAIN_CHAR.stairs;
@@ -586,8 +596,8 @@ export function furnish(base: GenBase, preset: MapPreset, r: SeededRng): GenProp
     }
   }
   // O quintal da casa pode ser grande (a casa tem o tamanho dela, não o do mapa): árvores mais espaçadas.
-  if (preset === 'house') yard(f, 0.05);
-  if (preset === 'temple') yard(f, 0.14);
+  if (preset === 'house' && yardOn) yard(f, 0.05);
+  if (preset === 'temple' && yardOn) yard(f, 0.14);
   if (preset === 'outdoor') field(f);
 
   base.layout.cells = f.cells.join('');

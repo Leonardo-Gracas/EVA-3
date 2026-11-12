@@ -3,7 +3,7 @@ import type { EdgeRef, HouseModel, HouseShape, HouseSize, MapGenParams, MapPrese
 import { HOUSE_MODELS, HOUSE_SIZES, PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import { edgeKey, hasWall, isOpen, terrainAt } from '../../model/map';
 import { generateDungeon } from '../dungeon';
-import { cleanMapParams, describeRooms, generateMap, type GeneratedMap, PRESET_DEFAULTS } from './index';
+import { cleanMapParams, describeRooms, generateFloors, generateMap, type GeneratedMap, newMapSize, PRESET_DEFAULTS } from './index';
 import { flood, ZONE } from './shared';
 
 const params = (preset: MapPreset, extra: Partial<MapGenParams> = {}): MapGenParams =>
@@ -325,5 +325,61 @@ describe('gerador de mapas', () => {
   it('descreve os cômodos', () => {
     const r = (kind: GeneratedMap['rooms'][number]['kind']) => ({ x: 0, y: 0, w: 1, h: 1, kind });
     expect(describeRooms([r('sala'), r('quarto'), r('quarto'), r('banheiro')])).toBe('sala de estar, 2 quartos e banheiro');
+  });
+});
+
+describe('andares', () => {
+  const stairsAt = (g: GeneratedMap) => [...g.layout.cells].flatMap((c, i) => (c === TERRAIN_CHAR.stairs ? [i] : []));
+
+  it('um andar só é o mesmo mapa de sempre', () => {
+    const p = params('dungeon', { lights: true });
+    const [only] = generateFloors(p, 21);
+    expect(only.layout.cells).toBe(generateMap(p, 21).layout.cells);
+    expect(only.label).toBe('');
+  });
+
+  it('a casa tem a mesma planta em todos os andares e uma escada nos mesmos quadrados', () => {
+    for (const model of ['casa', 'casarao', 'estalagem', 'hotel'] as HouseModel[]) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const fl = generateFloors({ preset: 'house', model, floors: 3, furnish: true, lights: true, ...newMapSize('house', model) }, seed * 37);
+        expect(fl.map((f) => f.label)).toEqual(['Térreo', '1º andar', '2º andar']);
+        const st = stairsAt(fl[0]);
+        expect(st.length).toBeGreaterThan(0);
+        for (const f of fl) {
+          expect(stairsAt(f)).toEqual(st);
+          // Nenhum móvel em cima da escada, e o andar continua ligado.
+          for (const pr of f.props) for (const i of st) expect(i % f.layout.w >= pr.x && i % f.layout.w < pr.x + pr.w && Math.floor(i / f.layout.w) >= pr.y && Math.floor(i / f.layout.w) < pr.y + pr.h).toBe(false);
+          expect(components(f)).toBe(1);
+        }
+        // Lá em cima: sem quintal (vazio), sem cozinha e sem porta para fora; janelas continuam.
+        const up = fl[1];
+        for (let i = 0; i < up.zone.length; i++) if (up.zone[i] === ZONE.outside) expect(up.layout.cells[i]).toBe(TERRAIN_CHAR.void);
+        expect(up.rooms.some((rm) => rm.kind === 'cozinha' || rm.kind === 'taverna')).toBe(false);
+        expect(up.windows.length).toBeGreaterThan(0);
+        expect(up.rooms.map((rm) => [rm.x, rm.y, rm.w, rm.h])).toEqual(fl[0].rooms.map((rm) => [rm.x, rm.y, rm.w, rm.h]));
+      }
+    }
+  });
+
+  it('cada nível da masmorra tem escada para o vizinho no mesmo lugar', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const p = { preset: 'dungeon' as const, floors: 4, furnish: true, ...newMapSize('dungeon', 'casa') };
+      const fl = generateFloors(p, seed * 53);
+      const bare = generateFloors({ ...p, furnish: false }, seed * 53);
+      expect(fl.map((f) => f.label)).toEqual(['Nível 1', 'Nível 2', 'Nível 3', 'Nível 4']);
+      for (let k = 1; k < fl.length; k++) {
+        const common = stairsAt(fl[k]).filter((i) => stairsAt(fl[k - 1]).includes(i));
+        expect(common.length).toBeGreaterThan(0);
+      }
+      // A mobília não separa nada que o nível tinha ligado.
+      fl.forEach((f, k) => expect(components(f)).toBe(components(bare[k])));
+    }
+  });
+
+  it('templo, cenário aberto e casebre têm um andar só', () => {
+    expect(cleanMapParams({ preset: 'temple', floors: 3 }).floors).toBe(1);
+    expect(cleanMapParams({ preset: 'outdoor', floors: 3 }).floors).toBe(1);
+    expect(cleanMapParams({ preset: 'house', model: 'casebre', floors: 3 }).floors).toBe(1);
+    expect(cleanMapParams({ preset: 'house', model: 'hotel', floors: 9 }).floors).toBe(4);
   });
 });

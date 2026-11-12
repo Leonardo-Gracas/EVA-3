@@ -1,6 +1,6 @@
 // Parâmetros do gerador de mapas: valores padrão de cada tipo e limpeza (motor e tela usam a mesma regra).
 import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapPreset } from '../../model/types';
-import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
+import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_LIMITS, MAP_PRESETS, MAX_FLOORS } from '../../model/types';
 
 type Tunables = Pick<MapGenParams, 'rooms' | 'roomMin' | 'roomMax' | 'corridor' | 'doors'>;
 
@@ -21,6 +21,25 @@ export function houseModelDefaults(model: HouseModel): Pick<MapGenParams, 'rooms
 export const MAP_GEN_DEFAULTS: MapGenParams = {
   preset: 'dungeon', shape: 'random', model: 'casa', size: 'normal', furnish: false, lights: false, w: 40, h: 30, ...PRESET_DEFAULTS.dungeon,
 };
+
+/** Tamanho de um mapa novo de cada tipo: cabe o número padrão de salas ou quartos, com quintal. */
+const NEW_SIZES: Record<Exclude<MapPreset, 'house'>, { w: number; h: number }> = {
+  dungeon: { w: 40, h: 30 }, temple: { w: 24, h: 34 }, outdoor: { w: 40, h: 30 },
+};
+const HOUSE_NEW_SIZES: Record<HouseModel, { w: number; h: number }> = {
+  casebre: { w: 16, h: 14 }, casa: { w: 38, h: 24 }, casarao: { w: 34, h: 30 }, estalagem: { w: 32, h: 24 }, hotel: { w: 46, h: 36 },
+};
+
+export function newMapSize(preset: MapPreset, model: HouseModel): { w: number; h: number } {
+  return preset === 'house' ? HOUSE_NEW_SIZES[model] : NEW_SIZES[preset];
+}
+
+/** Quantos andares o tipo aceita: masmorra (níveis) e casas com mais de um cômodo. */
+export function maxFloors(preset: MapPreset, model: HouseModel): number {
+  if (preset === 'dungeon') return MAX_FLOORS;
+  if (preset === 'house') return model === 'casebre' ? 1 : MAX_FLOORS;
+  return 1;
+}
 
 /** Menor lado aceito pelo gerador. */
 export const GEN_MIN_SIDE = 12;
@@ -52,5 +71,6 @@ export function cleanMapParams(raw: Partial<MapGenParams> | null | undefined): M
     roomMax,
     corridor: Math.round(clampN(r.corridor, 1, 3, d.corridor)),
     doors: clampN(r.doors, 0, 1, d.doors),
+    floors: Math.round(clampN(r.floors, 1, maxFloors(preset, model), 1)),
   };
 }

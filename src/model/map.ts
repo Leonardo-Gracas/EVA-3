@@ -117,6 +117,8 @@ export function fixMap(m: BattleMap): BattleMap {
     m.outside = fit(m.outside, m.w * m.h, '0', (c) => c === '0' || c === '1');
     if (!m.outside.includes('1')) delete m.outside;
   }
+  const f = m.floor as Partial<NonNullable<BattleMap['floor']>> | undefined;
+  if (f !== undefined && !(typeof f?.group === 'string' && typeof f.level === 'number' && typeof f.label === 'string')) delete m.floor;
   return m;
 }
 

@@ -628,7 +628,25 @@ function onSide(rm: Rect, run: EdgeRef[], d: Dir): boolean {
   }
 }
 
-function finish(p: MapGenParams, r: SeededRng, f: Frame, bb: Rect, built: { rooms: Room[]; halls: Rect[] }, bp: Blueprint): GenBase {
+/** Andar de cima: a mesma planta, com a parte social e de serviço virando quartos e estudo. A escada chega no cômodo da entrada. */
+function upperKinds(rooms: Room[], entry: Room, r: SeededRng) {
+  for (const rm of rooms) {
+    if (rm === entry) { rm.kind = 'sala'; continue; }
+    switch (rm.kind) {
+      case 'cozinha': case 'cabana': rm.kind = 'quarto'; break;
+      case 'jantar': rm.kind = r() < 0.5 ? 'biblioteca' : 'quarto'; break;
+      case 'sala': case 'recepcao': case 'entrada': rm.kind = r() < 0.5 ? 'escritorio' : 'quarto'; break;
+      case 'taverna': rm.kind = 'dormitorio'; break;
+      case 'lavanderia': rm.kind = 'banheiro'; break;
+      default: break;
+    }
+  }
+}
+
+/** `upper`: andar de cima, sem portas para fora. */
+function finish(
+  p: MapGenParams, r: SeededRng, f: Frame, bb: Rect, built: { rooms: Room[]; halls: Rect[] }, bp: Blueprint, upper = false,
+): GenBase & { entry: number } {
   const { w, h } = p;
   const place = (rc: Rect) => mapRect(f, { x: rc.x - bb.x, y: rc.y - bb.y, w: rc.w, h: rc.h });
   const src = built.rooms;
@@ -709,11 +727,11 @@ function finish(p: MapGenParams, r: SeededRng, f: Frame, bb: Rect, built: { room
   // Porta da frente na fachada; porta dos fundos na cozinha ou lavanderia, às vezes.
   const front = mapDir(f, 's');
   const er = rooms[entry - 1];
-  const ext = plan.runs(entry, -1);
+  const ext = upper ? [] : plan.runs(entry, -1);
   const main = longest(ext.filter((run) => onSide(er, run, front)), r) ?? longest(ext, r);
   const wide = main && main.length >= 5 && SOCIAL.has(kind(entry)) && kind(entry) !== 'sala';
   if (main) passage(layout, doors, pickSpan(main, wide ? 2 : 1, r), true);
-  if (r() < 0.6) {
+  if (!upper && r() < 0.6) {
     for (const rm of bp.back) {
       const b = id.get(rm);
       if (!b) continue;
@@ -727,7 +745,7 @@ function finish(p: MapGenParams, r: SeededRng, f: Frame, bb: Rect, built: { room
 
   const zone = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) zone[i] = plan.region[i] < 0 ? ZONE.outside : plan.region[i] > n ? ZONE.corridor : ZONE.room;
-  return { layout, rooms, doors, zone };
+  return { layout, rooms, doors, zone, entry: entry - 1 };
 }
 
 /** Corredores que se encostam formam um grupo só. */
@@ -748,7 +766,11 @@ function hallGroups(halls: Rect[]): Rect[][] {
 
 const SIZE_ORDER: HouseSize[] = ['amplo', 'normal', 'compacto'];
 
-export function generateHouse(p: MapGenParams, seed: number): GenBase & { model: HouseModel; shape: Shape } {
+/**
+ * `level` > 0: andar de cima da mesma casa (a mesma semente dá a mesma planta), com outros cômodos
+ * e sem portas para fora. `entry`: índice do cômodo da entrada em `rooms`.
+ */
+export function generateHouse(p: MapGenParams, seed: number, level = 0): GenBase & { model: HouseModel; shape: Shape; entry: number } {
   const box = { x: 1, y: 1, w: p.w - 2, h: p.h - 2 };
   const sizes = SIZE_ORDER.slice(SIZE_ORDER.indexOf(p.size));
   // Não coube: primeiro cômodos menores, depois outro sorteio.
@@ -762,7 +784,9 @@ export function generateHouse(p: MapGenParams, seed: number): GenBase & { model:
         const bb = bbox(bp);
         const f = fitFrame(bb, box, r);
         if (!f) continue;
-        return { ...finish(p, r, f, bb, realize(bp), bp), model, shape };
+        const built = realize(bp);
+        if (level > 0) upperKinds(built.rooms, bp.entry, mulberry32((seed ^ Math.imul(level, 0x2c1b3c6d)) >>> 0));
+        return { ...finish(p, r, f, bb, built, bp, level > 0), model, shape };
       }
     }
     return null;

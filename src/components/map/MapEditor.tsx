@@ -2,8 +2,8 @@
 // redimensionar, com desfazer. Mesa: tokens, alcance e movimento sem limite.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AppWindow, ArrowLeft, Armchair, BrickWall, Check, Cloud, CloudSun, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Flame, Footprints, Hand, Hourglass,
-  Lightbulb, LightbulbOff, Link2, Link2Off, Lock, Moon, MoonStar, MousePointer2, MousePointerClick, Paintbrush, Pencil, Redo2, Scaling, Sun, Sunset,
+  AppWindow, ArrowDown, ArrowLeft, ArrowUp, Armchair, BrickWall, Check, Cloud, CloudSun, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Flame, Footprints, Hand, Hourglass,
+  Layers, Lightbulb, LightbulbOff, Link2, Link2Off, Lock, Moon, MoonStar, MousePointer2, MousePointerClick, Paintbrush, Pencil, Redo2, Scaling, Sun, Sunset,
   Swords, Trash2, Undo2, Unlock, User, Users, Wand2, X,
 } from 'lucide-react';
 import type {
@@ -82,10 +82,22 @@ const toLightString = (lm: Uint8Array) => { let s = ''; for (const v of lm) s +=
 
 const metersLabel = (sq: number) => `${sq} quadrado${sq === 1 ? '' : 's'} · ${metersFor(sq).toLocaleString('pt-BR')} m`;
 
-export default function MapEditor({ table, map, onBack }: { table: TableState; map: BattleMap; onBack: () => void }) {
+/** Andares do mesmo prédio, em ordem (o mapa sozinho, se não tiver andares). */
+function floorsOf(table: TableState, map: BattleMap): BattleMap[] {
+  const g = map.floor?.group;
+  if (!g) return [map];
+  return Object.values(table.maps).filter((m) => m.floor?.group === g).sort((a, b) => a.floor!.level - b.floor!.level);
+}
+
+export default function MapEditor({ table, map, onBack, onOpenMap }: {
+  table: TableState; map: BattleMap; onBack: () => void;
+  /** Abre outro mapa (outro andar). */
+  onOpenMap?: (id: string) => void;
+}) {
   const { act } = useAct();
   const linked = table.combat?.mapId === map.id;
   const active = table.activeMapId === map.id;
+  const floors = floorsOf(table, map);
   const [mode, setMode] = useState<Mode>(() => (linked || Object.keys(map.tokens).length ? 'play' : 'edit'));
   const [tool, setTool] = useState<Tool>('terrain');
   const [terrain, setTerrain] = useState<Terrain>('floor');
@@ -119,6 +131,14 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
   const dragTok = useRef<string | null>(null);
   const [name, setName] = useState(map.name);
   useEffect(() => setName(map.name), [map.name]);
+  // Trocou de andar: nada do mapa anterior fica escolhido.
+  useEffect(() => {
+    setSelObj(null);
+    setSelTok(null);
+    setDraft(null);
+    setDoorPop(null);
+    setLightPop(null);
+  }, [map.id]);
 
   const gridRef = useRef<HTMLDivElement>(null);
   useFitHeight(gridRef);
@@ -684,6 +704,16 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
         <button className="btn btn-sm btn-ghost" onClick={onBack}><ArrowLeft size={14} /> Mapas</button>
         <input className="input map-name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={saveName}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Nome do mapa" />
+        {floors.length > 1 && onOpenMap && (
+          <div className="seg" role="tablist" aria-label="Andares">
+            {floors.map((f) => (
+              <button key={f.id} role="tab" aria-selected={f.id === map.id} className={f.id === map.id ? 'on-inherit' : ''}
+                onClick={() => { if (f.id !== map.id) onOpenMap(f.id); }} title={`Abrir ${f.name}`}>
+                {f.id === map.id && <Layers size={12} style={{ marginRight: 4, verticalAlign: -2 }} />}{f.floor!.label}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="tiny muted hide-sm">{map.w} × {map.h} · {(map.w * MAP_CELL_M).toLocaleString('pt-BR')} × {(map.h * MAP_CELL_M).toLocaleString('pt-BR')} m</span>
         <span className="spacer" />
         <button className={`btn btn-sm${active ? ' btn-gold-on' : ' btn-ghost'}`}
@@ -868,6 +898,9 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
               )}
               <SelectedToken table={table} map={map} selTok={selTok} setSelTok={setSelTok}
                 guide={guide ? { squares: guide.budget.squares, remaining: guide.budget.remaining, turn: guide.turn } : null} />
+              {selTok && map.tokens[selTok] && floors.length > 1 && (
+                <FloorMove map={map} floors={floors} tokenId={selTok} onMoved={() => setSelTok(null)} />
+              )}
               <OnMapList table={table} map={map} selTok={selTok} setSelTok={setSelTok} />
             </>
           )}
@@ -880,6 +913,38 @@ export default function MapEditor({ table, map, onBack }: { table: TableState; m
       )}
       {resizing && <ResizeModal map={map} onClose={() => setResizing(false)}
         onApply={async (a) => (await edit('Redimensionar', [a], 'Mapa redimensionado.')) !== null} />}
+    </div>
+  );
+}
+
+/** Mesa: leva o token escolhido para outro andar, no mesmo quadrado. */
+function FloorMove({ map, floors, tokenId, onMoved }: { map: BattleMap; floors: BattleMap[]; tokenId: string; onMoved: () => void }) {
+  const { act } = useAct();
+  const t = map.tokens[tokenId];
+  const here = map.floor!.level;
+  const onStairs = terrainAt(map, t.x, t.y) === 'stairs';
+  return (
+    <div className="card col">
+      <div className="card-title" style={{ margin: 0 }}><Layers size={14} /> Outro andar</div>
+      <div className="row-wrap" style={{ gap: 6 }}>
+        {floors.filter((f) => f.id !== map.id).map((f) => {
+          const lv = f.floor!.level;
+          const up = map.floor!.down ? lv < here : lv > here;
+          const next = Math.abs(lv - here) === 1;
+          return (
+            <button key={f.id} className={`btn btn-sm${onStairs && next ? ' btn-primary' : ''}`}
+              onClick={async () => {
+                const r = await act({ type: 'map/tokenFloor', mapId: map.id, tokenIds: [tokenId], toMapId: f.id }, `Token levado para ${f.floor!.label}.`);
+                if (r.ok) onMoved();
+              }}>
+              {up ? <ArrowUp size={13} /> : <ArrowDown size={13} />} {up ? 'Subir' : 'Descer'}: {f.floor!.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="tiny muted">
+        {onStairs ? 'Na escada: o token aparece no mesmo quadrado do outro andar.' : 'O token vai para o mesmo quadrado do outro andar (ou o livre mais perto). As escadas ficam nos mesmos quadrados nos dois andares.'}
+      </div>
     </div>
   );
 }

@@ -529,9 +529,26 @@ export interface BattleMap {
   outside?: string;
   /** Luz de fora. Sem o campo: tudo iluminado (use `ambientOf`). */
   ambient?: Ambient;
+  /** Andar de um prédio gerado com vários andares, ligados por escadas nos mesmos quadrados. */
+  floor?: MapFloor;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Andar de um mapa de vários andares. */
+export interface MapFloor {
+  /** Igual em todos os andares do mesmo prédio. */
+  group: string;
+  /** 0 = o andar de entrada (térreo ou primeiro nível da masmorra). */
+  level: number;
+  /** "Térreo", "1º andar", "Nível 2"... */
+  label: string;
+  /** Os andares seguintes ficam embaixo (níveis da masmorra); sem o campo, em cima. */
+  down?: boolean;
+}
+
+/** Andares que o gerador faz de uma vez. */
+export const MAX_FLOORS = 4;
 
 /** Tipo de mapa do gerador. */
 export type MapPreset = 'dungeon' | 'house' | 'temple' | 'outdoor';
@@ -617,6 +634,8 @@ export interface MapGenParams {
   corridor: number;
   /** Chance (0 a 1) de cada entrada de sala ganhar porta. */
   doors: number;
+  /** Andares (masmorra e casa; ausente: 1). Só na criação do mapa: cada andar vira um mapa. */
+  floors?: number;
 }
 
 // ── Investigação ─────────────────────────────────────────────────────────────
@@ -992,6 +1011,8 @@ export type MapLayout = Pick<BattleMap, 'w' | 'h' | 'cells' | 'wallsH' | 'wallsV
 export type MapAction =
   /** walls: parede em volta de todo o piso. */
   | { type: 'map/create'; name: string; w: number; h: number; fill?: Terrain; walls?: boolean }
+  /** Cria o mapa já gerado; com `params.floors` > 1, um mapa por andar, ligados por escadas. Devolve o id do primeiro. */
+  | { type: 'map/build'; name: string; params: MapGenParams; seed: number }
   /** Campos ausentes não mudam. */
   | { type: 'map/update'; mapId: string; name?: string; mode?: MoveMode; vision?: VisionMode; ambient?: Ambient }
   /** Marca (on) ou desmarca quadrados a céu aberto. Índices y*w+x. */
@@ -1021,6 +1042,8 @@ export type MapAction =
   | { type: 'map/tokenPlace'; mapId: string; refs: PlaceRef[]; x?: number; y?: number }
   | { type: 'map/tokenRemove'; mapId: string; tokenIds: string[] }
   | { type: 'map/tokenHidden'; mapId: string; tokenIds: string[]; hidden: boolean }
+  /** Leva tokens para outro andar do mesmo prédio, no mesmo quadrado (ou no livre mais perto). */
+  | { type: 'map/tokenFloor'; mapId: string; tokenIds: string[]; toMapId: string }
   /** Mestre: tokenId, sem limite. Jogador: characterId, dentro do deslocamento e do modo de locomoção. */
   | {
     type: 'map/move'; mapId: string; x: number; y: number; tokenId?: string; characterId?: string;

@@ -639,3 +639,50 @@ describe('mapas: luz', () => {
     expect(s.maps[mapId].outside).toBeUndefined();
   });
 });
+
+describe('mapas: criar gerado e andares', () => {
+  it('cria um mapa por andar, ligados, e leva o token de um andar para o outro', () => {
+    let { s, ana } = setup();
+    const before = Object.keys(s.maps).length;
+    const params = { ...DUNGEON_DEFAULTS, preset: 'house' as const, model: 'casarao' as const, w: 34, h: 30, furnish: true, lights: true, floors: 2 };
+    expect(run(s, p1, { type: 'map/build', name: 'Solar', params, seed: 4 })).toMatchObject({ ok: false, error: /mestre/ });
+    const r = dispatch(s, gm, { type: 'map/build', name: 'Solar', params, seed: 4 }, ctx);
+    if (!r.ok) throw new Error(r.error);
+    s = r.state;
+    expect(Object.keys(s.maps)).toHaveLength(before + 2);
+    const ground = s.maps[r.id!];
+    expect(ground.name).toBe('Solar · Térreo');
+    expect(ground.ambient).toBe('dia');
+    const upper = Object.values(s.maps).find((m) => m.floor?.group === ground.floor?.group && m.id !== ground.id)!;
+    expect(upper.floor).toMatchObject({ level: 1, label: '1º andar' });
+    const stair = ground.cells.indexOf('>');
+    expect(stair).toBeGreaterThanOrEqual(0);
+    expect(upper.cells[stair]).toBe('>');
+
+    // Ficha na escada do térreo sobe para o mesmo quadrado.
+    const x = stair % ground.w;
+    const y = Math.floor(stair / ground.w);
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId: ground.id, refs: [{ kind: 'character', id: ana }], x, y });
+    const tok = Object.values(s.maps[ground.id].tokens)[0];
+    s = ok(s, gm, { type: 'map/tokenFloor', mapId: ground.id, tokenIds: [tok.id], toMapId: upper.id });
+    expect(Object.keys(s.maps[ground.id].tokens)).toHaveLength(0);
+    expect(pos(s, upper.id, ana)).toEqual({ x, y });
+
+    // Só entre andares do mesmo prédio; a cópia sai do prédio.
+    const other = Object.keys(s.maps).find((id) => !s.maps[id].floor)!;
+    expect(run(s, gm, { type: 'map/tokenFloor', mapId: upper.id, tokenIds: [tok.id], toMapId: other })).toMatchObject({ ok: false });
+    const dup = dispatch(s, gm, { type: 'map/duplicate', mapId: upper.id }, ctx);
+    if (!dup.ok) throw new Error(dup.error);
+    expect(dup.state.maps[dup.id!].floor).toBeUndefined();
+  });
+
+  it('um andar só: mapa com o nome dado, sem andar', () => {
+    let { s } = setup();
+    const r = dispatch(s, gm, { type: 'map/build', name: 'Cripta', params: { ...DUNGEON_DEFAULTS, furnish: true }, seed: 3 }, ctx);
+    if (!r.ok) throw new Error(r.error);
+    s = r.state;
+    expect(s.maps[r.id!].name).toBe('Cripta');
+    expect(s.maps[r.id!].floor).toBeUndefined();
+    expect(Object.values(s.maps[r.id!].objects).some((o) => o.kind === 'door')).toBe(true);
+  });
+});

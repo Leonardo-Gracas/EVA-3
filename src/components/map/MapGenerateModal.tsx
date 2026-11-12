@@ -1,10 +1,11 @@
-// Gerador de mapas: tipo (masmorra, casa, templo, cenário aberto), parâmetros, prévia e aplicar.
+// Gerador de mapas: tipo, andares, prévia e opções avançadas. Usado ao criar um mapa (com nome,
+// em branco e andares) e no editor, para gerar de novo o mapa aberto.
 import { useMemo, useState } from 'react';
-import { Castle, Church, Dices, Home, Trees, Wand2 } from 'lucide-react';
-import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset } from '../../model/types';
-import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
+import { Castle, ChevronDown, ChevronRight, Church, Dices, Home, Square, Trees, Wand2 } from 'lucide-react';
+import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
+import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_CELL_M, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
 import {
-  cleanMapParams, describeRooms, GEN_MIN_SIDE, generateMap, houseModelDefaults, MAP_GEN_DEFAULTS, PRESET_DEFAULTS,
+  cleanMapParams, describeRooms, GEN_MIN_SIDE, generateFloors, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize, PRESET_DEFAULTS,
 } from '../../rules/mapgen';
 import { newSeed } from '../../rules/random';
 import Modal from '../common/Modal';
@@ -13,9 +14,13 @@ import MapCanvas from './MapCanvas';
 type NumKey = 'w' | 'h' | 'rooms' | 'roomMin' | 'roomMax' | 'corridor' | 'doors';
 type Draft = Record<NumKey, string>;
 
-const PRESET_ICONS: Record<MapPreset, typeof Home> = { dungeon: Castle, house: Home, temple: Church, outdoor: Trees };
+/** Tipo escolhido na tela: um dos geradores ou o mapa em branco. */
+export type GenKind = MapPreset | 'blank';
 
-/** Campos de cada tipo (rótulo e dica). */
+const KIND_ICONS: Record<GenKind, typeof Home> = { blank: Square, dungeon: Castle, house: Home, temple: Church, outdoor: Trees };
+const BLANK = { label: 'Em branco', hint: 'Mapa vazio, para desenhar à mão. Dá para gerar depois, dentro do mapa.' };
+
+/** Campos avançados de cada tipo (rótulo e dica). */
 const FIELDS: Record<MapPreset, Array<[NumKey, string, string?]>> = {
   dungeon: [
     ['rooms', 'Salas', '1 a 40 (cabem menos em mapas pequenos)'], ['roomMin', 'Sala mín.'], ['roomMax', 'Sala máx.'],
@@ -40,135 +45,271 @@ const toDraft = (p: MapGenParams): Draft => ({
   corridor: String(p.corridor), doors: String(Math.round(p.doors * 100)),
 });
 
-export default function MapGenerateModal({ w, h, onApply, onClose }: {
-  w: number; h: number;
-  onApply: (params: MapGenParams, seed: number) => Promise<boolean>;
-  onClose: () => void;
-}) {
-  const [preset, setPreset] = useState<MapPreset>('dungeon');
+const clampSide = (v: string) => Math.max(MAP_LIMITS.min, Math.min(MAP_LIMITS.max, parseInt(v, 10) || 0));
+
+/**
+ * Estado do gerador. `fixed`: tamanho do mapa aberto (o editor gera por cima dele);
+ * sem ele, cada tipo começa no tamanho sugerido.
+ */
+export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: number; h: number }; blank?: boolean } = {}) {
+  const [kind, setKind] = useState<GenKind>('dungeon');
   const [shape, setShape] = useState<HouseShape>('random');
   const [model, setModel] = useState<HouseModel>('casa');
   const [size, setSize] = useState<HouseSize>('normal');
-  const [furnish, setFurnish] = useState(true);
-  const [lights, setLights] = useState(true);
-  const [d, setD] = useState<Draft>(() => toDraft(cleanMapParams({ ...MAP_GEN_DEFAULTS, w: Math.max(w, GEN_MIN_SIDE), h: Math.max(h, GEN_MIN_SIDE) })));
+  /** Janelas, iluminação e mobília: uma marcação só. */
+  const [extras, setExtras] = useState(true);
+  const [floorsWanted, setFloors] = useState(1);
+  const [advanced, setAdvanced] = useState(false);
+  const sizeFor = (p: MapPreset, m: HouseModel) => (fixed
+    ? { w: Math.max(fixed.w, GEN_MIN_SIDE), h: Math.max(fixed.h, GEN_MIN_SIDE) }
+    : newMapSize(p, m));
+  const [d, setD] = useState<Draft>(() => toDraft(cleanMapParams({ ...MAP_GEN_DEFAULTS, ...sizeFor('dungeon', 'casa') })));
   const [seed, setSeed] = useState(newSeed);
+  const [blank, setBlank] = useState<{ w: string; h: string; fill: Terrain; walls: boolean }>({ w: '30', h: '20', fill: 'floor', walls: true });
+  /** Andar mostrado na prévia. */
+  const [view, setView] = useState(0);
+
+  const preset: MapPreset = kind === 'blank' ? 'dungeon' : kind;
+  const floorMax = fixed ? 1 : maxFloors(preset, model);
+  const floors = Math.min(floorsWanted, floorMax);
   const params = useMemo(() => {
     const n = (k: NumKey) => parseInt(d[k], 10);
     return cleanMapParams({
-      preset, shape, model, size, furnish, lights,
+      preset, shape, model, size, furnish: extras, lights: extras, floors,
       w: n('w'), h: n('h'), rooms: n('rooms'), roomMin: n('roomMin'), roomMax: n('roomMax'), corridor: n('corridor'),
       doors: (n('doors') || 0) / 100,
     });
-  }, [d, preset, shape, model, size, furnish, lights]);
-  const result = useMemo(() => generateMap(params, seed), [params, seed]);
-  const objects = useMemo<MapObject[]>(() => [
-    ...result.doors.map((edge, i) => ({ id: `p${i}`, kind: 'door' as const, edge, state: 'closed' as const, hidden: false })),
-    ...result.props.map((pr, i) => ({ id: `m${i}`, kind: 'prop' as const, ...pr, hidden: false })),
-    ...result.windows.map((edge, i) => ({ id: `j${i}`, kind: 'window' as const, edge, hidden: false })),
-    ...result.lights.map((l, i) => ({ id: `l${i}`, kind: 'light' as const, ...l, lit: true, hidden: false })),
-  ], [result]);
-  const up = (k: NumKey, v: string) => setD((x) => ({ ...x, [k]: v.replace(/\D/g, '') }));
+  }, [d, preset, shape, model, size, extras, floors]);
+  const result = useMemo(() => (kind === 'blank' ? [] : generateFloors(params, seed)), [kind, params, seed]);
 
-  const choosePreset = (p: MapPreset) => {
-    if (p === preset) return;
-    setPreset(p);
-    const t = p === 'house' ? { ...PRESET_DEFAULTS.house, ...houseModelDefaults(model) } : PRESET_DEFAULTS[p];
-    setD((x) => ({ ...x, ...toDraft({ ...params, ...t }), w: x.w, h: x.h }));
+  const choose = (k: GenKind) => {
+    if (k === kind) return;
+    setKind(k);
+    setView(0);
+    if (k === 'blank') return;
+    const t = k === 'house' ? { ...PRESET_DEFAULTS.house, ...houseModelDefaults(model) } : PRESET_DEFAULTS[k];
+    const s = sizeFor(k, model);
+    setD((x) => ({ ...x, ...toDraft({ ...params, ...t }), ...(fixed ? { w: x.w, h: x.h } : { w: String(s.w), h: String(s.h) }) }));
   };
 
   const chooseModel = (m: HouseModel) => {
     setModel(m);
     if (shape !== 'random' && !HOUSE_MODELS[m].shapes.includes(shape)) setShape('random');
-    setD((x) => ({ ...x, ...toDraft({ ...params, ...houseModelDefaults(m) }), w: x.w, h: x.h }));
+    const s = sizeFor('house', m);
+    setD((x) => ({ ...x, ...toDraft({ ...params, ...houseModelDefaults(m) }), ...(fixed ? { w: x.w, h: x.h } : { w: String(s.w), h: String(s.h) }) }));
   };
 
+  const blankSize = { w: clampSide(blank.w), h: clampSide(blank.h) };
+
+  return {
+    allowBlank, fixed: !!fixed, kind, choose, preset, shape, setShape, model, chooseModel, size, setSize, extras, setExtras,
+    floors, floorMax, setFloors, advanced, setAdvanced, d, setD, seed, reroll: () => setSeed(newSeed()),
+    blank, setBlank, blankSize, params, result, view: Math.min(view, Math.max(0, result.length - 1)), setView,
+  };
+}
+
+export type MapGen = ReturnType<typeof useMapGen>;
+
+/** Escolha do tipo, andares, a marcação de janelas/luz/mobília e as opções avançadas. */
+export function MapGenOptions({ g }: { g: MapGen }) {
+  const { kind, preset, model, d, setD } = g;
   const info = HOUSE_MODELS[model];
-  const hints: Partial<Record<NumKey, string>> = preset === 'house'
+  const kinds: GenKind[] = [...(g.allowBlank ? ['blank' as const] : []), ...(Object.keys(MAP_PRESETS) as MapPreset[])];
+  const hint = kind === 'blank' ? BLANK.hint : kind === 'house' ? `${info.label}: ${info.hint}` : MAP_PRESETS[preset].hint;
+  const up = (k: NumKey, v: string) => setD((x) => ({ ...x, [k]: v.replace(/\D/g, '') }));
+  const hints: Partial<Record<NumKey, string>> = kind === 'house'
     ? { rooms: `${info.rooms[0]} a ${info.rooms[1]}${model === 'hotel' || model === 'estalagem' ? ' quartos de hóspede' : ''}` }
     : {};
   // Casebre não tem corredor.
-  const fields = FIELDS[preset].filter(([k]) => !(preset === 'house' && model === 'casebre' && k === 'corridor'));
-
-  const field = (k: NumKey, label: string, hint?: string) => (
-    <label key={k} className="field small secondary" title={hint}>{label}
+  const fields = kind === 'blank' ? [] : FIELDS[preset].filter(([k]) => !(kind === 'house' && model === 'casebre' && k === 'corridor'));
+  const numField = (k: NumKey, label: string, tip?: string) => (
+    <label key={k} className="field small secondary" title={tip}>{label}
       <input className="input mono" style={{ width: 64, textAlign: 'center' }} inputMode="numeric" value={d[k]} onChange={(e) => up(k, e.target.value)} />
     </label>
   );
+  const sideField = (k: 'w' | 'h', label: string) => (
+    <label className="field small secondary" title={`${MAP_LIMITS.min} a ${MAP_LIMITS.max}`}>{label}
+      <input className="input mono" style={{ width: 64, textAlign: 'center' }} inputMode="numeric" value={g.blank[k]}
+        onChange={(e) => g.setBlank((x) => ({ ...x, [k]: e.target.value.replace(/\D/g, '') }))} />
+    </label>
+  );
 
-  const n = result.rooms.length;
-  const unit = preset === 'outdoor' ? ['construção', 'construções'] : preset === 'dungeon' ? ['sala', 'salas'] : ['cômodo', 'cômodos'];
-  const kinds = preset !== 'dungeon' || furnish ? describeRooms(result.rooms) : '';
-  const quartos = result.rooms.filter((rm) => rm.kind === 'quarto').length;
-  const short = preset === 'dungeon' && n < params.rooms ? ` (cabem ${n} de ${params.rooms} neste tamanho)`
-    : preset === 'outdoor' && n < params.rooms ? ` (couberam ${n} de ${params.rooms})`
-    : preset === 'house' && quartos < params.rooms ? ` (couberam ${quartos} de ${params.rooms} quartos neste mapa)` : '';
+  // Resumo do que está valendo, para quem não abre as opções avançadas.
+  const p = g.params;
+  const summary = kind === 'blank'
+    ? `${g.blankSize.w} × ${g.blankSize.h} quadrados · ${g.blank.fill === 'floor' ? 'piso livre' : 'tudo vazio'}${g.blank.fill === 'floor' && g.blank.walls ? ', parede em volta' : ''}`
+    : [
+      `${p.w} × ${p.h} quadrados`,
+      kind === 'dungeon' ? `${p.rooms} salas` : kind === 'house' ? `${p.rooms} quarto${p.rooms === 1 ? '' : 's'}` : kind === 'outdoor' ? `${p.rooms} construç${p.rooms === 1 ? 'ão' : 'ões'}` : '',
+      kind === 'house' ? `cômodos ${HOUSE_SIZES[p.size].toLowerCase()}` : '',
+      `portas ${Math.round(p.doors * 100)}%`,
+    ].filter(Boolean).join(' · ');
 
+  return (
+    <div className="col">
+      <div className="row-wrap" style={{ gap: 6 }}>
+        {kinds.map((k) => {
+          const Icon = KIND_ICONS[k];
+          return (
+            <button key={k} type="button" className={`map-swatch${kind === k ? ' on' : ''}`} title={k === 'blank' ? BLANK.hint : MAP_PRESETS[k].hint}
+              onClick={() => g.choose(k)}>
+              <Icon size={14} />{k === 'blank' ? BLANK.label : MAP_PRESETS[k].label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="tiny muted">{hint}</div>
+
+      {(kind === 'house' || g.floorMax > 1) && (
+        <div className="row-wrap" style={{ alignItems: 'flex-end' }}>
+          {kind === 'house' && (
+            <label className="field small secondary" title={info.hint}>Modelo
+              <select className="input" value={model} onChange={(e) => g.chooseModel(e.target.value as HouseModel)}>
+                {(['Casas', 'Hospedagem'] as const).map((grp) => (
+                  <optgroup key={grp} label={grp}>
+                    {(Object.keys(HOUSE_MODELS) as HouseModel[]).filter((m) => HOUSE_MODELS[m].group === grp)
+                      .map((m) => <option key={m} value={m}>{HOUSE_MODELS[m].label}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+          )}
+          {g.floorMax > 1 && (
+            <div className="field small secondary">
+              <span title={kind === 'dungeon' ? 'Níveis da masmorra, um embaixo do outro, ligados por escadas' : 'Andares da casa, ligados por uma escada no cômodo da entrada'}>
+                {kind === 'dungeon' ? 'Níveis' : 'Andares'}
+              </span>
+              <div className="seg" role="group" aria-label={kind === 'dungeon' ? 'Níveis' : 'Andares'}>
+                {Array.from({ length: g.floorMax }, (_, i) => i + 1).map((n) => (
+                  <button key={n} type="button" className={g.floors === n ? 'on-inherit' : ''} style={{ minWidth: 32 }}
+                    onClick={() => { g.setFloors(n); g.setView(0); }}>{n}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {kind !== 'blank' && (
+        <label className="row small" title="Móveis de acordo com cada cômodo (camas nos quartos, bancos na nave, árvores no campo); janelas nas paredes que dão para fora; velas, lareiras, lustres, lampiões e tochas acesos.">
+          <input type="checkbox" checked={g.extras} onChange={(e) => g.setExtras(e.target.checked)} /> Janelas, iluminação e mobília automáticas
+        </label>
+      )}
+
+      <div className="col" style={{ gap: 8 }}>
+        <button type="button" className="btn btn-sm btn-ghost" style={{ alignSelf: 'flex-start', paddingLeft: 4 }}
+          onClick={() => g.setAdvanced(!g.advanced)} aria-expanded={g.advanced}>
+          {g.advanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Opções avançadas
+          {!g.advanced && <span className="tiny muted" style={{ marginLeft: 6 }}>{summary}</span>}
+        </button>
+        {g.advanced && (kind === 'blank' ? (
+          <div className="col">
+            <div className="row-wrap" style={{ alignItems: 'flex-end' }}>
+              {sideField('w', 'Largura')}
+              {sideField('h', 'Altura')}
+              <span className="tiny muted" style={{ paddingBottom: 8 }}>
+                = {(g.blankSize.w * MAP_CELL_M).toLocaleString('pt-BR')} × {(g.blankSize.h * MAP_CELL_M).toLocaleString('pt-BR')} m
+              </span>
+            </div>
+            <div className="row-wrap">
+              <button type="button" className={`chip${g.blank.fill === 'floor' ? ' on' : ''}`} onClick={() => g.setBlank((x) => ({ ...x, fill: 'floor' }))}>Piso livre</button>
+              <button type="button" className={`chip${g.blank.fill === 'void' ? ' on' : ''}`} onClick={() => g.setBlank((x) => ({ ...x, fill: 'void' }))}>Tudo vazio (para escavar)</button>
+              {g.blank.fill === 'floor' && (
+                <label className="row small"><input type="checkbox" checked={g.blank.walls} onChange={(e) => g.setBlank((x) => ({ ...x, walls: e.target.checked }))} /> Parede em volta</label>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="row-wrap" style={{ alignItems: 'flex-end' }}>
+            {numField('w', 'Largura', `${GEN_MIN_SIDE} a ${MAP_LIMITS.max}`)}
+            {numField('h', 'Altura', `${GEN_MIN_SIDE} a ${MAP_LIMITS.max}`)}
+            {kind === 'house' && info.shapes.length > 1 && (
+              <label className="field small secondary">Formato
+                <select className="input" value={g.shape} onChange={(e) => g.setShape(e.target.value as HouseShape)}>
+                  {(['random', ...info.shapes] as HouseShape[]).map((s) => <option key={s} value={s}>{HOUSE_SHAPES[s]}</option>)}
+                </select>
+              </label>
+            )}
+            {kind === 'house' && (
+              <label className="field small secondary" title="Medida de cada cômodo (1 quadrado = 1,5 m)">Cômodos
+                <select className="input" value={g.size} onChange={(e) => g.setSize(e.target.value as HouseSize)}>
+                  {(Object.keys(HOUSE_SIZES) as HouseSize[]).map((s) => <option key={s} value={s}>{HOUSE_SIZES[s]}</option>)}
+                </select>
+              </label>
+            )}
+            {fields.map(([k, label, tip]) => numField(k, label, hints[k] ?? tip))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Prévia do mapa gerado, com os andares em abas. */
+export function MapGenPreview({ g, height = 'min(46vh, 460px)' }: { g: MapGen; height?: string }) {
+  const { result, params, kind } = g;
+  const floor = result[g.view];
+  const objects = useMemo<MapObject[]>(() => (floor ? [
+    ...floor.doors.map((edge, i) => ({ id: `p${i}`, kind: 'door' as const, edge, state: 'closed' as const, hidden: false })),
+    ...floor.props.map((pr, i) => ({ id: `m${i}`, kind: 'prop' as const, ...pr, hidden: false })),
+    ...floor.windows.map((edge, i) => ({ id: `j${i}`, kind: 'window' as const, edge, hidden: false })),
+    ...floor.lights.map((l, i) => ({ id: `l${i}`, kind: 'light' as const, ...l, lit: true, hidden: false })),
+  ] : []), [floor]);
+  if (kind === 'blank' || !floor) return null;
+
+  const n = floor.rooms.length;
+  const unit = kind === 'outdoor' ? ['construção', 'construções'] : kind === 'dungeon' ? ['sala', 'salas'] : ['cômodo', 'cômodos'];
+  const kinds = kind !== 'dungeon' || params.furnish ? describeRooms(floor.rooms) : '';
+  const quartos = floor.rooms.filter((rm) => rm.kind === 'quarto').length;
+  const short = g.view > 0 ? ''
+    : kind === 'dungeon' && n < params.rooms ? ` (cabem ${n} de ${params.rooms} neste tamanho)`
+    : kind === 'outdoor' && n < params.rooms ? ` (couberam ${n} de ${params.rooms})`
+    : kind === 'house' && quartos < params.rooms ? ` (couberam ${quartos} de ${params.rooms} quartos neste mapa)` : '';
+  const plural = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+
+  return (
+    <div className="col" style={{ gap: 8 }}>
+      <div className="row-wrap" style={{ gap: 6 }}>
+        {result.length > 1 && (
+          <div className="seg" role="tablist" aria-label="Andar da prévia">
+            {result.map((f, i) => (
+              <button key={i} type="button" role="tab" aria-selected={g.view === i} className={g.view === i ? 'on-inherit' : ''} onClick={() => g.setView(i)}>{f.label}</button>
+            ))}
+          </div>
+        )}
+        <span className="spacer" />
+        <button type="button" className="btn btn-sm" onClick={g.reroll}><Dices size={14} /> Outra versão</button>
+      </div>
+      <div className="tiny muted">
+        {n} {unit[n === 1 ? 0 : 1]}{short}{kinds ? `: ${kinds}` : ''} · {plural(floor.doors.length, 'porta', 'portas')}
+        {params.furnish ? ` · ${plural(floor.props.length, 'móvel', 'móveis')}` : ''}
+        {params.lights ? ` · ${plural(floor.windows.length, 'janela', 'janelas')} · ${plural(floor.lights.length, 'luz', 'luzes')}` : ''}
+        {result.length > 1 ? ` · escada para ${result.length === 2 ? 'o outro andar' : 'os andares vizinhos'}` : ''}
+      </div>
+      <MapCanvas grid={floor.layout} objects={objects} tokens={[]} fitKey={`gen:${kind}:${g.model}:${g.seed}:${params.w}x${params.h}:${g.view}`}
+        height={height} compact touch="pan" />
+    </div>
+  );
+}
+
+/** Editor: gera de novo o mapa aberto (um andar, no tamanho dele). */
+export default function MapGenerateModal({ w, h, onApply, onClose }: {
+  w: number; h: number;
+  onApply: (params: MapGenParams, seed: number) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const g = useMapGen({ fixed: { w, h } });
   return (
     <Modal open width={860} title="Gerar mapa" onClose={onClose}
       footer={<>
         <span className="tiny muted">Troca o terreno, as paredes, as portas e os móveis. Tokens vão para o piso mais próximo. Dá para desfazer.</span>
         <span className="spacer" />
         <button className="btn" onClick={onClose}>Cancelar</button>
-        <button className="btn btn-primary" onClick={async () => { if (await onApply(params, seed)) onClose(); }}><Wand2 size={14} /> Aplicar</button>
+        <button className="btn btn-primary" onClick={async () => { if (await onApply(g.params, g.seed)) onClose(); }}><Wand2 size={14} /> Aplicar</button>
       </>}>
       <div className="col gap-lg">
-        <div className="row-wrap" style={{ gap: 6 }}>
-          {(Object.keys(MAP_PRESETS) as MapPreset[]).map((p) => {
-            const Icon = PRESET_ICONS[p];
-            return (
-              <button key={p} className={`map-swatch${preset === p ? ' on' : ''}`} title={MAP_PRESETS[p].hint} onClick={() => choosePreset(p)}>
-                <Icon size={14} />{MAP_PRESETS[p].label}
-              </button>
-            );
-          })}
-        </div>
-        <div className="tiny muted" style={{ marginTop: -8 }}>{preset === 'house' ? `${info.label}: ${info.hint}` : MAP_PRESETS[preset].hint}</div>
-        <div className="row-wrap" style={{ alignItems: 'flex-end' }}>
-          {field('w', 'Largura', `${GEN_MIN_SIDE} a ${MAP_LIMITS.max}`)}
-          {field('h', 'Altura', `${GEN_MIN_SIDE} a ${MAP_LIMITS.max}`)}
-          {preset === 'house' && (
-            <>
-              <label className="field small secondary" title={info.hint}>Modelo
-                <select className="input" value={model} onChange={(e) => chooseModel(e.target.value as HouseModel)}>
-                  {(['Casas', 'Hospedagem'] as const).map((g) => (
-                    <optgroup key={g} label={g}>
-                      {(Object.keys(HOUSE_MODELS) as HouseModel[]).filter((m) => HOUSE_MODELS[m].group === g)
-                        .map((m) => <option key={m} value={m}>{HOUSE_MODELS[m].label}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-              {info.shapes.length > 1 && (
-                <label className="field small secondary">Formato
-                  <select className="input" value={shape} onChange={(e) => setShape(e.target.value as HouseShape)}>
-                    {(['random', ...info.shapes] as HouseShape[]).map((s) => <option key={s} value={s}>{HOUSE_SHAPES[s]}</option>)}
-                  </select>
-                </label>
-              )}
-              <label className="field small secondary" title="Medida de cada cômodo (1 quadrado = 1,5 m)">Cômodos
-                <select className="input" value={size} onChange={(e) => setSize(e.target.value as HouseSize)}>
-                  {(Object.keys(HOUSE_SIZES) as HouseSize[]).map((s) => <option key={s} value={s}>{HOUSE_SIZES[s]}</option>)}
-                </select>
-              </label>
-            </>
-          )}
-          {fields.map(([k, label, hint]) => field(k, label, hints[k] ?? hint))}
-          <span className="spacer" />
-          <button className="btn btn-sm" onClick={() => setSeed(newSeed())}><Dices size={14} /> Outra versão</button>
-        </div>
-        <label className="row small" title="Móveis de acordo com cada cômodo: camas nos quartos, bancos na nave, árvores no campo...">
-          <input type="checkbox" checked={furnish} onChange={(e) => setFurnish(e.target.checked)} /> Mobília automática
-        </label>
-        <label className="row small" title="Janelas nas paredes que dão para fora; velas e candelabros nas mesas, lareiras acesas, lustres nos salões, lampiões e tochas nas paredes. Algumas salas da masmorra ficam no escuro.">
-          <input type="checkbox" checked={lights} onChange={(e) => setLights(e.target.checked)} /> Janelas e iluminação
-        </label>
-        <div className="tiny muted">
-          {n} {unit[n === 1 ? 0 : 1]}{short}{kinds ? `: ${kinds}` : ''} · {result.doors.length} porta{result.doors.length === 1 ? '' : 's'}
-          {furnish ? ` · ${result.props.length} móve${result.props.length === 1 ? 'l' : 'is'}` : ''}
-          {lights ? ` · ${result.windows.length} janela${result.windows.length === 1 ? '' : 's'} · ${result.lights.length} luz${result.lights.length === 1 ? '' : 'es'}` : ''} · {params.w} × {params.h}
-        </div>
-        <MapCanvas grid={result.layout} objects={objects} tokens={[]} fitKey={`gen:${preset}:${model}:${seed}:${params.w}x${params.h}`} height="min(52vh, 520px)" compact touch="pan" />
+        <MapGenOptions g={g} />
+        <MapGenPreview g={g} height="min(52vh, 520px)" />
       </div>
     </Modal>
   );
