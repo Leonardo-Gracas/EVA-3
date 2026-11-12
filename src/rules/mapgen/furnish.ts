@@ -366,6 +366,11 @@ const RECIPES: Record<RoomKind, Recipe> = {
     if (R.w * R.h >= 30) tables(f, R);
     else f.dining(R, Math.min(8, 2 + Math.floor((R.w * R.h) / 4)), 'Mesa de jantar');
   },
+  vassouras: (f, R) => {
+    f.alongWall(R, 'estante', 1, 1, 'Prateleira');
+    f.corner(R, 'outro', 'Vassouras e esfregões');
+    if (R.w * R.h >= 6) f.corner(R, 'caixa', 'Balde');
+  },
   lavanderia: (f, R) => {
     f.alongWall(R, 'outro', 1, 1, 'Tanque');
     f.corner(R, 'caixa', 'Cesto de roupa');

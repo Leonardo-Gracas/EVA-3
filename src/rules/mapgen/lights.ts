@@ -62,7 +62,7 @@ const CEILING: Partial<Record<RoomKind, number>> = { taverna: 0, jantar: 20, rec
 
 /** Lampião de parede: chance e quantos no máximo. */
 const WALL_LAMP: Partial<Record<RoomKind, [number, number]>> = {
-  quarto: [0.6, 1], banheiro: [0.4, 1], biblioteca: [0.9, 2], escritorio: [0.5, 1], lavanderia: [0.3, 1], despensa: [0.3, 1],
+  quarto: [0.6, 1], banheiro: [0.4, 1], biblioteca: [0.9, 2], escritorio: [0.5, 1], lavanderia: [0.3, 1], despensa: [0.3, 1], vassouras: [0.2, 1],
   entrada: [0.8, 1], cozinha: [0.5, 1], vestibulo: [0.7, 2], sacristia: [0.6, 1], capela: [0.5, 1], taverna: [0.8, 2], sala: [0.4, 1],
 };
 
@@ -215,7 +215,7 @@ export function illuminate(base: GenBase, props: GenProp[], preset: MapPreset, r
     if (lamp && r() < lamp[0]) count += wallLights(spots(), 'lampiao', lamp[1], 4);
     if (k === 'torre') count += wallLights(spots(), 'tocha', 1, 4);
     // Cômodo sem nada aceso ainda: um lampião na parede, para não ficar no breu.
-    if (!count && k !== 'despensa' && k !== 'lavanderia' && r() < 0.5) wallLights(spots(), 'lampiao', 1, 4);
+    if (!count && k !== 'despensa' && k !== 'lavanderia' && k !== 'vassouras' && r() < 0.5) wallLights(spots(), 'lampiao', 1, 4);
   }
 
   // ── Corredores: lampiões (casa, templo) ou tochas (masmorra), com trechos escuros na masmorra ──

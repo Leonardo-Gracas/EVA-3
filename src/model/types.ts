@@ -588,7 +588,7 @@ export const HOUSE_MODELS: Record<HouseModel, HouseModelInfo> = {
     shapes: ['square'], rooms: [0, 2, 1], corridor: 1, doors: 0.7,
   },
   casa: {
-    label: 'Casa térrea', group: 'Casas', hint: 'Sala, cozinha e um corredor curto para os quartos e o banheiro.',
+    label: 'Casa', group: 'Casas', hint: 'Sala, cozinha e um corredor curto para os quartos e o banheiro.',
     shapes: ['square', 'long', 'L'], rooms: [1, 5, 3], corridor: 1, doors: 0.9,
   },
   casarao: {

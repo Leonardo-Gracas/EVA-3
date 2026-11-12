@@ -48,7 +48,10 @@ function dress(base: GenBase, p: MapGenParams, seed: number, opts: FurnishOption
   const lit = p.lights
     ? illuminate(base, props, p.preset, mulberry32((seed ^ 0x27d4eb2f) >>> 0), Math.max(0, OBJECT_BUDGET - base.doors.length - props.length))
     : { windows: [], lights: [] };
-  const out: GeneratedMap = { layout: base.layout, rooms: base.rooms, doors: base.doors, zone: base.zone, params: p, props, ...lit };
+  const out: GeneratedMap = {
+    layout: base.layout, rooms: base.rooms, doors: base.doors, zone: base.zone, params: p, props, ...lit,
+    ...(base.fitted !== undefined ? { fitted: base.fitted } : {}),
+  };
   if (opts.upper) {
     // As janelas foram postas com o quintal aberto; agora ele vira vazio (e segue céu aberto, para a luz entrar).
     voidOutside(base);

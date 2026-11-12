@@ -1,7 +1,7 @@
 // Gerador de mapas: tipo, andares, prévia e opções avançadas. Usado ao criar um mapa (com nome,
 // em branco e andares) e no editor, para gerar de novo o mapa aberto.
 import { useMemo, useState } from 'react';
-import { Castle, ChevronDown, ChevronRight, Church, Dices, Home, Square, Trees, Wand2 } from 'lucide-react';
+import { BedDouble, Castle, ChevronDown, ChevronRight, Church, Dices, Home, Square, Trees, Wand2 } from 'lucide-react';
 import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
 import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_CELL_M, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
 import {
@@ -14,11 +14,23 @@ import MapCanvas from './MapCanvas';
 type NumKey = 'w' | 'h' | 'rooms' | 'roomMin' | 'roomMax' | 'corridor' | 'doors';
 type Draft = Record<NumKey, string>;
 
-/** Tipo escolhido na tela: um dos geradores ou o mapa em branco. */
-export type GenKind = MapPreset | 'blank';
+/** Tipo escolhido na tela: o mapa em branco ou um dos geradores (casa e hospedagem usam o mesmo, com modelos diferentes). */
+export type GenKind = 'blank' | 'dungeon' | 'house' | 'inn' | 'temple' | 'outdoor';
 
-const KIND_ICONS: Record<GenKind, typeof Home> = { blank: Square, dungeon: Castle, house: Home, temple: Church, outdoor: Trees };
-const BLANK = { label: 'Em branco', hint: 'Mapa vazio, para desenhar à mão. Dá para gerar depois, dentro do mapa.' };
+const KINDS: Record<GenKind, { label: string; hint: string; icon: typeof Home; preset: MapPreset }> = {
+  blank: { label: 'Em branco', hint: 'Mapa vazio, para desenhar à mão. Dá para gerar depois, dentro do mapa.', icon: Square, preset: 'dungeon' },
+  dungeon: { label: 'Masmorra', hint: MAP_PRESETS.dungeon.hint, icon: Castle, preset: 'dungeon' },
+  house: { label: 'Casa', hint: 'Casebre, casa ou casarão, com quintal em volta.', icon: Home, preset: 'house' },
+  inn: { label: 'Hospedagem', hint: 'Estalagem ou hotel: taverna ou recepção na frente e corredores de quartos.', icon: BedDouble, preset: 'house' },
+  temple: { label: 'Templo', hint: MAP_PRESETS.temple.hint, icon: Church, preset: 'temple' },
+  outdoor: { label: 'Cenário aberto', hint: MAP_PRESETS.outdoor.hint, icon: Trees, preset: 'outdoor' },
+};
+
+/** Grupo de modelos de cada tipo de prédio e o modelo de partida. */
+const BUILDING: Partial<Record<GenKind, { group: 'Casas' | 'Hospedagem'; model: HouseModel }>> = {
+  house: { group: 'Casas', model: 'casa' },
+  inn: { group: 'Hospedagem', model: 'estalagem' },
+};
 
 /** Campos avançados de cada tipo (rótulo e dica). */
 const FIELDS: Record<MapPreset, Array<[NumKey, string, string?]>> = {
@@ -69,7 +81,7 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
   /** Andar mostrado na prévia. */
   const [view, setView] = useState(0);
 
-  const preset: MapPreset = kind === 'blank' ? 'dungeon' : kind;
+  const preset: MapPreset = KINDS[kind].preset;
   const floorMax = fixed ? 1 : maxFloors(preset, model);
   const floors = Math.min(floorsWanted, floorMax);
   const params = useMemo(() => {
@@ -82,21 +94,27 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
   }, [d, preset, shape, model, size, extras, floors]);
   const result = useMemo(() => (kind === 'blank' ? [] : generateFloors(params, seed)), [kind, params, seed]);
 
-  const choose = (k: GenKind) => {
-    if (k === kind) return;
-    setKind(k);
-    setView(0);
-    if (k === 'blank') return;
-    const t = k === 'house' ? { ...PRESET_DEFAULTS.house, ...houseModelDefaults(model) } : PRESET_DEFAULTS[k];
-    const s = sizeFor(k, model);
-    setD((x) => ({ ...x, ...toDraft({ ...params, ...t }), ...(fixed ? { w: x.w, h: x.h } : { w: String(s.w), h: String(s.h) }) }));
-  };
-
   const chooseModel = (m: HouseModel) => {
     setModel(m);
     if (shape !== 'random' && !HOUSE_MODELS[m].shapes.includes(shape)) setShape('random');
     const s = sizeFor('house', m);
     setD((x) => ({ ...x, ...toDraft({ ...params, ...houseModelDefaults(m) }), ...(fixed ? { w: x.w, h: x.h } : { w: String(s.w), h: String(s.h) }) }));
+  };
+
+  const choose = (k: GenKind) => {
+    if (k === kind) return;
+    setKind(k);
+    setView(0);
+    if (k === 'blank') return;
+    const b = BUILDING[k];
+    if (b) {
+      // Casa e hospedagem: o modelo vem do grupo do tipo (fica o atual, se já for dele).
+      chooseModel(HOUSE_MODELS[model].group === b.group ? model : b.model);
+      return;
+    }
+    const p = KINDS[k].preset;
+    const s = sizeFor(p, model);
+    setD((x) => ({ ...x, ...toDraft({ ...params, ...PRESET_DEFAULTS[p] }), ...(fixed ? { w: x.w, h: x.h } : { w: String(s.w), h: String(s.h) }) }));
   };
 
   const blankSize = { w: clampSide(blank.w), h: clampSide(blank.h) };
@@ -114,14 +132,19 @@ export type MapGen = ReturnType<typeof useMapGen>;
 export function MapGenOptions({ g }: { g: MapGen }) {
   const { kind, preset, model, d, setD } = g;
   const info = HOUSE_MODELS[model];
-  const kinds: GenKind[] = [...(g.allowBlank ? ['blank' as const] : []), ...(Object.keys(MAP_PRESETS) as MapPreset[])];
-  const hint = kind === 'blank' ? BLANK.hint : kind === 'house' ? `${info.label}: ${info.hint}` : MAP_PRESETS[preset].hint;
+  const building = BUILDING[kind];
+  const kinds = (Object.keys(KINDS) as GenKind[]).filter((k) => k !== 'blank' || g.allowBlank);
+  const hint = building ? `${info.label}: ${info.hint}` : KINDS[kind].hint;
   const up = (k: NumKey, v: string) => setD((x) => ({ ...x, [k]: v.replace(/\D/g, '') }));
-  const hints: Partial<Record<NumKey, string>> = kind === 'house'
-    ? { rooms: `${info.rooms[0]} a ${info.rooms[1]}${model === 'hotel' || model === 'estalagem' ? ' quartos de hóspede' : ''}` }
-    : {};
+  const hints: Partial<Record<NumKey, string>> = kind === 'inn'
+    ? { rooms: `${info.rooms[0]} a ${info.rooms[1]} quartos de hóspede por andar` }
+    : kind === 'house'
+      ? { rooms: `${info.rooms[0]} a ${info.rooms[1]}${g.floors > 1 ? '. Com mais de um andar, a maioria dos quartos fica em cima' : ''}` }
+      : {};
   // Casebre não tem corredor.
-  const fields = kind === 'blank' ? [] : FIELDS[preset].filter(([k]) => !(kind === 'house' && model === 'casebre' && k === 'corridor'));
+  const fields = kind === 'blank' ? [] : FIELDS[preset].filter(([k]) => !(model === 'casebre' && preset === 'house' && k === 'corridor'));
+  const shapes: HouseShape[] = info.shapes.length > 1 ? ['random', ...info.shapes] : [...info.shapes];
+  const shapeOn = (s: HouseShape) => (info.shapes.length > 1 ? g.shape === s : true);
   const numField = (k: NumKey, label: string, tip?: string) => (
     <label key={k} className="field small secondary" title={tip}>{label}
       <input className="input mono" style={{ width: 64, textAlign: 'center' }} inputMode="numeric" value={d[k]} onChange={(e) => up(k, e.target.value)} />
@@ -140,8 +163,10 @@ export function MapGenOptions({ g }: { g: MapGen }) {
     ? `${g.blankSize.w} × ${g.blankSize.h} quadrados · ${g.blank.fill === 'floor' ? 'piso livre' : 'tudo vazio'}${g.blank.fill === 'floor' && g.blank.walls ? ', parede em volta' : ''}`
     : [
       `${p.w} × ${p.h} quadrados`,
-      kind === 'dungeon' ? `${p.rooms} salas` : kind === 'house' ? `${p.rooms} quarto${p.rooms === 1 ? '' : 's'}` : kind === 'outdoor' ? `${p.rooms} construç${p.rooms === 1 ? 'ão' : 'ões'}` : '',
-      kind === 'house' ? `cômodos ${HOUSE_SIZES[p.size].toLowerCase()}` : '',
+      kind === 'dungeon' ? `${p.rooms} salas`
+        : building ? `${p.rooms} quarto${p.rooms === 1 ? '' : 's'}${kind === 'inn' && g.floors > 1 ? ' por andar' : ''}`
+        : kind === 'outdoor' ? `${p.rooms} construç${p.rooms === 1 ? 'ão' : 'ões'}` : '',
+      building ? `cômodos ${HOUSE_SIZES[p.size].toLowerCase()}` : '',
       `portas ${Math.round(p.doors * 100)}%`,
     ].filter(Boolean).join(' · ');
 
@@ -149,34 +174,46 @@ export function MapGenOptions({ g }: { g: MapGen }) {
     <div className="col">
       <div className="row-wrap" style={{ gap: 6 }}>
         {kinds.map((k) => {
-          const Icon = KIND_ICONS[k];
+          const Icon = KINDS[k].icon;
           return (
-            <button key={k} type="button" className={`map-swatch${kind === k ? ' on' : ''}`} title={k === 'blank' ? BLANK.hint : MAP_PRESETS[k].hint}
-              onClick={() => g.choose(k)}>
-              <Icon size={14} />{k === 'blank' ? BLANK.label : MAP_PRESETS[k].label}
+            <button key={k} type="button" className={`map-swatch${kind === k ? ' on' : ''}`} title={KINDS[k].hint} onClick={() => g.choose(k)}>
+              <Icon size={14} />{KINDS[k].label}
             </button>
           );
         })}
       </div>
       <div className="tiny muted">{hint}</div>
 
-      {(kind === 'house' || g.floorMax > 1) && (
-        <div className="row-wrap" style={{ alignItems: 'flex-end' }}>
-          {kind === 'house' && (
-            <label className="field small secondary" title={info.hint}>Modelo
-              <select className="input" value={model} onChange={(e) => g.chooseModel(e.target.value as HouseModel)}>
-                {(['Casas', 'Hospedagem'] as const).map((grp) => (
-                  <optgroup key={grp} label={grp}>
-                    {(Object.keys(HOUSE_MODELS) as HouseModel[]).filter((m) => HOUSE_MODELS[m].group === grp)
-                      .map((m) => <option key={m} value={m}>{HOUSE_MODELS[m].label}</option>)}
-                  </optgroup>
+      {(building || g.floorMax > 1) && (
+        <div className="row-wrap gen-pickers">
+          {building && (
+            <div className="field small secondary">
+              <span>Modelo</span>
+              <div className="seg" role="group" aria-label="Modelo">
+                {(Object.keys(HOUSE_MODELS) as HouseModel[]).filter((m) => HOUSE_MODELS[m].group === building.group).map((m) => (
+                  <button key={m} type="button" className={model === m ? 'on-inherit' : ''} title={HOUSE_MODELS[m].hint}
+                    onClick={() => g.chooseModel(m)}>{HOUSE_MODELS[m].label}</button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
+          )}
+          {building && (
+            <div className="field small secondary">
+              <span>Formato</span>
+              <div className="seg" role="group" aria-label="Formato">
+                {shapes.map((s) => (
+                  <button key={s} type="button" className={shapeOn(s) ? 'on-inherit' : ''} disabled={info.shapes.length <= 1}
+                    title={info.shapes.length <= 1 ? `${info.label}: só tem este formato` : undefined}
+                    onClick={() => g.setShape(s)}>{HOUSE_SHAPES[s]}</button>
+                ))}
+              </div>
+            </div>
           )}
           {g.floorMax > 1 && (
             <div className="field small secondary">
-              <span title={kind === 'dungeon' ? 'Níveis da masmorra, um embaixo do outro, ligados por escadas' : 'Andares da casa, ligados por uma escada no cômodo da entrada'}>
+              <span title={kind === 'dungeon' ? 'Níveis da masmorra, um embaixo do outro, ligados por escadas'
+                : kind === 'inn' ? 'Andares da hospedagem, com quartos em todos, ligados por uma escada no cômodo da entrada'
+                  : 'Andares da casa, ligados por uma escada no cômodo da entrada. A maioria dos quartos fica em cima.'}>
                 {kind === 'dungeon' ? 'Níveis' : 'Andares'}
               </span>
               <div className="seg" role="group" aria-label={kind === 'dungeon' ? 'Níveis' : 'Andares'}>
@@ -220,22 +257,18 @@ export function MapGenOptions({ g }: { g: MapGen }) {
             </div>
           </div>
         ) : (
-          <div className="row-wrap" style={{ alignItems: 'flex-end' }}>
+          <div className="row-wrap gen-pickers">
             {numField('w', 'Largura', `${GEN_MIN_SIDE} a ${MAP_LIMITS.max}`)}
             {numField('h', 'Altura', `${GEN_MIN_SIDE} a ${MAP_LIMITS.max}`)}
-            {kind === 'house' && info.shapes.length > 1 && (
-              <label className="field small secondary">Formato
-                <select className="input" value={g.shape} onChange={(e) => g.setShape(e.target.value as HouseShape)}>
-                  {(['random', ...info.shapes] as HouseShape[]).map((s) => <option key={s} value={s}>{HOUSE_SHAPES[s]}</option>)}
-                </select>
-              </label>
-            )}
-            {kind === 'house' && (
-              <label className="field small secondary" title="Medida de cada cômodo (1 quadrado = 1,5 m)">Cômodos
-                <select className="input" value={g.size} onChange={(e) => g.setSize(e.target.value as HouseSize)}>
-                  {(Object.keys(HOUSE_SIZES) as HouseSize[]).map((s) => <option key={s} value={s}>{HOUSE_SIZES[s]}</option>)}
-                </select>
-              </label>
+            {building && (
+              <div className="field small secondary" title="Medida de cada cômodo (1 quadrado = 1,5 m)">
+                <span>Cômodos</span>
+                <div className="seg" role="group" aria-label="Tamanho dos cômodos">
+                  {(Object.keys(HOUSE_SIZES) as HouseSize[]).map((s) => (
+                    <button key={s} type="button" className={g.size === s ? 'on-inherit' : ''} onClick={() => g.setSize(s)}>{HOUSE_SIZES[s]}</button>
+                  ))}
+                </div>
+              </div>
             )}
             {fields.map(([k, label, tip]) => numField(k, label, hints[k] ?? tip))}
           </div>
@@ -260,11 +293,12 @@ export function MapGenPreview({ g, height = 'min(46vh, 460px)' }: { g: MapGen; h
   const n = floor.rooms.length;
   const unit = kind === 'outdoor' ? ['construção', 'construções'] : kind === 'dungeon' ? ['sala', 'salas'] : ['cômodo', 'cômodos'];
   const kinds = kind !== 'dungeon' || params.furnish ? describeRooms(floor.rooms) : '';
-  const quartos = floor.rooms.filter((rm) => rm.kind === 'quarto').length;
+  // Na casa de vários andares, os quartos da planta mudam de andar: vale o que coube na planta.
+  const fitted = floor.fitted ?? floor.rooms.filter((rm) => rm.kind === 'quarto').length;
   const short = g.view > 0 ? ''
     : kind === 'dungeon' && n < params.rooms ? ` (cabem ${n} de ${params.rooms} neste tamanho)`
     : kind === 'outdoor' && n < params.rooms ? ` (couberam ${n} de ${params.rooms})`
-    : kind === 'house' && quartos < params.rooms ? ` (couberam ${quartos} de ${params.rooms} quartos neste mapa)` : '';
+    : g.preset === 'house' && fitted < params.rooms ? ` (couberam ${fitted} de ${params.rooms} quartos neste mapa)` : '';
   const plural = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
 
   return (

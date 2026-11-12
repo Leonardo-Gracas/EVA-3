@@ -124,6 +124,14 @@ input, textarea, select { font-family: inherit; font-size: 14px; color: inherit;
   background: var(--bg-base); color: var(--text-primary); outline: none; transition: border-color var(--transition);
 }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--gold); }
+/* Listas: seta própria (a nativa some no fundo escuro) e menu aberto no tema escuro. */
+select.input, select.select {
+  appearance: none; -webkit-appearance: none; color-scheme: dark; cursor: pointer; padding-right: 32px; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b7a993' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 14px;
+}
+select.input:disabled, select.select:disabled { cursor: not-allowed; opacity: 0.6; }
+select.input option, select.select option, select.input optgroup, select.select optgroup { background: var(--bg-elevated); color: var(--text-primary); }
 .textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
 .input-code { text-transform: uppercase; letter-spacing: 0.3em; font-size: 20px; font-weight: 700; text-align: center; }
 .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
@@ -512,7 +520,7 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 }
 .filter-sort { position: relative; display: flex; align-items: center; max-width: 220px; }
 .filter-sort > svg { position: absolute; left: 10px; pointer-events: none; }
-.filter-sort .select { padding: 6px 10px 6px 30px; font-size: 13px; background: var(--bg-base); }
+.filter-sort .select { padding: 6px 30px 6px 30px; font-size: 13px; background-color: var(--bg-base); }
 .filter-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
 .filter-group { display: flex; align-items: center; gap: 10px; }
 .filter-group > .filter-label { flex-shrink: 0; width: 64px; }
@@ -831,6 +839,11 @@ table.perm th { font-size: 11px; color: var(--text-muted); text-transform: upper
 .seg button.on-request { background: rgba(217, 160, 63, 0.2); color: var(--warning); }
 .seg button.on-blocked { background: var(--accent-dim); color: #f2a3a8; }
 .seg button.on-inherit { background: var(--bg-overlay); color: var(--text-primary); }
+.seg button:disabled { cursor: default; }
+/* Gerador de mapas: grupos de escolha (modelo, formato, andares) lado a lado, alinhados pela base. */
+.gen-pickers { align-items: flex-start; gap: 10px 14px; }
+.gen-pickers .seg { flex-wrap: wrap; max-width: 100%; }
+.gen-pickers .seg button { padding: 6px 10px; white-space: nowrap; }
 
 /* ── Manual de regras ────────────────────────────────────── */
 .ref { --ref-top: calc(var(--topbar-h, 56px) + 12px); display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 20px; align-items: start; }

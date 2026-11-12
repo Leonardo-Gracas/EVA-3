@@ -628,7 +628,39 @@ function onSide(rm: Rect, run: EdgeRef[], d: Dir): boolean {
   }
 }
 
-/** Andar de cima: a mesma planta, com a parte social e de serviço virando quartos e estudo. A escada chega no cômodo da entrada. */
+/**
+ * Casa com andares, térreo: fica a parte social e de serviço; dos quartos, no máximo um
+ * (de hóspede). Os outros viram escritório, biblioteca, despensa ou lavanderia.
+ */
+function groundKinds(rooms: Room[], r: SeededRng) {
+  let kept = r() < 0.4 ? 0 : 1;
+  for (const rm of rooms) {
+    if (rm.kind !== 'quarto') continue;
+    if (kept > 0 && rm.w * rm.h >= 9) { kept--; continue; }
+    const x = r();
+    rm.kind = rm.w * rm.h <= 8 ? (x < 0.5 ? 'despensa' : 'lavanderia') : x < 0.5 ? 'escritorio' : x < 0.8 ? 'biblioteca' : 'despensa';
+  }
+}
+
+/**
+ * Casa com andares, andar de cima: quase tudo vira quarto; de vez em quando um escritório
+ * ou, nos cômodos pequenos, uma sala de vassouras. A escada chega no cômodo da entrada (uma sala).
+ */
+function upperHouseKinds(rooms: Room[], entry: Room, r: SeededRng) {
+  for (const rm of rooms) {
+    if (rm === entry) { rm.kind = 'sala'; continue; }
+    if (rm.kind === 'banheiro') continue;
+    const small = rm.w * rm.h <= 9;
+    const x = r();
+    if (rm.kind === 'despensa' || rm.kind === 'lavanderia' || rm.kind === 'deposito') {
+      rm.kind = x < 0.55 ? 'vassouras' : x < 0.8 ? 'banheiro' : 'quarto';
+      continue;
+    }
+    rm.kind = x < 0.1 ? 'escritorio' : x < 0.18 && small ? 'vassouras' : 'quarto';
+  }
+}
+
+/** Hospedagem, andar de cima: a mesma planta, com a parte social e de serviço virando quartos e estudo. A escada chega no cômodo da entrada. */
 function upperKinds(rooms: Room[], entry: Room, r: SeededRng) {
   for (const rm of rooms) {
     if (rm === entry) { rm.kind = 'sala'; continue; }
@@ -785,8 +817,13 @@ export function generateHouse(p: MapGenParams, seed: number, level = 0): GenBase
         const f = fitFrame(bb, box, r);
         if (!f) continue;
         const built = realize(bp);
-        if (level > 0) upperKinds(built.rooms, bp.entry, mulberry32((seed ^ Math.imul(level, 0x2c1b3c6d)) >>> 0));
-        return { ...finish(p, r, f, bb, built, bp, level > 0), model, shape };
+        const fitted = built.rooms.filter((rm) => rm.kind === 'quarto').length;
+        // Casa com andares: os quartos ficam em cima. Hospedagem repete os quartos em todo andar.
+        const home = info.group === 'Casas' && (p.floors ?? 1) > 1;
+        const kr = mulberry32((seed ^ Math.imul(level + 1, 0x2c1b3c6d)) >>> 0);
+        if (level > 0) (home ? upperHouseKinds : upperKinds)(built.rooms, bp.entry, kr);
+        else if (home) groundKinds(built.rooms, kr);
+        return { ...finish(p, r, f, bb, built, bp, level > 0), model, shape, fitted };
       }
     }
     return null;

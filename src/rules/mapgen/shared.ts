@@ -13,7 +13,7 @@ export type RoomKind =
   | 'generic' | 'sala' | 'cozinha' | 'quarto' | 'banheiro' | 'despensa' | 'escritorio' | 'biblioteca'
   | 'jantar' | 'lavanderia' | 'entrada' | 'recepcao' | 'taverna'
   | 'nave' | 'santuario' | 'vestibulo' | 'capela' | 'sacristia' | 'cela' | 'torre'
-  | 'guarda' | 'deposito' | 'tesouro' | 'dormitorio' | 'ruina' | 'salao' | 'cabana';
+  | 'guarda' | 'deposito' | 'tesouro' | 'dormitorio' | 'ruina' | 'salao' | 'cabana' | 'vassouras';
 
 export const ROOM_KINDS: Record<RoomKind, { one: string; many: string }> = {
   generic: { one: 'sala', many: 'salas' },
@@ -43,6 +43,7 @@ export const ROOM_KINDS: Record<RoomKind, { one: string; many: string }> = {
   ruina: { one: 'ruína', many: 'ruínas' },
   salao: { one: 'salão', many: 'salões' },
   cabana: { one: 'cabana', many: 'cabanas' },
+  vassouras: { one: 'sala de vassouras', many: 'salas de vassouras' },
 };
 
 export interface GenRoom extends Rect { kind: RoomKind; dir?: Dir }
@@ -58,6 +59,8 @@ export interface GenBase {
   doors: EdgeRef[];
   /** ZONE de cada quadrado, índice y*w+x. */
   zone: Uint8Array;
+  /** Casa: quartos que couberam na planta (num andar térreo de casa com andares, muitos viram outra coisa). */
+  fitted?: number;
 }
 
 export const area = (r: Rect) => r.w * r.h;

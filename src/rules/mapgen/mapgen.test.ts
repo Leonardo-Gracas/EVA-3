@@ -361,6 +361,34 @@ describe('andares', () => {
     }
   });
 
+  it('casa com andares: a maioria dos quartos fica em cima; às vezes escritório ou sala de vassouras', () => {
+    const upKinds = new Set<string>();
+    for (const model of ['casa', 'casarao'] as HouseModel[]) {
+      for (let seed = 1; seed <= 25; seed++) {
+        const fl = generateFloors({ preset: 'house', model, floors: 2, furnish: true, ...newMapSize('house', model) }, seed * 61);
+        const q = fl.map((f) => f.rooms.filter((rm) => rm.kind === 'quarto').length);
+        expect(q[0]).toBeLessThanOrEqual(1);
+        expect(q[1]).toBeGreaterThan(q[0]);
+        // A planta coube inteira: o aviso de quartos que não couberam não aparece à toa.
+        expect(fl[0].fitted).toBeGreaterThanOrEqual(HOUSE_MODELS[model].rooms[2]);
+        expect(fl[0].rooms.some((rm) => rm.kind === 'cozinha')).toBe(true);
+        for (const rm of fl[1].rooms) upKinds.add(rm.kind);
+      }
+    }
+    expect(upKinds.has('vassouras')).toBe(true);
+    expect(upKinds.has('escritorio')).toBe(true);
+    // Um andar só: os quartos ficam no térreo, como sempre.
+    const one = generateFloors({ preset: 'house', model: 'casa', furnish: true, ...newMapSize('house', 'casa') }, 61)[0];
+    expect(one.rooms.filter((rm) => rm.kind === 'quarto').length).toBe(HOUSE_MODELS.casa.rooms[2]);
+  });
+
+  it('hospedagem com andares: quartos de hóspede em todos os andares', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const fl = generateFloors({ preset: 'house', model: 'hotel', floors: 3, ...newMapSize('house', 'hotel') }, seed * 29);
+      for (const f of fl) expect(f.rooms.filter((rm) => rm.kind === 'quarto').length).toBeGreaterThanOrEqual(HOUSE_MODELS.hotel.rooms[2]);
+    }
+  });
+
   it('cada nível da masmorra tem escada para o vizinho no mesmo lugar', () => {
     for (let seed = 1; seed <= 12; seed++) {
       const p = { preset: 'dungeon' as const, floors: 4, furnish: true, ...newMapSize('dungeon', 'casa') };
