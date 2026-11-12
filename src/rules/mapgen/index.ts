@@ -4,6 +4,7 @@ import type { EdgeRef, MapGenParams } from '../../model/types';
 import { TERRAIN_CHAR } from '../../model/types';
 import { generateDungeon } from '../dungeon';
 import { mulberry32 } from '../random';
+import { applyExterior } from './exterior';
 import { putStairs, stairSpot, voidOutside } from './floors';
 import { furnish, type FurnishOptions, type GenProp } from './furnish';
 import { generateHouse } from './house';
@@ -13,7 +14,7 @@ import { cleanMapParams } from './params';
 import { type GenBase, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
 import { generateTemple } from './temple';
 
-export { cleanMapParams, GEN_MIN_SIDE, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize, PRESET_DEFAULTS } from './params';
+export { cleanMapParams, GEN_MIN_SIDE, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize, PRESET_DEFAULTS } from './params';
 export type { GenProp } from './furnish';
 export type { GenLight } from './lights';
 export { ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
@@ -42,8 +43,12 @@ function dungeonBase(p: MapGenParams, seed: number): GenBase {
 
 /** Móveis, janelas e luzes sobre a planta. `upper`: andar de cima (sem quintal; o quintal vira vazio no fim). */
 function dress(base: GenBase, p: MapGenParams, seed: number, opts: FurnishOptions & { upper?: boolean } = {}): GeneratedMap {
+  // Rua ou floresta em volta (o andar de cima não tem exterior: vira vazio no fim).
+  if (!opts.upper) applyExterior(base, p.exterior ?? 'quintal', mulberry32((seed ^ 0x3c6ef372) >>> 0));
   // Sorteio separado: ligar a mobília não muda a planta.
-  const props = p.furnish ? furnish(base, p.preset, mulberry32((seed ^ 0x5bd1e995) >>> 0), { ...opts, yard: !opts.upper }) : [];
+  const props = p.furnish
+    ? furnish(base, p.preset, mulberry32((seed ^ 0x5bd1e995) >>> 0), { ...opts, yard: !opts.upper, exterior: p.exterior })
+    : [];
   // Outro sorteio: ligar janelas e luzes não muda planta nem móveis.
   const lit = p.lights
     ? illuminate(base, props, p.preset, mulberry32((seed ^ 0x27d4eb2f) >>> 0), Math.max(0, OBJECT_BUDGET - base.doors.length - props.length))
@@ -51,6 +56,7 @@ function dress(base: GenBase, p: MapGenParams, seed: number, opts: FurnishOption
   const out: GeneratedMap = {
     layout: base.layout, rooms: base.rooms, doors: base.doors, zone: base.zone, params: p, props, ...lit,
     ...(base.fitted !== undefined ? { fitted: base.fitted } : {}),
+    ...(base.sidewalk ? { sidewalk: base.sidewalk } : {}),
   };
   if (opts.upper) {
     // As janelas foram postas com o quintal aberto; agora ele vira vazio (e segue céu aberto, para a luz entrar).

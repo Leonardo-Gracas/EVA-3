@@ -1,6 +1,6 @@
 // Parâmetros do gerador de mapas: valores padrão de cada tipo e limpeza (motor e tela usam a mesma regra).
-import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapPreset } from '../../model/types';
-import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_LIMITS, MAP_PRESETS, MAX_FLOORS } from '../../model/types';
+import type { Exterior, HouseModel, HouseShape, HouseSize, MapGenParams, MapPreset } from '../../model/types';
+import { EXTERIORS, HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_LIMITS, MAP_PRESETS, MAX_FLOORS } from '../../model/types';
 
 type Tunables = Pick<MapGenParams, 'rooms' | 'roomMin' | 'roomMax' | 'corridor' | 'doors'>;
 
@@ -30,9 +30,15 @@ const HOUSE_NEW_SIZES: Record<HouseModel, { w: number; h: number }> = {
   casebre: { w: 16, h: 14 }, casa: { w: 38, h: 24 }, casarao: { w: 34, h: 30 }, estalagem: { w: 32, h: 24 }, hotel: { w: 46, h: 36 },
 };
 
-export function newMapSize(preset: MapPreset, model: HouseModel): { w: number; h: number } {
-  return preset === 'house' ? HOUSE_NEW_SIZES[model] : NEW_SIZES[preset];
+/** Rua e floresta pedem mais espaço em volta (a rua na frente, a mata em volta). */
+export function newMapSize(preset: MapPreset, model: HouseModel, exterior: Exterior = 'quintal'): { w: number; h: number } {
+  const s = preset === 'house' ? HOUSE_NEW_SIZES[model] : NEW_SIZES[preset];
+  const extra = exterior === 'quintal' || !hasExterior(preset) ? 0 : preset === 'temple' ? 8 : 6;
+  return { w: Math.min(MAP_LIMITS.max, s.w + extra), h: Math.min(MAP_LIMITS.max, s.h + extra) };
 }
+
+/** Tipos com um prédio no meio e o exterior escolhido em volta. */
+export const hasExterior = (preset: MapPreset) => preset === 'house' || preset === 'temple';
 
 /** Quantos andares o tipo aceita: masmorra (níveis) e casas com mais de um cômodo. */
 export function maxFloors(preset: MapPreset, model: HouseModel): number {
@@ -72,5 +78,6 @@ export function cleanMapParams(raw: Partial<MapGenParams> | null | undefined): M
     corridor: Math.round(clampN(r.corridor, 1, 3, d.corridor)),
     doors: clampN(r.doors, 0, 1, d.doors),
     floors: Math.round(clampN(r.floors, 1, maxFloors(preset, model), 1)),
+    exterior: typeof r.exterior === 'string' && r.exterior in EXTERIORS && hasExterior(preset) ? r.exterior : 'quintal',
   };
 }

@@ -6,10 +6,11 @@ import { TERRAIN_CHAR } from '../../model/types';
 import { mulberry32, type SeededRng } from '../random';
 import {
   cutLengths, type Dir, frameFor, type GenBase, type GenRoom, mapDir, mapRect, passage, pickSpan, Plan,
-  type Rect, type RoomKind, ZONE,
+  type Rect, type RoomKind, sideOf, ZONE,
 } from './shared';
 
-const YARD = 2;
+/** Folga em volta do templo: o quintal é estreito; rua e floresta pedem mais espaço. */
+const yardFor = (p: MapGenParams) => ((p.exterior ?? 'quintal') === 'quintal' ? 2 : 6);
 
 export type TempleVariant = 'basilica' | 'cruz' | 'simples';
 
@@ -62,6 +63,7 @@ function canonicalParts(W: number, H: number, p: MapGenParams, r: SeededRng): { 
 export function generateTemple(p: MapGenParams, seed: number): GenBase & { variant: TempleVariant } {
   const r = mulberry32(seed);
   const { w, h } = p;
+  const YARD = Math.min(yardFor(p), Math.floor((Math.min(w, h) - 8) / 2));
   const box = { x: YARD, y: YARD, w: w - 2 * YARD, h: h - 2 * YARD };
   // A nave segue o lado maior; a entrada fica de um lado ou do outro.
   const f = frameFor(box, box.w > box.h, false, r() < 0.5);
@@ -108,7 +110,8 @@ export function generateTemple(p: MapGenParams, seed: number): GenBase & { varia
   };
   const entry = vest || nave;
   const front = plan.runs(entry, -1).find((run) => facade(rooms[entry - 1], run));
-  if (front) passage(layout, doors, centered(front), true);
+  const frontSpan = front ? centered(front) : null;
+  if (frontSpan) passage(layout, doors, frontSpan, true);
   if (vest) {
     const inner = plan.runs(vest, nave)[0];
     if (inner) passage(layout, doors, centered(inner), r() < p.doors);
@@ -143,7 +146,7 @@ export function generateTemple(p: MapGenParams, seed: number): GenBase & { varia
 
   const zone = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) zone[i] = plan.region[i] < 0 ? ZONE.outside : ZONE.room;
-  return { layout, rooms, doors, zone, variant };
+  return { layout, rooms, doors, zone, variant, ...(frontSpan ? { front: { edges: frontSpan, dir: sideOf(rooms[entry - 1], frontSpan[0]) } } : {}) };
 }
 
 const dist2 = ([x, y]: number[], rm: Rect) => {

@@ -315,17 +315,18 @@ export const MAP_CELL_M = 1.5;
 /** Lados do mapa, em quadrados. */
 export const MAP_LIMITS = { min: 4, max: 80 };
 
-/** Escada é marcação visual e custa como terreno difícil. */
-export type Terrain = 'floor' | 'void' | 'difficult' | 'stairs';
+/** Escada é marcação visual e custa como terreno difícil. Calçamento é piso com desenho de pedras (rua, trilha). */
+export type Terrain = 'floor' | 'void' | 'difficult' | 'stairs' | 'road';
 
 /** Caractere de cada terreno em `BattleMap.cells`. */
-export const TERRAIN_CHAR: Record<Terrain, string> = { floor: '.', void: '#', difficult: '~', stairs: '>' };
+export const TERRAIN_CHAR: Record<Terrain, string> = { floor: '.', void: '#', difficult: '~', stairs: '>', road: '=' };
 
 export const TERRAINS: Record<Terrain, { label: string; hint: string }> = {
   floor: { label: 'Piso', hint: 'Movimento normal.' },
   void: { label: 'Vazio', hint: 'Rocha ou fora do mapa: ninguém entra.' },
   difficult: { label: 'Terreno difícil', hint: 'Custa o dobro.' },
   stairs: { label: 'Escada', hint: 'Custa como terreno difícil.' },
+  road: { label: 'Calçamento', hint: 'Rua, calçada ou trilha batida: movimento normal.' },
 };
 
 export type MoveMode = 'livre' | 'turno' | 'permissao';
@@ -610,6 +611,15 @@ export type HouseSize = 'compacto' | 'normal' | 'amplo';
 
 export const HOUSE_SIZES: Record<HouseSize, string> = { compacto: 'Compactos', normal: 'Normais', amplo: 'Amplos' };
 
+/** O que fica em volta da casa, da hospedagem ou do templo. */
+export type Exterior = 'quintal' | 'rua' | 'floresta';
+
+export const EXTERIORS: Record<Exterior, { label: string; hint: string }> = {
+  quintal: { label: 'Quintal', hint: 'Terreno aberto em volta, com árvores e arbustos.' },
+  rua: { label: 'Rua', hint: 'Rua na frente, com calçadas, postes de lampião e as fachadas vizinhas do outro lado.' },
+  floresta: { label: 'Floresta', hint: 'Mata fechada em volta (árvores e terreno difícil), com uma trilha saindo da porta.' },
+};
+
 /** Parâmetros do gerador de mapas. */
 export interface MapGenParams {
   /** Ausente nas ações antigas: masmorra. */
@@ -636,6 +646,8 @@ export interface MapGenParams {
   doors: number;
   /** Andares (masmorra e casa; ausente: 1). Só na criação do mapa: cada andar vira um mapa. */
   floors?: number;
+  /** Casa, hospedagem e templo: o que fica em volta (ausente: quintal). */
+  exterior?: Exterior;
 }
 
 // ── Investigação ─────────────────────────────────────────────────────────────

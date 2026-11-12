@@ -1,7 +1,7 @@
 // Mobília automática: cada tipo de cômodo tem uma receita (cama encostada na parede, mesa
 // com cadeiras no meio, bancos voltados para o altar...). Nada fica na frente de portas
 // e aberturas, e um móvel que bloqueia só entra se não separar nenhuma parte do mapa.
-import type { MapPreset, PropEffect, PropKind } from '../../model/types';
+import type { Exterior, MapPreset, PropEffect, PropKind } from '../../model/types';
 import { PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import { edgeKey } from '../../model/map';
 import { randInt, type SeededRng } from '../random';
@@ -549,11 +549,47 @@ function field(f: Furnisher) {
   }
 }
 
+/** Mata fechada em volta da clareira: muitas árvores (sem fechar passagem) e arbustos. */
+function forest(f: Furnisher) {
+  const { w, h, zone, r } = f;
+  const built = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && (zone[y * w + x] === ZONE.room || zone[y * w + x] === ZONE.corridor);
+  const nearHouse = (x: number, y: number) => {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (built(x + dx, y + dy)) return true;
+    return false;
+  };
+  const cands: Array<[number, number]> = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (zone[y * w + x] === ZONE.outside) cands.push([x, y]);
+  // Árvores têm teto: sobra espaço para as luzes e para o mestre.
+  let trees = 0;
+  const cap = 170;
+  for (const [x, y] of shuffle(r, cands)) {
+    if (f.full) break;
+    const rc = { x, y, w: 1, h: 1 };
+    const roll = r();
+    if (nearHouse(x, y)) { if (roll < 0.05) f.place('arbusto', rc); continue; }
+    if (roll < 0.24) { if (trees < cap && f.place('arvore', rc)) trees++; } else if (roll < 0.3) f.place('arbusto', rc);
+  }
+}
+
+/** Rua: barris e caixotes soltos nas calçadas. */
+function sidewalk(f: Furnisher, cells: number[]) {
+  const { w, r } = f;
+  for (const i of cells) {
+    if (f.full) break;
+    const roll = r();
+    const rc = { x: i % w, y: Math.floor(i / w), w: 1, h: 1 };
+    if (roll < 0.03) f.place('barril', rc);
+    else if (roll < 0.06) f.place('caixa', rc, 'Caixotes');
+  }
+}
+
 export interface FurnishOptions {
   /** Masmorra: escadas soltas na primeira sala e na mais longe (`both`, padrão), só na primeira ou nenhuma. */
   stairs?: 'both' | 'entry' | 'none';
   /** Árvores e arbustos no quintal (padrão: sim). O andar de cima não tem quintal. */
   yard?: boolean;
+  /** O que fica em volta do prédio (padrão: quintal). */
+  exterior?: Exterior;
 }
 
 /**
@@ -601,8 +637,11 @@ export function furnish(base: GenBase, preset: MapPreset, r: SeededRng, opts: Fu
     }
   }
   // O quintal da casa pode ser grande (a casa tem o tamanho dela, não o do mapa): árvores mais espaçadas.
-  if (preset === 'house' && yardOn) yard(f, 0.05);
-  if (preset === 'temple' && yardOn) yard(f, 0.14);
+  if ((preset === 'house' || preset === 'temple') && yardOn) {
+    if (opts.exterior === 'floresta') forest(f);
+    else yard(f, preset === 'house' ? 0.05 : 0.14);
+    if (base.sidewalk) sidewalk(f, base.sidewalk);
+  }
   if (preset === 'outdoor') field(f);
 
   base.layout.cells = f.cells.join('');

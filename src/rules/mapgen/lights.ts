@@ -245,6 +245,19 @@ export function illuminate(base: GenBase, props: GenProp[], preset: MapPreset, r
     }
   }
 
+  // ── Postes de lampião nas calçadas da rua, espaçados ──
+  if (base.sidewalk) {
+    const posts: Array<[number, number]> = [];
+    for (const i of base.sidewalk) {
+      if (full()) break;
+      const x = i % w;
+      const y = (i - x) / w;
+      if (propAt[i] || posts.some(([px, py]) => Math.max(Math.abs(px - x), Math.abs(py - y)) < 7)) continue;
+      if (r() < 0.5) continue;
+      if (add('lampiao', x, y, 'chao', 'Poste de lampião')) posts.push([x, y]);
+    }
+  }
+
   // ── Janelas: nas paredes entre um cômodo coberto e o céu aberto ──
   if (preset !== 'dungeon') {
     const taken = new Set<string>();

@@ -2,10 +2,11 @@
 // em branco e andares) e no editor, para gerar de novo o mapa aberto.
 import { useMemo, useState } from 'react';
 import { BedDouble, Castle, ChevronDown, ChevronRight, Church, Dices, Home, Square, Trees, Wand2 } from 'lucide-react';
-import type { HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
-import { HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_CELL_M, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
+import type { Exterior, HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
+import { EXTERIORS, HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_CELL_M, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
 import {
-  cleanMapParams, describeRooms, GEN_MIN_SIDE, generateFloors, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize, PRESET_DEFAULTS,
+  cleanMapParams, describeRooms, GEN_MIN_SIDE, generateFloors, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize,
+  PRESET_DEFAULTS,
 } from '../../rules/mapgen';
 import { newSeed } from '../../rules/random';
 import Modal from '../common/Modal';
@@ -20,7 +21,7 @@ export type GenKind = 'blank' | 'dungeon' | 'house' | 'inn' | 'temple' | 'outdoo
 const KINDS: Record<GenKind, { label: string; hint: string; icon: typeof Home; preset: MapPreset }> = {
   blank: { label: 'Em branco', hint: 'Mapa vazio, para desenhar à mão. Dá para gerar depois, dentro do mapa.', icon: Square, preset: 'dungeon' },
   dungeon: { label: 'Masmorra', hint: MAP_PRESETS.dungeon.hint, icon: Castle, preset: 'dungeon' },
-  house: { label: 'Casa', hint: 'Casebre, casa ou casarão, com quintal em volta.', icon: Home, preset: 'house' },
+  house: { label: 'Casa', hint: 'Casebre, casa ou casarão, com quintal, rua ou floresta em volta.', icon: Home, preset: 'house' },
   inn: { label: 'Hospedagem', hint: 'Estalagem ou hotel: taverna ou recepção na frente e corredores de quartos.', icon: BedDouble, preset: 'house' },
   temple: { label: 'Templo', hint: MAP_PRESETS.temple.hint, icon: Church, preset: 'temple' },
   outdoor: { label: 'Cenário aberto', hint: MAP_PRESETS.outdoor.hint, icon: Trees, preset: 'outdoor' },
@@ -72,9 +73,10 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
   const [extras, setExtras] = useState(true);
   const [floorsWanted, setFloors] = useState(1);
   const [advanced, setAdvanced] = useState(false);
-  const sizeFor = (p: MapPreset, m: HouseModel) => (fixed
+  const [exterior, setExteriorState] = useState<Exterior>('quintal');
+  const sizeFor = (p: MapPreset, m: HouseModel, ext: Exterior = exterior) => (fixed
     ? { w: Math.max(fixed.w, GEN_MIN_SIDE), h: Math.max(fixed.h, GEN_MIN_SIDE) }
-    : newMapSize(p, m));
+    : newMapSize(p, m, ext));
   const [d, setD] = useState<Draft>(() => toDraft(cleanMapParams({ ...MAP_GEN_DEFAULTS, ...sizeFor('dungeon', 'casa') })));
   const [seed, setSeed] = useState(newSeed);
   const [blank, setBlank] = useState<{ w: string; h: string; fill: Terrain; walls: boolean }>({ w: '30', h: '20', fill: 'floor', walls: true });
@@ -87,11 +89,11 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
   const params = useMemo(() => {
     const n = (k: NumKey) => parseInt(d[k], 10);
     return cleanMapParams({
-      preset, shape, model, size, furnish: extras, lights: extras, floors,
+      preset, shape, model, size, furnish: extras, lights: extras, floors, exterior,
       w: n('w'), h: n('h'), rooms: n('rooms'), roomMin: n('roomMin'), roomMax: n('roomMax'), corridor: n('corridor'),
       doors: (n('doors') || 0) / 100,
     });
-  }, [d, preset, shape, model, size, extras, floors]);
+  }, [d, preset, shape, model, size, extras, floors, exterior]);
   const result = useMemo(() => (kind === 'blank' ? [] : generateFloors(params, seed)), [kind, params, seed]);
 
   const chooseModel = (m: HouseModel) => {
@@ -117,10 +119,18 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
     setD((x) => ({ ...x, ...toDraft({ ...params, ...PRESET_DEFAULTS[p] }), ...(fixed ? { w: x.w, h: x.h } : { w: String(s.w), h: String(s.h) }) }));
   };
 
+  /** Rua e floresta pedem mais espaço em volta: o mapa novo cresce junto. */
+  const setExterior = (e: Exterior) => {
+    setExteriorState(e);
+    if (fixed) return;
+    const s = sizeFor(preset, model, e);
+    setD((x) => ({ ...x, w: String(s.w), h: String(s.h) }));
+  };
+
   const blankSize = { w: clampSide(blank.w), h: clampSide(blank.h) };
 
   return {
-    allowBlank, fixed: !!fixed, kind, choose, preset, shape, setShape, model, chooseModel, size, setSize, extras, setExtras,
+    allowBlank, fixed: !!fixed, kind, choose, preset, shape, setShape, model, chooseModel, size, setSize, extras, setExtras, exterior, setExterior,
     floors, floorMax, setFloors, advanced, setAdvanced, d, setD, seed, reroll: () => setSeed(newSeed()),
     blank, setBlank, blankSize, params, result, view: Math.min(view, Math.max(0, result.length - 1)), setView,
   };
@@ -184,7 +194,7 @@ export function MapGenOptions({ g }: { g: MapGen }) {
       </div>
       <div className="tiny muted">{hint}</div>
 
-      {(building || g.floorMax > 1) && (
+      {(building || g.floorMax > 1 || hasExterior(preset)) && kind !== 'blank' && (
         <div className="row-wrap gen-pickers">
           {building && (
             <div className="field small secondary">
@@ -205,6 +215,17 @@ export function MapGenOptions({ g }: { g: MapGen }) {
                   <button key={s} type="button" className={shapeOn(s) ? 'on-inherit' : ''} disabled={info.shapes.length <= 1}
                     title={info.shapes.length <= 1 ? `${info.label}: só tem este formato` : undefined}
                     onClick={() => g.setShape(s)}>{HOUSE_SHAPES[s]}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {hasExterior(preset) && (
+            <div className="field small secondary">
+              <span>Exterior</span>
+              <div className="seg" role="group" aria-label="Exterior">
+                {(Object.keys(EXTERIORS) as Exterior[]).map((e) => (
+                  <button key={e} type="button" className={g.exterior === e ? 'on-inherit' : ''} title={EXTERIORS[e].hint}
+                    onClick={() => g.setExterior(e)}>{EXTERIORS[e].label}</button>
                 ))}
               </div>
             </div>

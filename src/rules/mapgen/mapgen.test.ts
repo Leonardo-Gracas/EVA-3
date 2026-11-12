@@ -411,3 +411,55 @@ describe('andares', () => {
     expect(cleanMapParams({ preset: 'house', model: 'hotel', floors: 9 }).floors).toBe(4);
   });
 });
+
+describe('exterior', () => {
+  const builtCells = (g: GeneratedMap) => [...g.layout.cells].map((c, i) => (g.zone[i] === ZONE.room || g.zone[i] === ZONE.corridor ? c : '-')).join('');
+
+  it('quintal é o padrão e não muda nada', () => {
+    for (const preset of ['house', 'temple'] as MapPreset[]) {
+      const p = { preset, furnish: true, lights: true, ...newMapSize(preset, 'casa') };
+      const a = generateMap(p, 17);
+      const b = generateMap({ ...p, exterior: 'quintal' }, 17);
+      expect(b.layout.cells).toBe(a.layout.cells);
+      expect(b.props).toEqual(a.props);
+    }
+    expect(cleanMapParams({ preset: 'dungeon', exterior: 'rua' }).exterior).toBe('quintal');
+  });
+
+  it('rua: calçadas com postes na frente, prédio igual, tudo ligado', () => {
+    for (const [preset, model] of [['house', 'casa'], ['house', 'hotel'], ['temple', 'casa']] as Array<[MapPreset, HouseModel]>) {
+      for (let seed = 1; seed <= 8; seed++) {
+        const p = { preset, model, furnish: true, lights: true, ...newMapSize(preset, model, 'rua') };
+        const g = generateMap({ ...p, exterior: 'rua' }, seed * 13);
+        const yard = generateMap(p, seed * 13);
+        // A casa fica igual (o templo encolhe para dar lugar à rua).
+        if (preset === 'house') expect(builtCells(g)).toBe(builtCells(yard));
+        expect(g.sidewalk?.length).toBeGreaterThan(0);
+        expect(g.lights.some((l) => l.label === 'Poste de lampião')).toBe(true);
+        // Nada de árvore na rua nem na calçada.
+        for (const pr of g.props) if (pr.prop === 'arvore') expect(g.zone[pr.y * g.layout.w + pr.x]).not.toBe(ZONE.path);
+        expect(components(g)).toBe(1);
+      }
+    }
+  });
+
+  it('floresta: mata e árvores em volta, trilha da porta até a borda, tudo ligado', () => {
+    for (const [preset, model] of [['house', 'casa'], ['house', 'estalagem'], ['temple', 'casa']] as Array<[MapPreset, HouseModel]>) {
+      for (let seed = 1; seed <= 8; seed++) {
+        const g = generateMap({ preset, model, exterior: 'floresta', furnish: true, lights: true, ...newMapSize(preset, model, 'floresta') }, seed * 19);
+        const { w, h } = g.layout;
+        expect(g.props.filter((pr) => pr.prop === 'arvore').length).toBeGreaterThan(40);
+        expect(g.layout.cells.includes(TERRAIN_CHAR.difficult)).toBe(true);
+        const trail = [...g.zone].flatMap((z, i) => (z === ZONE.path ? [i] : []));
+        expect(trail.some((i) => i % w === 0 || i % w === w - 1 || i < w || i >= w * (h - 1))).toBe(true);
+        expect(components(g)).toBe(1);
+      }
+    }
+  });
+
+  it('casa de dois andares na rua: só o térreo tem rua; em cima é vazio', () => {
+    const fl = generateFloors({ preset: 'house', model: 'casarao', floors: 2, exterior: 'rua', furnish: true, lights: true, ...newMapSize('house', 'casarao', 'rua') }, 41);
+    expect(fl[0].sidewalk?.length).toBeGreaterThan(0);
+    for (let i = 0; i < fl[1].zone.length; i++) if (fl[1].zone[i] === ZONE.path) expect(fl[1].layout.cells[i]).toBe(TERRAIN_CHAR.void);
+  });
+});

@@ -170,6 +170,7 @@ export default function MapCanvas(props: Props) {
     floor: runsPath(grid.cells, w, h, TERRAIN_CHAR.floor),
     difficult: runsPath(grid.cells, w, h, TERRAIN_CHAR.difficult),
     stairs: runsPath(grid.cells, w, h, TERRAIN_CHAR.stairs),
+    road: runsPath(grid.cells, w, h, TERRAIN_CHAR.road),
     grid: gridPath(w, h),
   }), [grid.cells, w, h]);
   // Porta aberta é passagem: a parede da linha dela não é desenhada (ficam só os batentes).
@@ -314,6 +315,12 @@ export default function MapCanvas(props: Props) {
                   <rect width={0.34} height={0.34} className="map-floor" />
                   <line x1={0} y1={0} x2={0} y2={0.34} className="map-dif-line" />
                 </pattern>
+                <pattern id={`rd${uid}`} patternUnits="userSpaceOnUse" width={0.5} height={0.5}>
+                  <rect width={0.5} height={0.5} className="map-road" />
+                  <rect x={0.03} y={0.03} width={0.44} height={0.19} rx={0.05} className="map-road-stone" />
+                  <rect x={-0.22} y={0.28} width={0.44} height={0.19} rx={0.05} className="map-road-stone" />
+                  <rect x={0.28} y={0.28} width={0.44} height={0.19} rx={0.05} className="map-road-stone" />
+                </pattern>
                 <pattern id={`st${uid}`} patternUnits="userSpaceOnUse" width={1} height={0.25}>
                   <rect width={1} height={0.25} className="map-floor" />
                   <line x1={0} y1={0.04} x2={1} y2={0.04} className="map-stair-line" />
@@ -323,6 +330,7 @@ export default function MapCanvas(props: Props) {
               <path d={layers.floor} className="map-floor" />
               <path d={layers.difficult} fill={`url(#dif${uid})`} />
               <path d={layers.stairs} fill={`url(#st${uid})`} />
+              <path d={layers.road} fill={`url(#rd${uid})`} />
               <path d={layers.grid} className="map-grid" />
               {skyD && <path d={skyD} className="map-sky" />}
               {dimD && <path d={dimD} className="map-dim" />}

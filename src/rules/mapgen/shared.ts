@@ -61,6 +61,16 @@ export interface GenBase {
   zone: Uint8Array;
   /** Casa: quartos que couberam na planta (num andar térreo de casa com andares, muitos viram outra coisa). */
   fitted?: number;
+  /** Casa e templo: a porta da frente (linhas) e para onde a fachada olha. */
+  front?: { edges: EdgeRef[]; dir: Dir };
+  /** Exterior com rua: quadrados das calçadas (postes e caixotes). */
+  sidewalk?: number[];
+}
+
+/** Lado do retângulo em que fica a linha `e` (para onde ela dá, saindo do retângulo). */
+export function sideOf(rm: Rect, e: EdgeRef): Dir {
+  if (e.o === 'h') return e.y === rm.y ? 'n' : 's';
+  return e.x === rm.x ? 'w' : 'e';
 }
 
 export const area = (r: Rect) => r.w * r.h;

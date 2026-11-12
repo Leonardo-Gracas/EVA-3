@@ -9,7 +9,7 @@ import { HOUSE_MODELS } from '../../model/types';
 import { mulberry32, randInt, type SeededRng } from '../random';
 import {
   type Dir, type Frame, type GenBase, type GenRoom, longest, mapDir, mapRect, passage, pick, pickSpan, Plan, type Rect,
-  type RoomKind, subtract, touches, ZONE,
+  type RoomKind, sideOf, subtract, touches, ZONE,
 } from './shared';
 
 type Shape = Exclude<HouseShape, 'random'>;
@@ -762,7 +762,8 @@ function finish(
   const ext = upper ? [] : plan.runs(entry, -1);
   const main = longest(ext.filter((run) => onSide(er, run, front)), r) ?? longest(ext, r);
   const wide = main && main.length >= 5 && SOCIAL.has(kind(entry)) && kind(entry) !== 'sala';
-  if (main) passage(layout, doors, pickSpan(main, wide ? 2 : 1, r), true);
+  const frontSpan = main ? pickSpan(main, wide ? 2 : 1, r) : null;
+  if (frontSpan) passage(layout, doors, frontSpan, true);
   if (!upper && r() < 0.6) {
     for (const rm of bp.back) {
       const b = id.get(rm);
@@ -777,7 +778,7 @@ function finish(
 
   const zone = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) zone[i] = plan.region[i] < 0 ? ZONE.outside : plan.region[i] > n ? ZONE.corridor : ZONE.room;
-  return { layout, rooms, doors, zone, entry: entry - 1 };
+  return { layout, rooms, doors, zone, entry: entry - 1, ...(frontSpan ? { front: { edges: frontSpan, dir: sideOf(er, frontSpan[0]) } } : {}) };
 }
 
 /** Corredores que se encostam formam um grupo só. */
