@@ -55,6 +55,8 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
       .map(publishedCase),
     map: buildPlayerMap(s, playerId),
     relations: buildPlayerRelations(s, playerId),
+    // Só o que envolve os personagens dele, de um lado ou do outro.
+    bonds: (s.bonds ?? []).filter((b) => s.characters[b.fromId]?.ownerId === playerId || s.characters[b.toId]?.ownerId === playerId),
   };
 }
 

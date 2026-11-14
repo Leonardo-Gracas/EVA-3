@@ -345,6 +345,7 @@ export function migrate(t: TableState): TableState {
   // Casos de antes da publicação: o que já estava visível vira a primeira versão publicada.
   for (const k of Object.values(t.cases)) k.published ??= k.visible ? snapshotOf(k, k.updatedAt) : null;
   t.relations = (t.relations ?? []).filter((r) => t.characters[r.pcId] && t.characters[r.npcId]);
+  t.bonds = (t.bonds ?? []).filter((b) => t.characters[b.fromId] && t.characters[b.toId]);
   t.requests ??= [];
   t.log ??= [];
   t.combat ??= null;

@@ -24,6 +24,16 @@ export default function RelationsCard({ table, ch }: { table: TableState; ch: Ch
     .filter((x): x is { r: Relation; pc: Character; npc: Character } => !!x.pc && !!x.npc)
     .sort((a, b) => byName(isPc ? a.npc : a.pc, isPc ? b.npc : b.pc)), [table.relations, table.characters, ch.id, isPc]);
 
+  // Entre personagens de jogadores todos se conhecem; os dois lados são dos jogadores.
+  const peers = useMemo(() => {
+    if (!isPc) return [];
+    const level = (from: string, to: string) => (table.bonds ?? []).find((b) => b.fromId === from && b.toId === to)?.level ?? 0;
+    return Object.values(table.characters)
+      .filter((c) => c.kind === 'pc' && c.status === 'approved' && c.id !== ch.id)
+      .sort(byName)
+      .map((other) => ({ other, mine: level(ch.id, other.id), theirs: level(other.id, ch.id) }));
+  }, [table.bonds, table.characters, ch.id, isPc]);
+
   if (ch.status !== 'approved') return null;
 
   return (
@@ -34,6 +44,33 @@ export default function RelationsCard({ table, ch }: { table: TableState; ch: Ch
         <div className="spacer" />
         <IntroduceButton table={table} ch={ch} className="btn btn-sm" />
       </div>
+      {peers.length > 0 && (
+        <>
+          <div className="tiny muted">Personagens dos jogadores</div>
+          <div className="relation-list mb">
+            {peers.map(({ other, mine, theirs }) => (
+              <div key={other.id} className="relation-row">
+                <Avatar config={other.avatar} size={32} />
+                <div className="relation-name">
+                  <strong>{other.name}</strong>
+                  {table.players[other.ownerId] && <span className="tiny muted"> · {table.players[other.ownerId].name}</span>}
+                </div>
+                <div className="relation-sides">
+                  <span className="relation-side" title={`O que ${ch.name} sente por ${other.name} (o jogador marca)`}>
+                    <span className="tiny muted">{ch.name}</span>
+                    <AffinityDot level={mine} title={`O que ${ch.name} sente por ${other.name}`} />
+                  </span>
+                  <span className="relation-side" title={`O que ${other.name} sente por ${ch.name} (o jogador marca)`}>
+                    <span className="tiny muted">{other.name}</span>
+                    <AffinityDot level={theirs} title={`O que ${other.name} sente por ${ch.name}`} />
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="tiny muted">NPCs</div>
+        </>
+      )}
       {rows.length === 0 ? (
         <p className="small muted">
           {isPc ? `${ch.name} ainda não conhece nenhum NPC.` : `Nenhum personagem de jogador conhece ${ch.name}.`}
@@ -73,9 +110,9 @@ export default function RelationsCard({ table, ch }: { table: TableState; ch: Ch
               );
             })}
           </div>
-          <div className="mt"><AffinityLegend /></div>
         </>
       )}
+      {(rows.length > 0 || peers.length > 0) && <div className="mt"><AffinityLegend /></div>}
     </div>
   );
 }

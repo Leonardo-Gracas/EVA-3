@@ -293,6 +293,36 @@ describe('motor', () => {
     expect(dispatch(s, gm, { type: 'relation/introduce', pcIds: pcs, npcIds: [npc] }, ctx)).toMatchObject({ ok: false, error: /Todos já se conhecem/ });
   });
 
+  it('Relações entre personagens de jogadores: cada jogador marca o lado do seu', () => {
+    let { s, cid } = setup();
+    s = dispatch(s, p2, { type: 'character/create', draft: { ...draft, name: 'Lia' } }, ctx).state;
+    const lia = Object.values(s.characters).find((c) => c.name === 'Lia')!.id;
+    s = dispatch(s, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    // Ficha pendente ainda não recebe marcação.
+    expect(dispatch(s, p1, { type: 'relation/bond', characterId: cid, otherId: lia, level: 2 }, ctx)).toMatchObject({ ok: false, error: /aprovada/ });
+    s = dispatch(s, gm, { type: 'character/approve', characterId: lia }, ctx).state;
+
+    s = dispatch(s, p1, { type: 'relation/bond', characterId: cid, otherId: lia, level: 2 }, ctx).state;
+    s = dispatch(s, p2, { type: 'relation/bond', characterId: lia, otherId: cid, level: -1 }, ctx).state;
+    expect(s.bonds).toEqual([{ fromId: cid, toId: lia, level: 2 }, { fromId: lia, toId: cid, level: -1 }]);
+    // Só o dono marca; o mestre não mexe no lado do jogador; ninguém marca a si mesmo.
+    expect(dispatch(s, p2, { type: 'relation/bond', characterId: cid, otherId: lia, level: 0 }, ctx)).toMatchObject({ ok: false, error: /não é sua/ });
+    expect(dispatch(s, gm, { type: 'relation/bond', characterId: cid, otherId: lia, level: 0 }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s, p1, { type: 'relation/bond', characterId: cid, otherId: cid, level: 1 }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s, p1, { type: 'relation/bond', characterId: cid, otherId: lia, level: 5 as never }, ctx)).toMatchObject({ ok: false });
+
+    // Cada jogador recebe o que envolve os personagens dele.
+    expect(buildPlayerView(s, 'p1', new Set()).bonds).toHaveLength(2);
+    // Voltar ao neutro apaga a marcação.
+    s = dispatch(s, p1, { type: 'relation/bond', characterId: cid, otherId: lia, level: 0 }, ctx).state;
+    expect(s.bonds).toEqual([{ fromId: lia, toId: cid, level: -1 }]);
+    // Excluir a ficha leva as marcações junto; mesa antiga ganha a lista vazia.
+    expect(dispatch(s, gm, { type: 'character/delete', characterId: lia }, ctx).state.bonds).toEqual([]);
+    const old = structuredClone(s) as Partial<TableState>;
+    delete old.bonds;
+    expect(migrate(old as TableState).bonds).toEqual([]);
+  });
+
   it('Ameaça: valores livres, duplicar, rolar e PV', () => {
     const { s: s0 } = setup();
     const data = {

@@ -92,6 +92,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     itemLibrary: {},
     cases: {},
     relations: [],
+    bonds: [],
     campaign: emptyCampaign(),
     permissions: { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} },
     requests: [],
@@ -551,6 +552,7 @@ function dropCharacterFromCombat(s: TableState, ctx: EngineCtx, characterId: str
   removeCombatants(s, ctx, (x) => x.ref.kind === 'character' && x.ref.id === characterId);
   dropTokens(s, (t) => t.ref.kind === 'character' && t.ref.id === characterId);
   s.relations = s.relations.filter((r) => r.pcId !== characterId && r.npcId !== characterId);
+  s.bonds = s.bonds.filter((b) => b.fromId !== characterId && b.toId !== characterId);
 }
 
 /** Lista de ids de fichas aprovadas do tipo pedido, sem repetição. */
@@ -1123,6 +1125,21 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       if (!isAffinity(a.level)) fail('Nível inválido.');
       if (actor.role === 'gm') r.npc = a.level;
       else r.pc = a.level;
+      return;
+    }
+
+    case 'relation/bond': {
+      if (actor.role !== 'player') return fail('Esse lado é do jogador.');
+      const from = getChar(s, a.characterId);
+      const to = getChar(s, a.otherId);
+      if (from.kind !== 'pc' || to.kind !== 'pc' || from.id === to.id) fail('Relação inválida.');
+      if (to.status !== 'approved') fail(`A ficha de ${to.name} ainda não foi aprovada.`);
+      if (!isAffinity(a.level)) fail('Nível inválido.');
+      const old = s.bonds.find((b) => b.fromId === from.id && b.toId === to.id);
+      if (a.level === 0) s.bonds = s.bonds.filter((b) => b !== old);
+      else if (old) old.level = a.level;
+      else if (s.bonds.length >= MAX_RELATIONS) fail('Limite de relações atingido.');
+      else s.bonds.push({ fromId: from.id, toId: to.id, level: a.level });
       return;
     }
 

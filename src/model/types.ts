@@ -855,6 +855,16 @@ export interface Relation {
   createdAt: number;
 }
 
+/**
+ * Entre personagens de jogadores não há apresentação: todos se conhecem. Cada jogador marca
+ * o quanto o personagem dele (`fromId`) gosta do outro (`toId`). Neutro (0) não fica guardado.
+ */
+export interface Bond {
+  fromId: string;
+  toId: string;
+  level: Affinity;
+}
+
 // ── Mesa ─────────────────────────────────────────────────────────────────────
 
 export interface PlayerRecord {
@@ -955,6 +965,8 @@ export interface TableState {
   cases: Record<string, InvestigationCase>;
   /** Quem conhece quem (personagem de jogador ↔ NPC), na ordem em que foram apresentados. */
   relations: Relation[];
+  /** O que cada personagem de jogador sente pelos outros (só os níveis diferentes de neutro). */
+  bonds: Bond[];
   campaign: Campaign;
   permissions: PermissionState;
   requests: PendingRequest[];
@@ -1071,6 +1083,8 @@ export type GameAction =
    * o mestre, o quanto o NPC gosta do personagem.
    */
   | { type: 'relation/feel'; characterId: string; npcId: string; level: Affinity }
+  /** Jogador: o quanto o personagem dele (`characterId`) gosta de outro personagem de jogador. */
+  | { type: 'relation/bond'; characterId: string; otherId: string; level: Affinity }
   | { type: 'table/rename'; name: string }
   | { type: 'table/startLevel'; level: number }
   | { type: 'log/clear' }
@@ -1254,6 +1268,8 @@ export interface PlayerView {
   map: PlayerMap | null;
   /** Quem os personagens do jogador conhecem (mesmo NPCs ocultos: a apresentação os revela). */
   relations: PlayerRelation[];
+  /** O que os personagens do jogador sentem pelos outros personagens de jogadores, e o que sentem por eles. */
+  bonds: Bond[];
 }
 
 export interface PlayerRelation {
