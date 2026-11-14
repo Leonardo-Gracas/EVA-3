@@ -112,6 +112,35 @@ describe('motor', () => {
     expect(dispatch(s, p1, { type: 'ability/use', characterId: cid, abilityId: 'devocao', pe: 99, pv: 0 }, ctx)).toMatchObject({ ok: false });
   });
 
+  it('Benção rola FÉ(10) e cobra PE conforme os d4 de cura', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    s = dispatch(s, gm, { type: 'level/up', characterId: cid, classId: 'acolito', abilityId: 'clareza' }, ctx).state;
+    s = dispatch(s, gm, { type: 'level/up', characterId: cid, classId: 'acolito', abilityId: 'bencao' }, ctx).state;
+    const pv = s.characters[cid].current.pv;
+    const withPe = (pe: number) => dispatch(s, gm, { type: 'resource/set', characterId: cid, pv, pe }, ctx).state;
+    const use = (st: TableState, d20: number) =>
+      dispatch(st, p1, { type: 'ability/use', characterId: cid, abilityId: 'bencao', pe: 0, pv: 5 }, { ...ctx, rng: (sides) => (sides === 20 ? d20 : 2) });
+    // FÉ 3 + nível 3 (bônus 1) = +4. d20 18 → 22: 3d4, custa 3 + 2 + 2 = 7.
+    let r = use(withPe(10), 18);
+    expect(r.ok && r.state.characters[cid].current.pe).toBe(3);
+    expect(r.state.characters[cid].current.pv).toBe(pv);
+    let last = r.state.log[r.state.log.length - 1];
+    expect(last.roll).toMatchObject({ total: 22, target: 10, attr: 'FE' });
+    expect(last.text).toContain('cura 6 PV (3d4');
+    // Mesmo teste com 5 PE: o PE só paga 2d4.
+    r = use(withPe(5), 18);
+    expect(r.ok && r.state.characters[cid].current.pe).toBe(0);
+    expect(r.state.log[r.state.log.length - 1].text).toContain('mas o PE só pagou 2d4');
+    // d20 6 → 10: não supera a CD, sem cura e sem gasto.
+    r = use(withPe(10), 6);
+    expect(r.ok && r.state.characters[cid].current.pe).toBe(10);
+    last = r.state.log[r.state.log.length - 1];
+    expect(last.text).toContain('falhou no teste de FÉ');
+    // Menos de 3 PE nem rola.
+    expect(use(withPe(2), 18)).toMatchObject({ ok: false, error: /precisa de 3/ });
+  });
+
   it('jogador rola sem ficha mesmo com characterId nulo (serialização do PeerJS)', () => {
     const { s } = setup();
     const r = dispatch(s, p1, { type: 'roll', expr: 'd20', characterId: null as unknown as undefined }, ctx);

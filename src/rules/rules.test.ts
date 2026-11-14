@@ -4,7 +4,7 @@ import { deriveStats, deathThreshold, titleOf } from './derive';
 import {
   abilityOptions, validateDraft, validateLevelPick, classesAvailable, sanitizeLevels, resizeLevels, checkOptions, pruneChecks, levelsFromChecks,
 } from './validate';
-import { abilitiesOf } from './abilities';
+import { abilitiesOf, bencaoCost, bencaoDice } from './abilities';
 import { parseExpr, rollExpr } from './dice';
 import type { LevelPick } from '../model/types';
 
@@ -22,6 +22,19 @@ describe('atributos', () => {
   it('rejeita fora da faixa', () => {
     expect(isValidAttributeSet({ ...emptyAttributes(), FOR: 5 })).toBe(false);
     expect(isValidAttributeSet({ ...emptyAttributes(), FOR: -2 })).toBe(false);
+  });
+});
+
+describe('Benção', () => {
+  it('1d4 ao superar 10 e mais 1d4 a cada 5 pontos, limitado pelo PE', () => {
+    expect(bencaoDice(10, 99)).toEqual({ dice: 0, earned: 0 });
+    expect(bencaoDice(11, 99)).toEqual({ dice: 1, earned: 1 });
+    expect(bencaoDice(14, 99)).toEqual({ dice: 1, earned: 1 });
+    expect(bencaoDice(15, 99)).toEqual({ dice: 2, earned: 2 });
+    expect(bencaoDice(20, 99)).toEqual({ dice: 3, earned: 3 });
+    expect(bencaoDice(20, 6)).toEqual({ dice: 2, earned: 3 });
+    expect(bencaoDice(20, 2)).toEqual({ dice: 0, earned: 3 });
+    expect([0, 1, 2, 3].map(bencaoCost)).toEqual([0, 3, 5, 7]);
   });
 });
 

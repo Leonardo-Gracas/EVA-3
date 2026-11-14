@@ -3,7 +3,7 @@ import { Sparkles, TrendingUp } from 'lucide-react';
 import type { Character } from '../../model/types';
 import type { Derived } from '../../rules/derive';
 import { deriveStats } from '../../rules/derive';
-import type { Ability } from '../../rules/abilities';
+import { BENCAO, type Ability } from '../../rules/abilities';
 import { CLASSES, MAX_LEVEL, type ClassId } from '../../rules/classes';
 import { abilityOptions, classesAvailable } from '../../rules/validate';
 import { useAct } from '../act';
@@ -53,11 +53,13 @@ export default function AbilitiesPanel({ ch, d, readOnly }: { ch: Character; d: 
 function UseAbilityModal({ ch, ability, onClose }: { ch: Character; ability: Ability; onClose: () => void }) {
   const { act } = useAct();
   const special = ability.id === 'cssml' ? 'all' : ability.id === 'bravura' ? 'bravura' : null;
+  const bencao = ability.id === 'bencao';
+  const testBonus = ch.attributes.FE + Math.floor(ch.levels.length / 2);
   const [pe, setPe] = useState(String(special === 'all' ? ch.current.pe : ability.peCost ?? 0));
   const [pv, setPv] = useState(String(ability.pvCost ?? 0));
   const [note, setNote] = useState('');
-  const peN = parseInt(pe, 10) || 0;
-  const pvN = parseInt(pv, 10) || 0;
+  const peN = bencao ? BENCAO.baseCost : parseInt(pe, 10) || 0;
+  const pvN = bencao ? 0 : parseInt(pv, 10) || 0;
 
   const go = async () => {
     const r = await act({ type: 'ability/use', characterId: ch.id, abilityId: ability.id, pe: peN, pv: special ? 0 : pvN, note: note.trim() || undefined }, `${ability.name} usada.`);
@@ -69,7 +71,13 @@ function UseAbilityModal({ ch, ability, onClose }: { ch: Character; ability: Abi
       footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn btn-primary" disabled={peN > ch.current.pe} onClick={go}>Usar</button></>}>
       <div className="col gap-lg">
         <p className="secondary pre small">{ability.text}</p>
-        <div className="grid-2">
+        {bencao ? (
+          <p className="small gold">
+            Teste de FÉ (d20 + {testBonus}) rolado automaticamente: superando {BENCAO.cd}, cura 1d4 por {BENCAO.baseCost} PE;
+            a cada {BENCAO.step} pontos acima de {BENCAO.cd}, mais 1d4 por mais {BENCAO.extraCost} PE, até onde seu PE ({ch.current.pe}) pagar.
+            Se falhar, não gasta PE.
+          </p>
+        ) : <div className="grid-2">
           <div className="field">
             <label className="label">{special === 'bravura' ? 'PE a converter (×2 PV)' : 'Gastar PE'} — disponível {ch.current.pe}</label>
             <input className="input" value={pe} disabled={special === 'all'} onChange={(e) => setPe(e.target.value.replace(/[^\d]/g, ''))} />
@@ -80,7 +88,7 @@ function UseAbilityModal({ ch, ability, onClose }: { ch: Character; ability: Abi
               <input className="input" value={pv} onChange={(e) => setPv(e.target.value.replace(/[^\d]/g, ''))} />
             </div>
           )}
-        </div>
+        </div>}
         {ability.id === 'oracao' && <p className="small gold">Recupera 1d6 + {2 * ch.attributes.FE} (dobro da FÉ) de PE, rolado automaticamente.</p>}
         {peN > ch.current.pe && <p className="small" style={{ color: 'var(--error)' }}>PE insuficiente.</p>}
         <div className="field">

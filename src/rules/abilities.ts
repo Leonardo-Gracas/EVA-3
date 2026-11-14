@@ -76,7 +76,8 @@ const A: Ability[] = [
   },
   {
     id: 'bencao', classId: 'acolito', name: 'Benção', minClassLevel: 3, passive: false, peCost: 3,
-    text: 'Em posse de um catalisador sagrado, gaste 3 PE para curar um aliado voluntário em 1d4. Caso passe num teste de FÉ(20), cure mais 1d4.',
+    costNote: '+2 PE por 1d4 extra',
+    text: 'Em posse de um catalisador sagrado, faça um teste de FÉ(10) para curar um aliado voluntário em 1d4, gastando 3 PE. Para cada 5 pontos acima de 10 no teste, cura mais 1d4 e gasta mais 2 PE.',
   },
   {
     id: 'lamina-sagrada', classId: 'acolito', name: 'Lâmina Sagrada', minClassLevel: 6, passive: false, peCost: 5,
@@ -248,4 +249,22 @@ export function abilitiesOf(classId: ClassId): Ability[] {
 
 export function getAbility(id: string): Ability | undefined {
   return ABILITIES[id];
+}
+
+/** Benção: teste de FÉ(10); 1d4 por 3 PE e mais 1d4 por 2 PE a cada 5 pontos acima de 10. */
+export const BENCAO = { cd: 10, step: 5, baseCost: 3, extraCost: 2 } as const;
+
+/** Custo em PE de uma Benção que cura `dice`d4. */
+export function bencaoCost(dice: number): number {
+  return dice > 0 ? BENCAO.baseCost + BENCAO.extraCost * (dice - 1) : 0;
+}
+
+/**
+ * Quantos d4 a Benção cura com o total do teste (0 = falhou; acerto é superar a CD),
+ * limitado ao que o PE disponível paga.
+ */
+export function bencaoDice(total: number, peAvailable: number): { dice: number; earned: number } {
+  const earned = total > BENCAO.cd ? 1 + Math.floor((total - BENCAO.cd) / BENCAO.step) : 0;
+  const affordable = peAvailable < BENCAO.baseCost ? 0 : 1 + Math.floor((peAvailable - BENCAO.baseCost) / BENCAO.extraCost);
+  return { dice: Math.min(earned, affordable), earned };
 }
