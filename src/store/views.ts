@@ -1,11 +1,12 @@
 // O que cada jogador recebe: só a própria ficha completa e dados públicos.
 import type {
-  BattleMap, LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerRelation, PlayerView, TableState,
+  BattleMap, LogEntry, MapObject, MapRoof, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerRelation, PlayerRoof,
+  PlayerView, TableState,
 } from '../model/types';
 import { TERRAIN_CHAR } from '../model/types';
-import { ambientOf, visionOf } from '../model/map';
+import { ambientOf, objectCells, visionOf } from '../model/map';
 import type { Vision } from '../rules/vision';
-import { combatOn, isTokenTurn, moveBudget, moveGate, playerGrid, playerSight, tokenCombatant, tokenInfo, visibleObjects } from './maps';
+import { combatOn, eyesOf, isTokenTurn, moveBudget, moveGate, playerGrid, playerSight, tokenCombatant, tokenInfo, visibleObjects } from './maps';
 import { followPath } from '../rules/grid';
 import { effectivePermissions } from '../model/permissions';
 import { caseShown, publishedCase } from '../model/cases';
@@ -86,7 +87,12 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
   // Visão individual ou compartilhada: só o que os personagens enxergam (o resto nem sai daqui).
   const vision = visionOf(m);
   const vis = vision !== 'open' ? playerSight(s, m, playerId, grid) : null;
-  const sees = (x: number, y: number) => !vis || vis.seen[y * m.w + x] === 1;
+  // Telhados: o interior coberto não sai daqui (tokens, móveis e luzes lá dentro).
+  const roofs = coveringRoofs(s, m, playerId);
+  const covered = new Uint8Array(m.w * m.h);
+  for (const rf of roofs) for (const i of rf.cells) covered[i] = 1;
+  const sees = (x: number, y: number) => (!vis || vis.seen[y * m.w + x] === 1) && !covered[y * m.w + x];
+  const shown = (o: MapObject) => objectCells(o).every(([x, y]) => !covered[y * m.w + x]);
   for (const t of Object.values(m.tokens)) {
     const info = tokenInfo(s, t);
     if (!info || info.hidden || !sees(t.x, t.y)) continue;
@@ -118,10 +124,31 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
     }
   }
   const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, vision, tokens, moves };
-  if (!vis) return { ...base, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: visibleObjects(m) };
+  const roofsFor = (keep: (i: number) => boolean): { roofs?: PlayerRoof[] } => {
+    const out = roofs.flatMap((rf) => {
+      const cells = rf.cells.filter(keep);
+      return cells.length ? [{ id: rf.id, label: rf.label, cells }] : [];
+    });
+    return out.length ? { roofs: out } : {};
+  };
+  if (!vis) {
+    return { ...base, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: visibleObjects(m).filter(shown), ...roofsFor(() => true) };
+  }
   let light = '';
   for (let i = 0; i < m.w * m.h; i++) light += vis.seen[i] ? vis.light[i] : '0';
-  return { ...base, ...darkLayout(m, vis), dark: true, dim: [...vis.dim], ambient: ambientOf(m), light };
+  const dark = darkLayout(m, vis);
+  return {
+    ...base, ...dark, objects: dark.objects.filter(shown), dark: true, dim: [...vis.dim], ambient: ambientOf(m), light,
+    // No escuro, o telhado cobre só o que o jogador enxerga dele.
+    ...roofsFor((i) => vis.seen[i] === 1 || vis.dim.has(i)),
+  };
+}
+
+/** Telhados que cobrem o interior para o jogador: os fechados, sem personagem dele lá dentro. */
+function coveringRoofs(s: TableState, m: BattleMap, playerId: string): MapRoof[] {
+  if (!m.roofs) return [];
+  const eyes = new Set(eyesOf(s, m, playerId).map((e) => e.y * m.w + e.x));
+  return Object.values(m.roofs).filter((rf) => !rf.open && !rf.cells.some((i) => eyes.has(i)));
 }
 
 /**

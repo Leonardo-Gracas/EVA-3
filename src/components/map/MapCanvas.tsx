@@ -14,7 +14,7 @@ import Avatar from '../common/Avatar';
 import { ThreatGlyph } from '../gm/ThreatIcon';
 import { useBoardView } from '../investigation/useBoardView';
 import { useFullscreen } from '../investigation/useFullscreen';
-import { CELL, cellsPath, edgeCoords, gridPath, nearestEdge, runsPath, wallsPath } from './mapRender';
+import { CELL, cellsPath, edgeCoords, gridPath, nearestEdge, roofShapes, runsPath, wallsPath } from './mapRender';
 import { type RouteFn, useWalk } from './useWalk';
 
 /** Tipo do arraste de "pôr no mapa" (painel de tokens → mapa). */
@@ -71,6 +71,9 @@ export const lightIcon = (o: Pick<MapLight, 'light' | 'mount'>): typeof Box =>
 
 interface GridData { w: number; h: number; cells: string; wallsH: string; wallsV: string }
 
+/** Telhado a desenhar: `open` = destelhado (o mestre vê só o contorno). */
+export interface CanvasRoof { id: string; label: string; cells: number[]; open?: boolean }
+
 interface Props {
   grid: GridData;
   objects: MapObject[];
@@ -91,6 +94,10 @@ interface Props {
   showLights?: boolean;
   /** Editor: quadrados a céu aberto, marcados de leve. */
   sky?: number[];
+  /** Telhados das construções, com o nome por cima. */
+  roofs?: CanvasRoof[];
+  /** Jogador: o telhado cobre o interior (paredes, portas e janelas de dentro não aparecem). Mestre: só um tom e o contorno. */
+  roofCover?: boolean;
   reachTone?: 'free' | 'request' | 'blocked';
   path?: Point[] | null;
   /** Texto no fim do caminho ("4 quadrados · 6 m"). */
@@ -173,10 +180,21 @@ export default function MapCanvas(props: Props) {
     road: runsPath(grid.cells, w, h, TERRAIN_CHAR.road),
     grid: gridPath(w, h),
   }), [grid.cells, w, h]);
+  const roofs = useMemo(() => (props.roofs?.length ? roofShapes(w, h, props.roofs) : null), [props.roofs, w, h]);
+  /** Linha por dentro de um telhado que cobre (os dois lados no mesmo telhado fechado): não se desenha. */
+  const underRoof = useMemo(() => {
+    if (!roofs || !props.roofCover) return null;
+    const { idx, shapes } = roofs;
+    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : idx[y * w + x]);
+    return (e: EdgeRef) => {
+      const [a, b] = e.o === 'h' ? [at(e.x, e.y - 1), at(e.x, e.y)] : [at(e.x - 1, e.y), at(e.x, e.y)];
+      return a >= 0 && a === b && !shapes[a].open;
+    };
+  }, [roofs, props.roofCover, w, h]);
   // Porta aberta é passagem: a parede da linha dela não é desenhada (ficam só os batentes).
   const walls = useMemo(() => {
     const open = objects.filter((o): o is Extract<MapObject, { kind: 'door' }> => o.kind === 'door' && o.state === 'open');
-    if (!open.length) return wallsPath(grid.wallsH, grid.wallsV, w, h);
+    if (!open.length && !underRoof) return wallsPath(grid.wallsH, grid.wallsV, w, h);
     const wh = grid.wallsH.split('');
     const wv = grid.wallsV.split('');
     for (const d of open) {
@@ -184,8 +202,12 @@ export default function MapCanvas(props: Props) {
       if (o === 'h' && x >= 0 && x < w && y >= 0 && y <= h) wh[y * w + x] = '0';
       if (o === 'v' && x >= 0 && x <= w && y >= 0 && y < h) wv[y * (w + 1) + x] = '0';
     }
+    if (underRoof) {
+      for (let y = 0; y <= h; y++) for (let x = 0; x < w; x++) if (wh[y * w + x] === '1' && underRoof({ o: 'h', x, y })) wh[y * w + x] = '0';
+      for (let y = 0; y < h; y++) for (let x = 0; x <= w; x++) if (wv[y * (w + 1) + x] === '1' && underRoof({ o: 'v', x, y })) wv[y * (w + 1) + x] = '0';
+    }
     return wallsPath(wh.join(''), wv.join(''), w, h);
-  }, [grid.wallsH, grid.wallsV, w, h, objects]);
+  }, [grid.wallsH, grid.wallsV, w, h, objects, underRoof]);
   const reachD = useMemo(() => (props.reach?.length ? cellsPath(props.reach, w) : ''), [props.reach, w]);
   const dimD = useMemo(() => (props.dim?.length ? cellsPath(props.dim, w) : ''), [props.dim, w]);
   const fogD = useMemo(() => (props.fog?.length ? cellsPath(props.fog, w) : ''), [props.fog, w]);
@@ -325,6 +347,11 @@ export default function MapCanvas(props: Props) {
                   <rect width={1} height={0.25} className="map-floor" />
                   <line x1={0} y1={0.04} x2={1} y2={0.04} className="map-stair-line" />
                 </pattern>
+                <pattern id={`rf${uid}`} patternUnits="userSpaceOnUse" width={0.5} height={0.34}>
+                  <rect width={0.5} height={0.34} className="map-roof-tile" />
+                  <line x1={0} y1={0.33} x2={0.5} y2={0.33} className="map-roof-row" />
+                  <line x1={0.25} y1={0} x2={0.25} y2={0.17} className="map-roof-row" />
+                </pattern>
               </defs>
               <rect width={w} height={h} className="map-void" />
               <path d={layers.floor} className="map-floor" />
@@ -332,6 +359,14 @@ export default function MapCanvas(props: Props) {
               <path d={layers.stairs} fill={`url(#st${uid})`} />
               <path d={layers.road} fill={`url(#rd${uid})`} />
               <path d={layers.grid} className="map-grid" />
+              {roofs?.shapes.map((rf) => (props.roofCover
+                ? <path key={rf.id} d={rf.fill} fill={`url(#rf${uid})`} className="map-roof" />
+                : (
+                  <g key={rf.id} className={`map-roof-gm${rf.open ? ' open' : ''}`}>
+                    <path d={rf.fill} className="map-roof-tint" />
+                    <path d={rf.outline} className="map-roof-outline" />
+                  </g>
+                )))}
               {skyD && <path d={skyD} className="map-sky" />}
               {dimD && <path d={dimD} className="map-dim" />}
               {fogD && <path d={fogD} className="map-fog" />}
@@ -346,7 +381,7 @@ export default function MapCanvas(props: Props) {
                 const [x1, y1, x2, y2] = edgeCoords(e);
                 return <line key={`${e.o}${e.x},${e.y}`} x1={x1} y1={y1} x2={x2} y2={y2} className={`map-edge-preview${props.preview?.erase ? ' map-preview-erase' : ''}`} />;
               })}
-              {objects.map((o) => (o.kind === 'door'
+              {objects.map((o) => ((o.kind === 'door' || o.kind === 'window') && underRoof?.(o.edge) ? null : o.kind === 'door'
                 ? <Door key={o.id} edge={o.edge} state={o.state} hidden={o.hidden && !!props.showHidden} selected={props.selectedObjectId === o.id} />
                 : o.kind === 'window' && (!o.hidden || props.showHidden)
                   ? <WindowPane key={o.id} edge={o.edge} hidden={o.hidden} selected={props.selectedObjectId === o.id} />
@@ -381,6 +416,12 @@ export default function MapCanvas(props: Props) {
             )}
             {objects.map((o) => (o.kind === 'light' && (showLights || props.selectedObjectId === o.id) && (!o.hidden || props.showHidden) ? (
               <LightView key={o.id} o={o} selected={props.selectedObjectId === o.id} />
+            ) : null))}
+            {roofs?.shapes.map((rf) => (rf.label && rf.fill ? (
+              <div key={rf.id} className={`map-roof-label${props.roofCover ? '' : ' gm'}${rf.open ? ' open' : ''}`}
+                style={{ left: rf.at.x * CELL, top: rf.at.y * CELL, maxWidth: Math.max(CELL, rf.at.width * CELL - 6) }}>
+                {rf.label}
+              </div>
             ) : null))}
             {tokens.map((t) => {
               const at = walk.pos.get(t.id);

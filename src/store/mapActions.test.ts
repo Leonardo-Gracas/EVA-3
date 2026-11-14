@@ -686,3 +686,77 @@ describe('mapas: criar gerado e andares', () => {
     expect(Object.values(s.maps[r.id!].objects).some((o) => o.kind === 'door')).toBe(true);
   });
 });
+
+describe('mapas: telhados', () => {
+  /** Casa no canto de baixo à direita (6..9 × 6..9), com Bento lá dentro e uma mesa. */
+  function roofed() {
+    let { s, mapId, ana, beto } = setup();
+    const m = s.maps[mapId];
+    const cells: number[] = [];
+    for (let y = 6; y < 10; y++) for (let x = 6; x < 10; x++) cells.push(y * 10 + x);
+    const layout = {
+      w: m.w, h: m.h, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV,
+      objects: { mesa: { id: 'mesa', kind: 'prop' as const, prop: 'mesa' as const, label: '', x: 7, y: 7, w: 1, h: 1, effect: 'difficult' as const, hidden: false } },
+      roofs: { t1: { id: 't1', label: 'Casa 1', cells: [...cells, 999, -1], open: false } },
+    };
+    s = ok(s, gm, { type: 'map/restore', mapId, layout });
+    return { s, mapId, ana, beto, cells };
+  }
+
+  it('o interior fica coberto para quem está fora, com o nome; quem está dentro vê', () => {
+    const { s, mapId, cells } = roofed();
+    // Quadrados fora do mapa saem do telhado.
+    expect(s.maps[mapId].roofs!.t1.cells).toEqual(cells);
+    const a = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(a.roofs).toEqual([{ id: 't1', label: 'Casa 1', cells }]);
+    expect(a.tokens.some((t) => t.x === 9 && t.y === 9)).toBe(false);
+    expect(a.objects.some((o) => o.kind === 'prop')).toBe(false);
+    const b = buildPlayerView(s, 'p2', new Set()).map!;
+    expect(b.roofs).toBeUndefined();
+    expect(b.objects.some((o) => o.kind === 'prop')).toBe(true);
+    expect(b.tokens).toHaveLength(2);
+  });
+
+  it('o mestre mostra o interior, renomeia e tira o telhado; o jogador não mexe', () => {
+    let { s, mapId } = roofed();
+    expect(run(s, p1, { type: 'map/roof', mapId, roofId: 't1', open: true })).toMatchObject({ ok: false, error: /mestre/ });
+    s = ok(s, gm, { type: 'map/roof', mapId, roofId: 't1', open: true, label: 'Casa do moleiro' });
+    expect(s.maps[mapId].roofs!.t1).toMatchObject({ open: true, label: 'Casa do moleiro' });
+    const a = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(a.roofs).toBeUndefined();
+    expect(a.tokens).toHaveLength(2);
+    expect(run(s, gm, { type: 'map/roof', mapId, roofId: 'nada', open: false })).toMatchObject({ ok: false });
+    s = ok(s, gm, { type: 'map/roofRemove', mapId, roofIds: ['t1'] });
+    expect(s.maps[mapId].roofs).toBeUndefined();
+  });
+
+  it('visão individual: o telhado cobre só o que o jogador enxerga dele', () => {
+    let { s, mapId } = roofed();
+    s = ok(s, gm, { type: 'map/update', mapId, vision: 'individual' });
+    const a = buildPlayerView(s, 'p1', new Set()).map!;
+    // Sem paredes, Ana vê a casa toda de longe: o telhado inteiro, sem Bento nem a mesa.
+    expect(a.roofs?.[0].cells).toHaveLength(16);
+    expect(a.tokens).toHaveLength(1);
+    expect(a.objects.some((o) => o.kind === 'prop')).toBe(false);
+  });
+
+  it('redimensionar leva o telhado junto; o que sai do mapa some', () => {
+    let { s, mapId } = roofed();
+    s = ok(s, gm, { type: 'map/resize', mapId, w: 8, h: 10, dx: -1, dy: 0 });
+    const cells = s.maps[mapId].roofs!.t1.cells;
+    expect(cells).toHaveLength(12);
+    expect(Math.min(...cells.map((i) => i % 8))).toBe(5);
+  });
+
+  it('o vilarejo gerado nasce com os telhados fechados e nomeados', () => {
+    const { s } = setup();
+    const r = dispatch(s, gm, { type: 'map/build', name: 'Vila', params: { preset: 'village', w: 64, h: 48, rooms: 8, floors: 2 } as never, seed: 7 }, ctx);
+    if (!r.ok) throw new Error(r.error);
+    const built = Object.values(r.state.maps).filter((m) => m.name.startsWith('Vila'));
+    const ground = built.find((m) => !m.floor || m.floor.level === 0)!;
+    const roofs = Object.values(ground.roofs ?? {});
+    expect(roofs.length).toBeGreaterThan(0);
+    expect(roofs.every((rf) => !rf.open && rf.label && rf.cells.length)).toBe(true);
+    expect(roofs.some((rf) => rf.label === 'Casa 1')).toBe(true);
+  });
+});

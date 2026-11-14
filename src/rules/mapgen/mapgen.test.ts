@@ -367,6 +367,75 @@ describe('gerador de mapas', () => {
     expect(full).toBeGreaterThanOrEqual(17);
   });
 
+  it('vilarejo: um telhado por construção, com o nome, cobrindo só o construído', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const g = generateMap(params('village', newMapSize('village', 'casa')), seed);
+      const bs = g.buildings ?? [];
+      const roofs = g.roofs ?? [];
+      expect(roofs.length).toBe(bs.length);
+      expect(new Set(roofs.map((rf) => rf.label)).size).toBe(roofs.length);
+      const { w, h } = g.layout;
+      const covered = new Uint8Array(w * h);
+      roofs.forEach((rf, k) => {
+        expect(rf.label).toBe(bs[k].label);
+        expect(rf.label).toMatch(bs[k].kind === 'moradia' ? /^Casa \d+$/ : /^(Ferreiro|Padeiro|Mercador|Curandeiro)$/);
+        for (const i of rf.cells) {
+          const x = i % w;
+          const y = Math.floor(i / w);
+          expect(x >= bs[k].x && y >= bs[k].y && x < bs[k].x + bs[k].w && y < bs[k].y + bs[k].h).toBe(true);
+          covered[i]++;
+        }
+      });
+      for (let i = 0; i < w * h; i++) expect(covered[i]).toBe(g.zone[i] === ZONE.room || g.zone[i] === ZONE.corridor ? 1 : 0);
+      // Num mapa só (o editor), nenhum sobrado: nada de escada.
+      expect(g.layout.cells.includes(TERRAIN_CHAR.stairs)).toBe(false);
+    }
+  });
+
+  it('vilarejo: sobrados de vez em quando, com o andar de cima em outro mapa', () => {
+    let withUpper = 0;
+    let houses = 0;
+    let sobrados = 0;
+    for (let seed = 0; seed < 60; seed++) {
+      const fl = generateFloors(params('village', { ...newMapSize('village', 'casa'), floors: 2, lights: true }), seed);
+      const ground = fl[0];
+      houses += (ground.buildings ?? []).filter((b) => b.kind === 'moradia').length;
+      const ups = (ground.buildings ?? []).filter((b) => b.upper);
+      sobrados += ups.length;
+      if (fl.length === 1) {
+        expect(ups.length).toBe(0);
+        continue;
+      }
+      withUpper++;
+      expect(fl.length).toBe(2);
+      const [g, u] = fl;
+      expect(g.label).toBe('Térreo');
+      expect(u.label).toBe('1º andar');
+      // A escada fica nos mesmos quadrados nos dois andares, uma por sobrado.
+      expect(g.stairs.length).toBeGreaterThanOrEqual(ups.length);
+      expect(u.stairs).toEqual(g.stairs);
+      for (const i of g.stairs) {
+        expect(g.layout.cells[i]).toBe(TERRAIN_CHAR.stairs);
+        expect(u.layout.cells[i]).toBe(TERRAIN_CHAR.stairs);
+      }
+      // Em cima, só os sobrados: o resto é vazio; cada um com o telhado e o nome do térreo.
+      expect((u.buildings ?? []).map((b) => b.label)).toEqual(ups.map((b) => b.label));
+      expect((u.roofs ?? []).map((rf) => rf.label)).toEqual(ups.map((b) => b.label));
+      const { w, h } = u.layout;
+      for (let i = 0; i < w * h; i++) {
+        const x = i % w;
+        const y = Math.floor(i / w);
+        const inUp = ups.some((b) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h);
+        if (!inUp) expect(u.layout.cells[i]).toBe(TERRAIN_CHAR.void);
+      }
+      expect(components(u)).toBe(ups.length);
+      expect(components(g)).toBe(1);
+    }
+    // Pouca frequência: aparece em alguns vilarejos, mas é uma minoria das casas.
+    expect(withUpper).toBeGreaterThan(5);
+    expect(sobrados / houses).toBeLessThan(0.2);
+  });
+
   it('vilarejo: poucas construções e mapa mínimo não quebram', () => {
     for (let seed = 0; seed < 20; seed++) {
       const g = generateMap(params('village', { w: 12 + seed, h: 12 + (seed % 5), rooms: 3 }), seed);
@@ -391,7 +460,7 @@ describe('gerador de mapas', () => {
   it('descreve os cômodos', () => {
     const r = (kind: GeneratedMap['rooms'][number]['kind']) => ({ x: 0, y: 0, w: 1, h: 1, kind });
     expect(describeRooms([r('sala'), r('quarto'), r('quarto'), r('banheiro')])).toBe('sala de estar, 2 quartos e banheiro');
-    const b = (kind: NonNullable<GeneratedMap['buildings']>[number]['kind']) => ({ x: 0, y: 0, w: 1, h: 1, kind });
+    const b = (kind: NonNullable<GeneratedMap['buildings']>[number]['kind']) => ({ x: 0, y: 0, w: 1, h: 1, kind, label: '' });
     expect(describeBuildings([b('moradia'), b('mercador'), b('ferreiro'), b('moradia')])).toBe('ferreiro, mercador e 2 casas');
   });
 });
@@ -472,12 +541,12 @@ describe('andares', () => {
     }
   });
 
-  it('templo, cenário aberto e casebre têm um andar só', () => {
+  it('templo, cenário aberto e casebre têm um andar só; o vilarejo aceita sobrados', () => {
     expect(cleanMapParams({ preset: 'temple', floors: 3 }).floors).toBe(1);
     expect(cleanMapParams({ preset: 'outdoor', floors: 3 }).floors).toBe(1);
-    expect(cleanMapParams({ preset: 'village', floors: 3 }).floors).toBe(1);
     expect(cleanMapParams({ preset: 'house', model: 'casebre', floors: 3 }).floors).toBe(1);
     expect(cleanMapParams({ preset: 'house', model: 'hotel', floors: 9 }).floors).toBe(4);
+    expect(cleanMapParams({ preset: 'village', floors: 3 }).floors).toBe(2);
   });
 });
 

@@ -2,14 +2,16 @@
 // conforme o modo de locomoção (o portão fica no dispatch; aqui só a regra do movimento).
 import { MAX_COMBATANTS, nameInstances, numberInstances, threatInstance } from './combat';
 import type {
-  Actor, Ambient, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, LightKind, LightMount, MapAction, MapDoor, MapLayout, MapObject,
+  Actor, Ambient, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, LightKind, LightMount, MapAction, MapDoor, MapLayout, MapObject, MapRoof,
   MapToken, MoveMode, PropEffect, PropKind, TableState, Terrain, TokenRef, VisionMode,
 } from '../model/types';
 import {
   AMBIENTS, DOOR_STATES, LIGHT_KINDS, LIGHT_MOUNTS, MAP_LIMITS, MAX_LIGHT_RADIUS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR, TERRAINS,
   VISION_MODES,
 } from '../model/types';
-import { ambientOf, blankLayout, edgeIndex, sameEdge, setChars, setWalls, terrainAt, visionOf, wallAround } from '../model/map';
+import {
+  ambientOf, blankLayout, cleanRoofs, edgeIndex, MAX_ROOF_LABEL, sameEdge, setChars, setWalls, terrainAt, visionOf, wallAround,
+} from '../model/map';
 import { generateFloors, generateMap, type GeneratedMap } from '../rules/mapgen';
 import { followPath, pathTo, reachFrom, type Point } from '../rules/grid';
 import type { EngineCtx } from './engine';
@@ -92,6 +94,8 @@ function cleanLayout(raw: unknown, ctx: EngineCtx): MapLayout {
     const outside = exact(r.outside, w * h, /^[01]*$/, 'Céu aberto');
     if (outside.includes('1')) layout.outside = outside;
   }
+  const roofs = cleanRoofs(r.roofs, w, h);
+  if (roofs) layout.roofs = roofs;
   const objs = Object.values(record(r.objects));
   if (objs.length > MAX_OBJECTS) fail('Objetos demais no mapa.');
   for (const o of objs) {
@@ -151,13 +155,26 @@ function generatedLayout(d: GeneratedMap, ctx: EngineCtx): MapLayout {
     layout.objects[id] = { id, kind: 'light', ...l, lit: true, hidden: false };
   }
   if (d.outside) layout.outside = d.outside;
+  if (d.roofs?.length) {
+    layout.roofs = {};
+    for (const rf of d.roofs) {
+      const id = ctx.newId();
+      layout.roofs[id] = { id, label: rf.label, cells: [...rf.cells], open: false };
+    }
+  }
   return layout;
 }
 
 function applyLayout(m: BattleMap, layout: MapLayout) {
   Object.assign(m, layout);
   if (!layout.outside?.includes('1')) delete m.outside;
+  if (!layout.roofs || !Object.keys(layout.roofs).length) delete m.roofs;
   settleTokens(m);
+}
+
+function getRoof(m: BattleMap, id: unknown) {
+  const rf = typeof id === 'string' ? m.roofs?.[id] : undefined;
+  return rf ?? fail('Telhado não encontrado.');
 }
 
 /** Tira tokens de todos os mapas. */
@@ -397,6 +414,20 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         }
       }
       for (const t of Object.values(m.tokens)) { t.x += dx; t.y += dy; }
+      if (m.roofs) {
+        // O telhado anda junto; o que sair do mapa some.
+        const moved: Record<string, MapRoof> = {};
+        for (const rf of Object.values(m.roofs)) {
+          const cells = rf.cells.flatMap((i) => {
+            const x = (i % m.w) + dx;
+            const y = Math.floor(i / m.w) + dy;
+            return x >= 0 && y >= 0 && x < w && y < h ? [y * w + x] : [];
+          });
+          moved[rf.id] = { ...rf, cells };
+        }
+        const roofs = cleanRoofs(moved, w, h);
+        if (roofs) next.roofs = roofs;
+      }
       applyLayout(m, next);
       m.updatedAt = now;
       return;
@@ -477,6 +508,24 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       if (!d || d.kind !== 'door') fail('Porta não encontrada.');
       if (!(typeof a.state === 'string' && a.state in DOOR_STATES)) fail('Estado de porta inválido.');
       d!.state = a.state;
+      m.updatedAt = now;
+      return;
+    }
+
+    case 'map/roof': {
+      const m = getMap(s, a.mapId);
+      const rf = getRoof(m, a.roofId);
+      if (a.label !== undefined) rf.label = str(a.label, MAX_ROOF_LABEL, 'Nome');
+      if (a.open !== undefined) rf.open = !!a.open;
+      m.updatedAt = now;
+      return rf.id;
+    }
+
+    case 'map/roofRemove': {
+      const m = getMap(s, a.mapId);
+      if (!Array.isArray(a.roofIds) || !a.roofIds.length) fail('Nada para remover.');
+      for (const id of a.roofIds) delete m.roofs![getRoof(m, id).id];
+      if (!Object.keys(m.roofs ?? {}).length) delete m.roofs;
       m.updatedAt = now;
       return;
     }

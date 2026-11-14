@@ -2201,6 +2201,22 @@ button.camp-pill { min-height: 36px; }
 .map-shade-3 { fill: rgba(5, 4, 3, 0.16); }
 /* Céu aberto no editor: hachura azulada leve. */
 .map-sky { fill: rgba(122, 170, 214, 0.1); }
+/* Telhado: para o jogador, telhas cobrindo o interior; para o mestre, um tom e o contorno tracejado. */
+.map-roof-tile { fill: #5b3a2b; }
+.map-roof-row { stroke: #43291e; stroke-width: 0.04; }
+.map-roof-tint { fill: rgba(176, 104, 70, 0.16); }
+.map-roof-outline { fill: none; stroke: rgba(214, 150, 108, 0.75); stroke-width: 0.06; stroke-dasharray: 0.16 0.1; }
+.map-roof-gm.open .map-roof-tint { fill: none; }
+.map-roof-gm.open .map-roof-outline { stroke: rgba(214, 150, 108, 0.4); }
+.map-roof-label {
+  position: absolute; transform: translate(-50%, -50%); pointer-events: none; z-index: 2;
+  padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1.25; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(30, 20, 14, 0.82); color: #f0dcc0; border: 1px solid rgba(214, 150, 108, 0.45);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.map-roof-label.gm { background: rgba(30, 20, 14, 0.62); opacity: 0.9; }
+.map-roof-label.open { opacity: 0.55; font-style: italic; }
 /* Janela: vidro estreito na parede. */
 .map-window-pane { fill: #3d5568; stroke: #a9c6dc; stroke-width: 0.035; }
 .map-window-sill { stroke: #d6e6f2; stroke-width: 0.03; }

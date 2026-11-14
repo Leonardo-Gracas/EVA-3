@@ -63,7 +63,16 @@ export const BUILDING_KINDS: Record<BuildingKind, { one: string; many: string }>
   moradia: { one: 'casa', many: 'casas' },
 };
 
-export interface GenBuilding extends Rect { kind: BuildingKind }
+export interface GenBuilding extends Rect {
+  kind: BuildingKind;
+  /** Nome no telhado ("Ferreiro", "Casa 3"). */
+  label: string;
+  /** Sobrado: tem um andar de cima (no mapa do 1º andar). */
+  upper?: boolean;
+}
+
+/** Telhado de uma construção: os quadrados construídos dela e o nome. */
+export interface GenRoof { label: string; cells: number[] }
 
 export interface GenRoom extends Rect { kind: RoomKind; dir?: Dir }
 
@@ -84,8 +93,13 @@ export interface GenBase {
   front?: { edges: EdgeRef[]; dir: Dir };
   /** Exterior com rua: quadrados das calçadas (postes e caixotes). */
   sidewalk?: number[];
-  /** Vilarejo: construções, o poço da praça, o riacho e as hortas (para a mobília de fora). */
-  village?: { buildings: GenBuilding[]; well: number | null; water: number[]; gardens: Rect[] };
+  /**
+   * Vilarejo: construções, o poço da praça, o riacho e as hortas (para a mobília de fora).
+   * `upper`: o andar de cima dos sobrados (sem nada do lado de fora).
+   */
+  village?: { buildings: GenBuilding[]; well: number | null; water: number[]; gardens: Rect[]; upper?: boolean };
+  /** Telhados das construções (vilarejo). */
+  roofs?: GenRoof[];
 }
 
 /** Lado do retângulo em que fica a linha `e` (para onde ela dá, saindo do retângulo). */

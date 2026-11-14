@@ -1,5 +1,5 @@
 // Leitura e escrita das strings do mapa: terreno por quadrado e paredes nas linhas.
-import type { Ambient, BattleMap, EdgeRef, MapLayout, MapObject, Terrain, VisionMode } from './types';
+import type { Ambient, BattleMap, EdgeRef, MapLayout, MapObject, MapRoof, Terrain, VisionMode } from './types';
 import { AMBIENTS, MAP_LIMITS, TERRAIN_CHAR } from './types';
 
 const CHAR_TERRAIN: Record<string, Terrain> = Object.fromEntries(
@@ -119,7 +119,37 @@ export function fixMap(m: BattleMap): BattleMap {
   }
   const f = m.floor as Partial<NonNullable<BattleMap['floor']>> | undefined;
   if (f !== undefined && !(typeof f?.group === 'string' && typeof f.level === 'number' && typeof f.label === 'string')) delete m.floor;
+  const roofs = cleanRoofs(m.roofs, m.w, m.h);
+  if (roofs) m.roofs = roofs;
+  else delete m.roofs;
   return m;
+}
+
+/** Nome do telhado e quantos quadrados ele cobre, no máximo. */
+export const MAX_ROOF_LABEL = 40;
+
+/**
+ * Telhados válidos: quadrados dentro do mapa, sem repetir (o quadrado fica com o primeiro
+ * telhado que o cobre). Telhado sem quadrado sai; sem nenhum, undefined.
+ */
+export function cleanRoofs(raw: unknown, w: number, h: number): Record<string, MapRoof> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const taken = new Uint8Array(w * h);
+  const out: Record<string, MapRoof> = {};
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    const r = (v ?? {}) as Partial<MapRoof>;
+    const id = typeof r.id === 'string' && r.id ? r.id : key;
+    if (out[id] || !Array.isArray(r.cells)) continue;
+    const cells: number[] = [];
+    for (const i of r.cells) {
+      if (!Number.isInteger(i) || i < 0 || i >= w * h || taken[i]) continue;
+      taken[i] = 1;
+      cells.push(i);
+    }
+    if (!cells.length) continue;
+    out[id] = { id, label: typeof r.label === 'string' ? r.label.slice(0, MAX_ROOF_LABEL) : '', cells, open: !!r.open };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Modo de visão do mapa (mapas antigos guardavam só `dark`). */

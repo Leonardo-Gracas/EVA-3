@@ -11,14 +11,14 @@ import { generateHouse } from './house';
 import { type GenLight, illuminate } from './lights';
 import { generateOutdoor } from './outdoor';
 import { cleanMapParams } from './params';
-import { BUILDING_KINDS, type BuildingKind, type GenBase, type GenBuilding, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
+import { BUILDING_KINDS, type BuildingKind, type GenBase, type GenBuilding, type GenRoof, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
 import { generateTemple } from './temple';
 import { generateVillage } from './village';
 
 export { cleanMapParams, GEN_MIN_SIDE, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize, PRESET_DEFAULTS } from './params';
 export type { GenProp } from './furnish';
 export type { GenLight } from './lights';
-export { BUILDING_KINDS, type BuildingKind, type GenBuilding, ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
+export { BUILDING_KINDS, type BuildingKind, type GenBuilding, type GenRoof, ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
 
 export interface GeneratedMap extends GenBase {
   params: MapGenParams;
@@ -29,6 +29,8 @@ export interface GeneratedMap extends GenBase {
   outside?: string;
   /** Vilarejo: as construções (ofícios e casas). */
   buildings?: GenBuilding[];
+  /** Vilarejo: telhados das construções, com o nome. */
+  roofs?: GenRoof[];
 }
 
 /** Teto de objetos do mapa (portas + móveis + janelas + luzes) é 500; sobra folga para o mestre. */
@@ -61,6 +63,7 @@ function dress(base: GenBase, p: MapGenParams, seed: number, opts: FurnishOption
     ...(base.fitted !== undefined ? { fitted: base.fitted } : {}),
     ...(base.sidewalk ? { sidewalk: base.sidewalk } : {}),
     ...(base.village ? { buildings: base.village.buildings } : {}),
+    ...(base.roofs ? { roofs: base.roofs } : {}),
   };
   if (opts.upper) {
     // As janelas foram postas com o quintal aberto; agora ele vira vazio (e segue céu aberto, para a luz entrar).
@@ -83,7 +86,8 @@ function baseFor(p: MapGenParams, seed: number): GenBase {
 /** Um andar só (o gerador do editor e a prévia do primeiro andar de uma masmorra). */
 export function generateMap(raw: Partial<MapGenParams>, seed: number): GeneratedMap {
   const p = cleanMapParams(raw);
-  return dress(baseFor(p, seed), p, seed);
+  // Vilarejo num mapa só: sem sobrados (o andar de cima não teria onde ficar).
+  return dress(baseFor(p.preset === 'village' ? { ...p, floors: 1 } : p, seed), p, seed);
 }
 
 export interface GeneratedFloor extends GeneratedMap {
@@ -108,6 +112,15 @@ const floorSeed = (seed: number, level: number, attempt = 0) =>
 export function generateFloors(raw: Partial<MapGenParams>, seed: number): GeneratedFloor[] {
   const p = cleanMapParams(raw);
   const n = p.floors ?? 1;
+  if (p.preset === 'village' && n > 1) {
+    // Vilarejo: o andar de cima só existe se algum sobrado coube (e só com os sobrados).
+    const v = generateVillage(p, seed);
+    if (!v.upper) return [{ ...dress(v, p, seed), label: '', stairs: [] }];
+    return [
+      { ...dress(v, p, seed), label: floorLabel(p.preset, 0), stairs: v.stairs },
+      { ...dress(v.upper, p, floorSeed(seed, 1), { upper: true }), label: floorLabel(p.preset, 1), stairs: [...v.stairs] },
+    ];
+  }
   if (n <= 1) return [{ ...generateMap(p, seed), label: '', stairs: [] }];
   const r = mulberry32((seed ^ 0x1b873593) >>> 0);
   const bases: GenBase[] = [];

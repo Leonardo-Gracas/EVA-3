@@ -41,10 +41,14 @@ export function newMapSize(preset: MapPreset, model: HouseModel, exterior: Exter
 /** Tipos com um prédio no meio e o exterior escolhido em volta. */
 export const hasExterior = (preset: MapPreset) => preset === 'house' || preset === 'temple';
 
-/** Quantos andares o tipo aceita: masmorra (níveis) e casas com mais de um cômodo. */
+/**
+ * Quantos andares o tipo aceita: masmorra (níveis) e casas com mais de um cômodo. No vilarejo,
+ * 2 quer dizer "aceita sobrados": o andar de cima só sai se algum couber.
+ */
 export function maxFloors(preset: MapPreset, model: HouseModel): number {
   if (preset === 'dungeon') return MAX_FLOORS;
   if (preset === 'house') return model === 'casebre' ? 1 : MAX_FLOORS;
+  if (preset === 'village') return 2;
   return 1;
 }
 

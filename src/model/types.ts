@@ -488,6 +488,26 @@ export interface MapLight {
 export type MapObject = MapDoor | MapProp | MapWindow | MapLight;
 
 /**
+ * Telhado de uma construção: para os jogadores, o lado de dentro fica coberto, com o nome por cima.
+ * Quem tem o personagem lá dentro vê o interior; o mestre destelha para mostrar a todos.
+ */
+export interface MapRoof {
+  id: string;
+  label: string;
+  /** Quadrados cobertos, índices y*w+x. */
+  cells: number[];
+  /** Destelhado: o interior fica à vista de todos. */
+  open: boolean;
+}
+
+/** Telhado como o jogador recebe: só os que cobrem algo para ele. */
+export interface PlayerRoof {
+  id: string;
+  label: string;
+  cells: number[];
+}
+
+/**
  * Ficha (PJ/NPC), combatente da fila ou criatura solta no mapa (ameaça fora de combate:
  * `id` é o molde do livro e a instância fica em `MapToken.threat`).
  */
@@ -533,6 +553,8 @@ export interface BattleMap {
   ambient?: Ambient;
   /** Andar de um prédio gerado com vários andares, ligados por escadas nos mesmos quadrados. */
   floor?: MapFloor;
+  /** Telhados das construções (vilarejo): o interior coberto para os jogadores. */
+  roofs?: Record<string, MapRoof>;
   createdAt: number;
   updatedAt: number;
 }
@@ -1055,7 +1077,7 @@ export type GameAction =
   | MapAction;
 
 /** O desenho do mapa sem tokens: o que o editor desfaz e refaz. */
-export type MapLayout = Pick<BattleMap, 'w' | 'h' | 'cells' | 'wallsH' | 'wallsV' | 'objects' | 'outside'>;
+export type MapLayout = Pick<BattleMap, 'w' | 'h' | 'cells' | 'wallsH' | 'wallsV' | 'objects' | 'outside' | 'roofs'>;
 
 export type MapAction =
   /** walls: parede em volta de todo o piso. */
@@ -1077,6 +1099,9 @@ export type MapAction =
   | { type: 'map/objectUpsert'; mapId: string; object: MapObject }
   | { type: 'map/objectRemove'; mapId: string; objectIds: string[] }
   | { type: 'map/door'; mapId: string; objectId: string; state: DoorState }
+  /** Telhado: renomeia e/ou destelha (open) ou cobre. Campos ausentes não mudam. */
+  | { type: 'map/roof'; mapId: string; roofId: string; label?: string; open?: boolean }
+  | { type: 'map/roofRemove'; mapId: string; roofIds: string[] }
   /** Troca terreno, paredes e portas pelo resultado do gerador (mesma seed = mesmo mapa). */
   | { type: 'map/generate'; mapId: string; params: MapGenParams; seed: number }
   /** Desfazer/refazer do editor. */
@@ -1206,6 +1231,8 @@ export interface PlayerMap {
    * ('0' = visto no escuro, só por estar junto do personagem).
    */
   light?: string;
+  /** Telhados que cobrem o interior para este jogador. */
+  roofs?: PlayerRoof[];
 }
 
 export interface PlayerView {

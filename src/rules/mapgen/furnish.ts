@@ -609,7 +609,8 @@ function forest(f: Furnisher) {
  */
 function village(f: Furnisher, base: GenBase) {
   const v = base.village;
-  if (!v) return;
+  // O andar de cima dos sobrados não tem lado de fora (vira vazio no fim).
+  if (!v || v.upper) return;
   const { w, h, zone, r } = f;
   const N = w * h;
   const water = new Uint8Array(N);

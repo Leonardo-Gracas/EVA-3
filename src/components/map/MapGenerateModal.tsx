@@ -100,7 +100,8 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
 
   const preset: MapPreset = KINDS[kind].preset;
   const floorMax = fixed ? 1 : maxFloors(preset, model);
-  const floors = Math.min(floorsWanted, floorMax);
+  // Vilarejo: os sobrados saem sozinhos (de vez em quando); o andar de cima só existe se algum couber.
+  const floors = preset === 'village' ? floorMax : Math.min(floorsWanted, floorMax);
   const params = useMemo(() => {
     const n = (k: NumKey) => parseInt(d[k], 10);
     return cleanMapParams({
@@ -218,7 +219,7 @@ export function MapGenOptions({ g }: { g: MapGen }) {
       </div>
       <div className="tiny muted">{hint}</div>
 
-      {(building || g.floorMax > 1 || hasExterior(preset)) && kind !== 'blank' && (
+      {(building || (g.floorMax > 1 && preset !== 'village') || hasExterior(preset)) && kind !== 'blank' && (
         <div className="row-wrap gen-pickers">
           {building && (
             <div className="field small secondary">
@@ -254,7 +255,7 @@ export function MapGenOptions({ g }: { g: MapGen }) {
               </div>
             </div>
           )}
-          {g.floorMax > 1 && (
+          {g.floorMax > 1 && preset !== 'village' && (
             <div className="field small secondary">
               <span title={kind === 'dungeon' ? 'Níveis da masmorra, um embaixo do outro, ligados por escadas'
                 : kind === 'inn' ? 'Andares da hospedagem, com quartos em todos, ligados por uma escada no cômodo da entrada'
@@ -333,6 +334,7 @@ export function MapGenPreview({ g, height = 'min(46vh, 460px)' }: { g: MapGen; h
     ...floor.windows.map((edge, i) => ({ id: `j${i}`, kind: 'window' as const, edge, hidden: false })),
     ...floor.lights.map((l, i) => ({ id: `l${i}`, kind: 'light' as const, ...l, lit: true, hidden: false })),
   ] : []), [floor]);
+  const roofs = useMemo(() => floor?.roofs?.map((rf, i) => ({ id: `t${i}`, ...rf })), [floor]);
   if (kind === 'blank' || !floor) return null;
 
   const n = floor.buildings ? floor.buildings.length : floor.rooms.length;
@@ -363,9 +365,11 @@ export function MapGenPreview({ g, height = 'min(46vh, 460px)' }: { g: MapGen; h
         {n} {unit[n === 1 ? 0 : 1]}{short}{kinds ? `: ${kinds}` : ''} · {plural(floor.doors.length, 'porta', 'portas')}
         {params.furnish ? ` · ${plural(floor.props.length, 'móvel', 'móveis')}` : ''}
         {params.lights ? ` · ${plural(floor.windows.length, 'janela', 'janelas')} · ${plural(floor.lights.length, 'luz', 'luzes')}` : ''}
-        {result.length > 1 ? ` · escada para ${result.length === 2 ? 'o outro andar' : 'os andares vizinhos'}` : ''}
+        {kind === 'village' && result.length > 1
+          ? ` · ${plural(result[0].buildings?.filter((b) => b.upper).length ?? 0, 'sobrado', 'sobrados')} (o andar de cima vira outro mapa)`
+          : result.length > 1 ? ` · escada para ${result.length === 2 ? 'o outro andar' : 'os andares vizinhos'}` : ''}
       </div>
-      <MapCanvas grid={floor.layout} objects={objects} tokens={[]} fitKey={`gen:${kind}:${g.model}:${g.seed}:${params.w}x${params.h}:${g.view}`}
+      <MapCanvas grid={floor.layout} objects={objects} tokens={[]} roofs={roofs} fitKey={`gen:${kind}:${g.model}:${g.seed}:${params.w}x${params.h}:${g.view}`}
         height={height} compact touch="pan" />
     </div>
   );

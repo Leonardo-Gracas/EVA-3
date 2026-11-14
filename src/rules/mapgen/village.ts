@@ -9,10 +9,11 @@ import type { EdgeRef, HouseModel, HouseSize, MapGenParams } from '../../model/t
 import { TERRAIN_CHAR } from '../../model/types';
 import { blankLayout, setWalls } from '../../model/map';
 import { mulberry32, randInt, type SeededRng } from '../random';
+import { putStairs, stairSpot } from './floors';
 import { generateHouse } from './house';
 import {
-  type BuildingKind, type Dir, type GenBase, type GenBuilding, type GenRoom, longest, passage, pick, pickSpan, Plan, type Rect,
-  type RoomKind, ZONE,
+  BUILDING_KINDS, type BuildingKind, type Dir, type GenBase, type GenBuilding, type GenRoof, type GenRoom, longest, passage, pick, pickSpan,
+  Plan, type Rect, type RoomKind, ZONE,
 } from './shared';
 
 const STEP: Record<Dir, [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
@@ -40,29 +41,52 @@ interface Piece {
   /** Linhas da porta (ou do vão) da frente e para onde ela dá. */
   front: EdgeRef[];
   dir: Dir;
+  /** Quadrados de escada (sobrado), índices y*W+x. */
+  stairs: number[];
 }
 
-/** Recorta a construção de um mapa gerado (só o que é cômodo ou corredor). */
-function cropPiece(base: GenBase): Piece | null {
-  if (!base.front) return null;
-  const { w, h, wallsH, wallsV } = base.layout;
-  const isBuilt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h
-    && (base.zone[y * w + x] === ZONE.room || base.zone[y * w + x] === ZONE.corridor);
+const isBuiltZone = (z: number) => z === ZONE.room || z === ZONE.corridor;
+
+/** Retângulo que contém o que é cômodo ou corredor. */
+function builtBox(base: GenBase): Rect | null {
+  const { w, h } = base.layout;
   let x0 = w;
   let y0 = h;
   let x1 = -1;
   let y1 = -1;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (!isBuilt(x, y)) continue;
+      if (!isBuiltZone(base.zone[y * w + x])) continue;
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
   }
-  if (x1 < 0) return null;
-  const W = x1 - x0 + 1;
-  const H = y1 - y0 + 1;
+  return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/**
+ * Recorta a construção de um mapa gerado (só o que é cômodo ou corredor). O andar de cima de um
+ * sobrado usa o recorte e a frente do térreo (`box`, `front`), para os dois andares coincidirem.
+ */
+function cropPiece(base: GenBase, box: Rect | null = builtBox(base), front = base.front): Piece | null {
+  if (!front || !box) return null;
+  const { w, h, wallsH, wallsV } = base.layout;
+  const isBuilt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && isBuiltZone(base.zone[y * w + x]);
+  const x0 = box.x;
+  const y0 = box.y;
+  const x1 = box.x + box.w - 1;
+  const y1 = box.y + box.h - 1;
+  const W = box.w;
+  const H = box.h;
   const built = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isBuilt(x + x0, y + y0)) built[y * W + x] = base.zone[(y + y0) * w + x + x0];
+  const stairs: number[] = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!isBuilt(x + x0, y + y0)) continue;
+      const gi = (y + y0) * w + x + x0;
+      built[y * W + x] = base.zone[gi];
+      if (base.layout.cells[gi] === TERRAIN_CHAR.stairs) stairs.push(y * W + x);
+    }
+  }
   const walls: EdgeRef[] = [];
   for (let y = y0; y <= y1 + 1; y++) {
     for (let x = x0; x <= x1; x++) {
@@ -79,8 +103,9 @@ function cropPiece(base: GenBase): Piece | null {
     W, H, built, walls,
     doors: base.doors.map(move),
     rooms: base.rooms.map((rm) => ({ ...rm, x: rm.x - x0, y: rm.y - y0 })),
-    front: base.front.edges.map(move),
-    dir: base.front.dir,
+    front: front.edges.map(move),
+    dir: front.dir,
+    stairs,
   };
 }
 
@@ -135,8 +160,12 @@ function turnPiece(pc: Piece, t: Turn): Piece {
     if (rm.dir) out.dir = turnDir(t, rm.dir);
     return out;
   });
+  const stairs = pc.stairs.map((i) => {
+    const [nx, ny] = turnCell(t, W, H, i % W, Math.floor(i / W));
+    return ny * W2 + nx;
+  });
   return {
-    W: W2, H: H2, built, walls: pc.walls.map(edge), doors: pc.doors.map(edge), rooms, front: pc.front.map(edge), dir: turnDir(t, pc.dir),
+    W: W2, H: H2, built, walls: pc.walls.map(edge), doors: pc.doors.map(edge), rooms, front: pc.front.map(edge), dir: turnDir(t, pc.dir), stairs,
   };
 }
 
@@ -215,16 +244,34 @@ function tradePiece(kind: Trade, p: MapGenParams, r: SeededRng): Piece {
   return cropPiece({ layout, rooms, doors, zone, front: { edges: span, dir: 's' } })!;
 }
 
-/** Casa de morar: casebre ou casa térrea pequena, do gerador de casas. */
-function housePiece(p: MapGenParams, seed: number, r: SeededRng): Piece | null {
+/** Chance de uma casa (não casebre) ser sobrado, quando o vilarejo aceita andar de cima. */
+const UPPER_CHANCE = 0.2;
+
+/**
+ * Casa de morar: casebre ou casa pequena, do gerador de casas. Com `upper`, de vez em quando a
+ * casa é um sobrado: o térreo e o andar de cima, recortados juntos, com a escada nos mesmos quadrados.
+ */
+function housePiece(p: MapGenParams, seed: number, r: SeededRng, upper: boolean): { ground: Piece; upper?: Piece } | null {
   const model: HouseModel = r() < 0.55 ? 'casebre' : 'casa';
   const size: HouseSize = model === 'casa' && r() < 0.3 ? 'normal' : 'compacto';
   const rooms = model === 'casebre' ? randInt(r, 0, 2) : randInt(r, 1, 3);
   const [w, h] = model === 'casebre' ? [16, 14] : [30, 24];
-  const base = generateHouse({
-    ...p, preset: 'house', model, size, shape: 'random', rooms, w, h, corridor: 1, floors: 1, exterior: 'quintal',
-  }, seed);
-  return cropPiece(base);
+  const hp: MapGenParams = { ...p, preset: 'house', model, size, shape: 'random', rooms, w, h, corridor: 1, floors: 1, exterior: 'quintal' };
+  if (upper && model === 'casa' && r() < UPPER_CHANCE) {
+    const two = { ...hp, rooms: Math.max(2, rooms), floors: 2 };
+    const g = generateHouse(two, seed, 0);
+    const u = generateHouse(two, seed, 1);
+    const spot = stairSpot([g, u], r, g.rooms[g.entry]);
+    if (spot) {
+      putStairs([g, u], spot);
+      const box = builtBox(g);
+      const ground = cropPiece(g, box);
+      const top = cropPiece(u, box, g.front);
+      if (ground && top) return { ground, upper: top };
+    }
+  }
+  const ground = cropPiece(generateHouse(hp, seed));
+  return ground ? { ground } : null;
 }
 
 // ── Caminho mais barato (trilhas) ───────────────────────────────────────────
@@ -292,10 +339,19 @@ function cheapest(w: number, h: number, start: number, goal: Uint8Array, cost: (
 /** Ordem dos ofícios: com poucas construções, ficam só os primeiros (sorteados). */
 const TRADE_LIST: Trade[] = ['ferreiro', 'padeiro', 'mercador', 'curandeiro'];
 
-export function generateVillage(p: MapGenParams, seed: number): GenBase {
+/** O vilarejo e, se algum sobrado coube, o andar de cima (só os sobrados), com as escadas nos mesmos quadrados. */
+export interface VillageBase extends GenBase {
+  upper?: GenBase;
+  /** Quadrados das escadas dos sobrados (iguais nos dois andares). */
+  stairs: number[];
+}
+
+/** `p.floors` > 1: aceita sobrados (de vez em quando). */
+export function generateVillage(p: MapGenParams, seed: number): VillageBase {
   const r = mulberry32(seed);
   const { w, h } = p;
   const N = w * h;
+  const allowUpper = (p.floors ?? 1) > 1;
   const inb = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h;
   const path = new Uint8Array(N);
   const water = new Uint8Array(N);
@@ -307,7 +363,17 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
   const rooms: GenRoom[] = [];
   const doors: EdgeRef[] = [];
   const buildings: GenBuilding[] = [];
+  /** Quadrados construídos de cada construção (o telhado dela). */
+  const roofCells: number[][] = [];
   const gardens: Rect[] = [];
+  const stairCells: number[] = [];
+  // Andar de cima dos sobrados.
+  const upBuilt = new Uint8Array(N);
+  const upLayout = blankLayout(w, h, 'floor');
+  const upRooms: GenRoom[] = [];
+  const upDoors: EdgeRef[] = [];
+  /** Índice (em `buildings`) de cada sobrado. */
+  const upOf: number[] = [];
 
   // A estrada principal corre no sentido do lado maior. a = ao longo, c = de través.
   const across = w >= h;
@@ -438,7 +504,7 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
     return true;
   };
 
-  const stamp = (pc: Piece, ox: number, oy: number, kind: BuildingKind, spacing: number) => {
+  const stamp = (pc: Piece, ox: number, oy: number, kind: BuildingKind, spacing: number, top?: Piece) => {
     const cells: number[] = [];
     for (let y = 0; y < pc.H; y++) {
       for (let x = 0; x < pc.W; x++) {
@@ -450,6 +516,8 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
         cells.push(i);
       }
     }
+    const at = (k: number, W: number) => (Math.floor(k / W) + oy) * w + (k % W) + ox;
+    for (const k of pc.stairs) stairCells.push(at(k, pc.W));
     for (const i of cells) {
       const x = i % w;
       const y = (i - x) / w;
@@ -461,7 +529,15 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
     setWalls(layout, pc.walls.map(move), true);
     doors.push(...pc.doors.map(move));
     for (const rm of pc.rooms) rooms.push({ ...rm, x: rm.x + ox, y: rm.y + oy });
-    buildings.push({ kind, x: ox, y: oy, w: pc.W, h: pc.H });
+    buildings.push({ kind, label: '', x: ox, y: oy, w: pc.W, h: pc.H, ...(top ? { upper: true } : {}) });
+    roofCells.push(cells);
+    if (!top) return;
+    // Sobrado: o andar de cima, no mesmo lugar (mesmo recorte e mesmo giro).
+    for (let k = 0; k < top.W * top.H; k++) if (top.built[k]) upBuilt[at(k, top.W)] = top.built[k];
+    setWalls(upLayout, top.walls.map(move), true);
+    upDoors.push(...top.doors.map(move));
+    for (const rm of top.rooms) upRooms.push({ ...rm, x: rm.x + ox, y: rm.y + oy });
+    upOf.push(buildings.length - 1);
   };
 
   const markPath = (i: number) => { path[i] = 1; water[i] = 0; rough[i] = 0; };
@@ -471,13 +547,14 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
     const roads: number[] = [];
     for (let i = 0; i < N; i++) if (path[i]) roads.push(i);
     if (!roads.length) return null;
-    let best: { pc: Piece; ox: number; oy: number; walk: number[]; score: number } | null = null;
+    let best: { pc: Piece; turn: Turn; ox: number; oy: number; walk: number[]; score: number } | null = null;
     for (let t = 0; t < 260; t++) {
       const road = pick(r, roads);
       const d = pick(r, DIRS);
       const flip = r() < 0.5;
       const rot = [0, 1, 2, 3].find((k) => turnDir({ rot: k, flip }, pc0.dir) === d)!;
-      const pc = turnPiece(pc0, { rot, flip });
+      const turn = { rot, flip };
+      const pc = turnPiece(pc0, turn);
       const [dx, dy] = STEP[d];
       const s = randInt(r, 0, trade ? 1 : 2);
       const rx = road % w;
@@ -505,19 +582,20 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
       const cx = ox + pc.W / 2;
       const cy = oy + pc.H / 2;
       const score = fromSquare(cx, cy) * (trade ? 1 : 0.4) + r() * (trade ? 3 : 10);
-      if (!best || score < best.score) best = { pc, ox, oy, walk, score };
+      if (!best || score < best.score) best = { pc, turn, ox, oy, walk, score };
     }
     return best;
   };
 
   /** Afastada da estrada, ligada a ela por uma trilha. */
   const offRoad = (pc0: Piece) => {
-    let best: { pc: Piece; ox: number; oy: number; trail: number[]; score: number } | null = null;
+    let best: { pc: Piece; turn: Turn; ox: number; oy: number; trail: number[]; score: number } | null = null;
     const noise = new Float64Array(N);
     for (let i = 0; i < N; i++) noise[i] = r() * 1.5;
     for (let t = 0; t < 40; t++) {
       const flip = r() < 0.5;
-      const pc = turnPiece(pc0, { rot: randInt(r, 0, 3), flip });
+      const turn = { rot: randInt(r, 0, 3), flip };
+      const pc = turnPiece(pc0, turn);
       const ox = randInt(r, 1, Math.max(1, w - pc.W - 1));
       const oy = randInt(r, 1, Math.max(1, h - pc.H - 1));
       if (!fits(pc, ox, oy)) continue;
@@ -534,7 +612,7 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
       const trail = cheapest(w, h, start, path, (i) => (built[i] || mine.has(i) || i === wellI ? -1 : 1 + noise[i] + (water[i] ? 4 : 0) + (reserved[i] ? 1.5 : 0)));
       if (!trail || trail.length < 3 || trail.length > 16) continue;
       const score = fromSquare(ox + pc.W / 2, oy + pc.H / 2) * 0.5 + trail.length * 0.5 + r() * 8;
-      if (!best || score < best.score) best = { pc, ox, oy, trail, score };
+      if (!best || score < best.score) best = { pc, turn, ox, oy, trail, score };
     }
     return best;
   };
@@ -570,19 +648,21 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
     const trade = kind !== 'moradia';
     let placed = false;
     for (let tries = 0; tries < 3 && !placed; tries++) {
-      const pc = trade ? tradePiece(kind, p, br) : housePiece(p, (sub + tries * 0x632be5ab) >>> 0, br);
+      const house = trade ? null : housePiece(p, (sub + tries * 0x632be5ab) >>> 0, br, allowUpper);
+      const pc = trade ? tradePiece(kind, p, br) : house?.ground;
       if (!pc) continue;
+      const top = (t: Turn) => (house?.upper ? turnPiece(house.upper, t) : undefined);
       const spacing = trade ? 1 : r() < 0.5 ? 1 : 2;
       const far = !trade && r() < 0.35 ? offRoad(pc) : null;
       if (far) {
-        stamp(far.pc, far.ox, far.oy, kind, spacing);
+        stamp(far.pc, far.ox, far.oy, kind, spacing, top(far.turn));
         for (const i of far.trail) markPath(i);
         placed = true;
         continue;
       }
       const near = byRoad(pc, trade) ?? (trade ? null : offRoad(pc));
       if (!near) continue;
-      stamp(near.pc, near.ox, near.oy, kind, spacing);
+      stamp(near.pc, near.ox, near.oy, kind, spacing, top(near.turn));
       for (const i of 'walk' in near ? near.walk : near.trail) markPath(i);
       placed = true;
     }
@@ -597,7 +677,31 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
     if (path[i]) { cells[i] = TERRAIN_CHAR.road; zone[i] = ZONE.path; continue; }
     if (water[i] || rough[i] || reserved[i] === 2) cells[i] = TERRAIN_CHAR.difficult;
   }
+  for (const i of stairCells) cells[i] = TERRAIN_CHAR.stairs;
   layout.cells = cells.join('');
+
+  // Nomes nos telhados: o ofício; as casas, numeradas de cima para baixo e da esquerda para a direita.
+  const homes = buildings.map((b, k) => ({ b, k })).filter(({ b }) => b.kind === 'moradia')
+    .sort((a, c) => a.b.y - c.b.y || a.b.x - c.b.x);
+  homes.forEach(({ b }, n) => { b.label = `Casa ${n + 1}`; });
+  for (const b of buildings) if (b.kind !== 'moradia') b.label = BUILDING_KINDS[b.kind].one.replace(/^./, (c) => c.toUpperCase());
+  const roofs: GenRoof[] = buildings.map((b, k) => ({ label: b.label, cells: roofCells[k] }));
+
+  // Andar de cima: só os sobrados; o resto é "quintal", que vira vazio no fim (como no andar de cima da casa).
+  let upper: GenBase | undefined;
+  if (upOf.length) {
+    const ucells: string[] = Array(N).fill(TERRAIN_CHAR.floor);
+    for (const i of stairCells) ucells[i] = TERRAIN_CHAR.stairs;
+    upLayout.cells = ucells.join('');
+    const uzone = new Uint8Array(N).fill(ZONE.outside);
+    for (let i = 0; i < N; i++) if (upBuilt[i]) uzone[i] = upBuilt[i];
+    const upBuildings = upOf.map((k) => buildings[k]);
+    upper = {
+      layout: upLayout, rooms: upRooms, doors: upDoors, zone: uzone,
+      village: { buildings: upBuildings, well: null, water: [], gardens: [], upper: true },
+      roofs: upOf.map((k) => ({ label: buildings[k].label, cells: roofCells[k].filter((i) => upBuilt[i]) })),
+    };
+  }
 
   // Postes de lampião: na beira da estrada perto da praça.
   const sidewalk: number[] = [];
@@ -617,5 +721,8 @@ export function generateVillage(p: MapGenParams, seed: number): GenBase {
     layout, rooms, doors, zone,
     ...(sidewalk.length ? { sidewalk } : {}),
     village: { buildings, well: wellI >= 0 ? wellI : null, water: waterCells, gardens },
+    roofs,
+    stairs: upper ? stairCells : [],
+    ...(upper ? { upper } : {}),
   };
 }

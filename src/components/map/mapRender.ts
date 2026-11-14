@@ -125,3 +125,63 @@ export function lineCells(ax: number, ay: number, bx: number, by: number): Array
   }
   return out;
 }
+
+export interface RoofShape {
+  id: string;
+  label: string;
+  open: boolean;
+  /** Quadrados cobertos. */
+  fill: string;
+  /** Contorno (as linhas entre o telhado e o que não é dele). */
+  outline: string;
+  /** Onde fica o nome (centro, em quadrados) e a largura que ele pode ocupar (em quadrados). */
+  at: { x: number; y: number; width: number };
+}
+
+/**
+ * Desenho dos telhados: preenchimento, contorno e lugar do nome (no meio da construção; numa
+ * planta em L, no quadrado do telhado mais perto do meio). `idx`: telhado de cada quadrado (-1 sem).
+ */
+export function roofShapes(
+  w: number, h: number, roofs: ReadonlyArray<{ id: string; label: string; cells: number[]; open?: boolean }>,
+): { idx: Int16Array; shapes: RoofShape[] } {
+  const idx = new Int16Array(w * h).fill(-1);
+  roofs.forEach((rf, k) => { for (const i of rf.cells) if (i >= 0 && i < w * h) idx[i] = k; });
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : idx[y * w + x]);
+  const shapes = roofs.map((rf, k): RoofShape => {
+    const own = rf.cells.filter((i) => i >= 0 && i < w * h && idx[i] === k);
+    let d = '';
+    let sx = 0;
+    let sy = 0;
+    let x0 = w;
+    let x1 = 0;
+    for (const i of own) {
+      const x = i % w;
+      const y = (i - x) / w;
+      sx += x + 0.5;
+      sy += y + 0.5;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x + 1);
+      if (at(x, y - 1) !== k) d += `M${x} ${y}h1`;
+      if (at(x, y + 1) !== k) d += `M${x} ${y + 1}h1`;
+      if (at(x - 1, y) !== k) d += `M${x} ${y}v1`;
+      if (at(x + 1, y) !== k) d += `M${x + 1} ${y}v1`;
+    }
+    const n = Math.max(1, own.length);
+    let cx = sx / n;
+    let cy = sy / n;
+    if (own.length && at(Math.floor(cx), Math.floor(cy)) !== k) {
+      const best = own.reduce((b, i) => {
+        const dd = ((i % w) + 0.5 - cx) ** 2 + (Math.floor(i / w) + 0.5 - cy) ** 2;
+        return dd < b.d ? { i, d: dd } : b;
+      }, { i: own[0], d: Infinity }).i;
+      cx = (best % w) + 0.5;
+      cy = Math.floor(best / w) + 0.5;
+    }
+    return {
+      id: rf.id, label: rf.label, open: !!rf.open, fill: own.length ? cellsPath(own, w) : '', outline: d,
+      at: { x: cx, y: cy, width: Math.max(1, x1 - x0) },
+    };
+  });
+  return { idx, shapes };
+}

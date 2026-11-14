@@ -2,19 +2,19 @@
 // redimensionar, com desfazer. Mesa: tokens, alcance e movimento sem limite.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AppWindow, ArrowDown, ArrowLeft, ArrowUp, Armchair, BrickWall, Check, Cloud, CloudSun, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Flame, Footprints, Hand, Hourglass,
+  AppWindow, ArrowDown, ArrowLeft, ArrowUp, Armchair, BrickWall, Check, Cloud, CloudSun, DoorClosed, DoorOpen, Eraser, Eye, EyeOff, Flame, Footprints, Hand, Home, Hourglass,
   Layers, Lightbulb, LightbulbOff, Link2, Link2Off, Lock, Moon, MoonStar, MousePointer2, MousePointerClick, Paintbrush, Pencil, Redo2, Scaling, Sun, Sunset,
   Swords, Trash2, Undo2, Unlock, User, Users, Wand2, X,
 } from 'lucide-react';
 import type {
-  Ambient, BattleMap, DoorState, EdgeRef, GameAction, LightKind, LightMount, MapDoor, MapLayout, MapLight, MapObject, MapProp, MoveMode, PlaceRef,
+  Ambient, BattleMap, DoorState, EdgeRef, GameAction, LightKind, LightMount, MapDoor, MapLayout, MapLight, MapObject, MapProp, MapRoof, MoveMode, PlaceRef,
   PropEffect, PropKind, TableState, Terrain, VisionMode,
 } from '../../model/types';
 import {
   AMBIENTS, DOOR_STATES, LIGHT_KINDS, LIGHT_MOUNTS, MAP_CELL_M, MAP_LIMITS, MAX_LIGHT_RADIUS, MOVE_MODES, PROP_EFFECTS, PROP_KINDS, TERRAIN_CHAR,
   TERRAINS, VISION_MODES,
 } from '../../model/types';
-import { ambientOf, cellLabel, edgeKey, hasWall, objectCells, sameEdge, terrainAt, visionOf } from '../../model/map';
+import { ambientOf, cellLabel, edgeKey, hasWall, MAX_ROOF_LABEL, objectCells, sameEdge, terrainAt, visionOf } from '../../model/map';
 import { costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point } from '../../rules/grid';
 import { fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, sightOptions, tokenCombatant, visibleObjects } from '../../store/maps';
 import { fullLight, sightArea } from '../../rules/vision';
@@ -60,6 +60,7 @@ const TOOLS: Array<{ id: Tool; label: string; icon: JSX.Element; hint: string }>
 
 const layoutOf = (m: BattleMap): MapLayout => ({
   w: m.w, h: m.h, cells: m.cells, wallsH: m.wallsH, wallsV: m.wallsV, objects: m.objects, ...(m.outside ? { outside: m.outside } : {}),
+  ...(m.roofs ? { roofs: m.roofs } : {}),
 });
 
 /** Luz de fora: ícones na ordem dos botões. */
@@ -168,6 +169,7 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
   }, [act, map.id, undo]);
 
   const objects = useMemo(() => Object.values(map.objects), [map.objects]);
+  const roofs = useMemo(() => (map.roofs ? Object.values(map.roofs) : undefined), [map.roofs]);
   // Na mesa, todo token se pega com o dedo (o gesto que começa nele não rola o mapa).
   const tokens = useMemo(() => gmTokens(table, map).map((t) => (mode === 'play' ? { ...t, grab: true } : t)), [table, map, mode]);
   const selected = selObj ? map.objects[selObj] : undefined;
@@ -749,6 +751,7 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
             light={lightView} lightSoft
             showLights={mode === 'edit' || lightIcons}
             sky={sky}
+            roofs={roofs}
             path={path?.cells} pathLabel={pathLabel}
             ghosts={mode === 'play' ? ghosts : undefined}
             preview={preview}
@@ -847,6 +850,7 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
                 </div>
               )}
               {selected && <ObjectCard map={map} o={selected} onEdit={edit} onClose={() => setSelObj(null)} />}
+              {roofs && <RoofsCard map={map} roofs={roofs} onEdit={edit} />}
               <div className="card col">
                 <div className="card-title">Mapa</div>
                 <button className="btn btn-sm" onClick={() => setGen(true)}><Wand2 size={14} /> Gerar mapa</button>
@@ -902,6 +906,7 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
                 <FloorMove map={map} floors={floors} tokenId={selTok} onMoved={() => setSelTok(null)} />
               )}
               <OnMapList table={table} map={map} selTok={selTok} setSelTok={setSelTok} />
+              {roofs && <RoofsCard map={map} roofs={roofs} />}
             </>
           )}
         </aside>
@@ -1121,6 +1126,73 @@ function ObjectCard({ map, o, onEdit, onClose }: {
         </>
       )}
       <button className="btn btn-sm btn-danger" onClick={() => void remove()}><Trash2 size={13} /> Apagar</button>
+    </div>
+  );
+}
+
+/**
+ * Telhados das construções: para os jogadores, o interior fica coberto (com o nome por cima), menos
+ * para quem tem o personagem lá dentro. O mestre mostra o interior a todos ou cobre de novo.
+ * Com `onEdit` (modo Editar): renomear e apagar, com desfazer.
+ */
+function RoofsCard({ map, roofs, onEdit }: {
+  map: BattleMap; roofs: MapRoof[];
+  onEdit?: (label: string, actions: GameAction[]) => Promise<string | null>;
+}) {
+  const { act } = useAct();
+  const [names, setNames] = useState<Record<string, string>>({});
+  const sorted = [...roofs].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { numeric: true }));
+  const shown = roofs.filter((rf) => rf.open).length;
+  const setOpen = (ids: string[], open: boolean) => {
+    for (const roofId of ids) void act({ type: 'map/roof', mapId: map.id, roofId, open });
+  };
+  const rename = (rf: MapRoof) => {
+    const label = (names[rf.id] ?? rf.label).trim();
+    setNames(({ [rf.id]: _, ...rest }) => rest);
+    if (label !== rf.label) void onEdit?.('Renomear telhado', [{ type: 'map/roof', mapId: map.id, roofId: rf.id, label }]);
+  };
+  return (
+    <div className="card col">
+      <div className="row">
+        <div className="card-title" style={{ margin: 0 }}><Home size={14} /> Telhados</div>
+        <span className="spacer" />
+        <InfoTip label="Sobre os telhados" align="right">
+          Para os jogadores, o interior das construções fica coberto, com o nome por cima. Quem tem o personagem
+          lá dentro vê o interior; o olho mostra o interior a todos (ou cobre de novo).
+        </InfoTip>
+      </div>
+      <div className="row-wrap" style={{ gap: 6 }}>
+        <button className="btn btn-sm btn-ghost" disabled={shown === roofs.length} onClick={() => setOpen(roofs.filter((rf) => !rf.open).map((rf) => rf.id), true)}>
+          <Eye size={13} /> Mostrar todos
+        </button>
+        <button className="btn btn-sm btn-ghost" disabled={!shown} onClick={() => setOpen(roofs.filter((rf) => rf.open).map((rf) => rf.id), false)}>
+          <EyeOff size={13} /> Cobrir todos
+        </button>
+      </div>
+      <div className="col" style={{ gap: 4, maxHeight: 260, overflowY: 'auto' }}>
+        {sorted.map((rf) => (
+          <div key={rf.id} className="row" style={{ gap: 4 }}>
+            {onEdit ? (
+              <input className="input grow" style={{ padding: '4px 8px', minWidth: 0 }} value={names[rf.id] ?? rf.label} maxLength={MAX_ROOF_LABEL} placeholder="Sem nome"
+                aria-label="Nome da construção" onChange={(e) => setNames((x) => ({ ...x, [rf.id]: e.target.value }))}
+                onBlur={() => rename(rf)} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+            ) : (
+              <span className={`small grow${rf.open ? ' muted' : ''}`}>{rf.label || 'Sem nome'}</span>
+            )}
+            <button className={`btn btn-sm btn-icon${rf.open ? ' btn-gold-on' : ' btn-ghost'}`} onClick={() => setOpen([rf.id], !rf.open)}
+              title={rf.open ? 'Interior à mostra para todos. Clique para cobrir.' : 'Interior coberto para os jogadores. Clique para mostrar a todos.'}
+              aria-label={rf.open ? `Cobrir ${rf.label}` : `Mostrar o interior de ${rf.label}`}>
+              {rf.open ? <Eye size={13} /> : <EyeOff size={13} />}
+            </button>
+            {onEdit && (
+              <button className="btn btn-sm btn-ghost btn-icon" title="Tirar o telhado (o interior fica sempre à mostra)" aria-label={`Tirar o telhado de ${rf.label}`}
+                onClick={() => void onEdit('Tirar telhado', [{ type: 'map/roofRemove', mapId: map.id, roofIds: [rf.id] }])}>
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

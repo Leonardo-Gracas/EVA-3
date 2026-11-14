@@ -310,6 +310,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
         reach={reachCells} reachTone={current?.gate ?? 'free'}
         dim={m.dim}
         light={m.light}
+        roofs={m.roofs} roofCover
         showLights={lightIcons}
         path={shown?.cells} pathLabel={pathLabel}
         ghosts={ghosts}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellsPath, edgesBetween, gridPath, lineCells, nearestEdge, rectCells, runsPath, wallsPath } from './mapRender';
+import { cellsPath, edgesBetween, gridPath, lineCells, nearestEdge, rectCells, roofShapes, runsPath, wallsPath } from './mapRender';
 
 describe('desenho do mapa', () => {
   it('um retângulo por sequência de terreno na linha', () => {
@@ -39,5 +39,18 @@ describe('desenho do mapa', () => {
     expect(rectCells(-5, 0, 0, 0, 3, 3)).toEqual([0]);
     expect(lineCells(0, 0, 3, 0)).toEqual([[0, 0], [1, 0], [2, 0], [3, 0]]);
     expect(lineCells(1, 1, 1, 1)).toEqual([[1, 1]]);
+  });
+
+  it('telhado: contorno só na borda e o nome dentro da construção, mesmo em L', () => {
+    // Retângulo 2×1 em (1,1)-(2,1): o nome no meio.
+    const { idx, shapes } = roofShapes(4, 3, [{ id: 'a', label: 'Casa 1', cells: [5, 6] }]);
+    expect(idx[5]).toBe(0);
+    expect(idx[0]).toBe(-1);
+    expect(shapes[0].at).toEqual({ x: 2, y: 1.5, width: 2 });
+    expect(shapes[0].outline).toBe('M1 1h1M1 2h1M1 1v1M2 1h1M2 2h1M3 1v1');
+    // L: o meio cai fora do telhado; o nome vai para o quadrado do telhado mais perto.
+    const L = [0, 1, 2, 3, 4, 8, 12];
+    const { shapes: [l] } = roofShapes(4, 4, [{ id: 'l', label: 'Ferreiro', cells: L }]);
+    expect(L).toContain(Math.floor(l.at.y) * 4 + Math.floor(l.at.x));
   });
 });
