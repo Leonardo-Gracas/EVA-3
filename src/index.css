@@ -625,35 +625,14 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .cat-opt.on { color: var(--text-primary); border-color: color-mix(in srgb, var(--t) 70%, transparent); background: color-mix(in srgb, var(--t) 12%, var(--bg-elevated)); }
 @media (max-width: 560px) { .cat-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-/* ── Biblioteca de itens do mestre: linhas que abrem ─────── */
-.lib-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); overflow: hidden; }
-.lib-row + .lib-row { border-top: 1px solid var(--border); }
-.lib-row.open { background: var(--bg-elevated); }
-.lib-row-top { display: flex; align-items: center; min-width: 0; }
-.lib-row-main {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 9px 8px 9px 12px; text-align: left; color: inherit;
-  transition: background var(--transition); -webkit-tap-highlight-color: transparent;
+/* ── Biblioteca de itens do mestre: grade de cards, até 4 por fileira ─ */
+.lib-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(230px, (100% - 30px) / 4)), 1fr));
 }
-.lib-row-main:hover { background: var(--bg-hover); }
-.lib-row-main .item-icon { width: 32px; height: 32px; }
-.lib-row-name { display: flex; align-items: baseline; gap: 6px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-row-main .item-sub { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
-.lib-row-key { flex-shrink: 0; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-row-value { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-width: 64px; justify-content: flex-end; font-size: 12.5px; font-weight: 600; color: var(--gold-soft); font-variant-numeric: tabular-nums; }
-.lib-row-value svg { color: var(--gold); }
-.lib-row-chev { flex-shrink: 0; color: var(--text-muted); transition: transform var(--transition); }
-.lib-row.open .lib-row-chev { transform: rotate(180deg); }
-.lib-row-give { flex-shrink: 0; margin-right: 6px; color: var(--text-secondary); }
-.lib-row-detail { display: flex; flex-direction: column; gap: 12px; padding: 2px 14px 12px 56px; animation: fadeIn 140ms ease; }
-.lib-row-stats { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; }
-.lib-row-stats > div { display: flex; flex-direction: column; }
-.lib-row-stats dt { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.lib-row-stats dd { margin: 0; font-weight: 600; font-size: 13.5px; font-variant-numeric: tabular-nums; }
-@media (max-width: 560px) {
-  .lib-row-value { display: none; }
-  .lib-row-detail { padding-left: 14px; }
-  .lib-row-main { gap: 10px; }
-}
+.lib-grid .item-dur { min-width: 120px; }
+.item-desc-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; cursor: pointer; }
+.item-desc-clamp.open { display: block; -webkit-line-clamp: unset; }
 .threat-detail { max-width: 900px; margin: 0 auto; }
 .threat-back { margin: -4px 0 10px -8px; }
 .item-actions .btn-icon { padding: 6px; }

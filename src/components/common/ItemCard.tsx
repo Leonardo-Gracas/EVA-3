@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Backpack, Coins, Crosshair, FlaskConical, Package, Shield, ShieldHalf, Skull, Sparkles, Sun, Sword, type LucideIcon,
 } from 'lucide-react';
@@ -49,10 +49,12 @@ export function ItemIcon({ type, size = 18 }: { type: ItemType; size?: number })
  * Cartão de item usado no inventário (com `pv`, `qty`, `equipped`) e na biblioteca.
  * `actions` vai no rodapé, à direita da durabilidade. `stock` (munição e
  * consumíveis no inventário) toma o lugar da durabilidade, que aí pouco importa.
+ * `clampDesc` (grade da biblioteca) corta a descrição em poucas linhas; tocar nela mostra tudo.
  */
-export default function ItemCard({ it, pv, qty, equipped, actions, stock }: {
-  it: ItemData; pv?: number; qty?: number; equipped?: boolean; actions?: ReactNode; stock?: ReactNode;
+export default function ItemCard({ it, pv, qty, equipped, actions, stock, clampDesc }: {
+  it: ItemData; pv?: number; qty?: number; equipped?: boolean; actions?: ReactNode; stock?: ReactNode; clampDesc?: boolean;
 }) {
+  const [descOpen, setDescOpen] = useState(false);
   const broken = pv !== undefined && pv <= 0;
   const stackable = isStackable(it);
   const empty = stackable && qty === 0;
@@ -95,7 +97,10 @@ export default function ItemCard({ it, pv, qty, equipped, actions, stock }: {
         )}
       </div>
 
-      {it.description && <p className="item-desc">{it.description}</p>}
+      {it.description && (clampDesc ? (
+        <p className={`item-desc item-desc-clamp${descOpen ? ' open' : ''}`} onClick={() => setDescOpen(!descOpen)}
+          title={descOpen ? 'Recolher descrição' : 'Mostrar a descrição inteira'}>{it.description}</p>
+      ) : <p className="item-desc">{it.description}</p>)}
 
       {stats.length > 0 && (
         <dl className="item-stats">
