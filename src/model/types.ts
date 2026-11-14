@@ -206,13 +206,14 @@ export interface ThreatAbility {
 }
 
 /** Natureza da ameaça: define o ícone e serve de filtro no livro. */
-export type ThreatCategory = 'humano' | 'demoniaco' | 'etereo' | 'celestial';
+export type ThreatCategory = 'humano' | 'demoniaco' | 'etereo' | 'celestial' | 'animal';
 
 export const THREAT_CATEGORIES: Record<ThreatCategory, { label: string; plural: string }> = {
   humano: { label: 'Humano', plural: 'Humanos' },
   demoniaco: { label: 'Demoníaco', plural: 'Demoníacos' },
   etereo: { label: 'Etéreo', plural: 'Etéreos' },
   celestial: { label: 'Celestial', plural: 'Celestiais' },
+  animal: { label: 'Animal', plural: 'Animais' },
 };
 
 export interface ThreatData {

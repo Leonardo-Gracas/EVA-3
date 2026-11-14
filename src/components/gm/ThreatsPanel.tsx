@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { ArrowLeft, Copy, Dices, Eye, EyeOff, Heart, Pencil, Plus, Swords, Trash2, Zap } from 'lucide-react';
+import { ArrowLeft, Copy, Dices, Eye, EyeOff, Heart, PackagePlus, Pencil, Plus, Swords, Trash2, Zap } from 'lucide-react';
 import { THREAT_CATEGORIES, type CombatThreat, type TableState, type Threat, type ThreatCategory } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { parseExpr } from '../../rules/dice';
@@ -10,6 +10,7 @@ import { Chip, FilterBar, FilterGroup, QuickFilter, SearchInput, SortSelect, mat
 import ResourceAdjustModal, { peOps, pvOps, type AdjustStart, type AdjustTrack } from '../common/ResourceAdjust';
 import ThreatEditor from './ThreatEditor';
 import ThreatIcon, { ThreatGlyph } from './ThreatIcon';
+import ThreatSetsModal from './ThreatSetsModal';
 
 const CATEGORY_ORDER = Object.keys(THREAT_CATEGORIES) as ThreatCategory[];
 
@@ -49,6 +50,7 @@ export default function ThreatsPanel({ table, detailOpen, setDetailOpen }: {
   const { act } = useAct();
   const [selId, setSelId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [q, setQ] = useState('');
   const [traits, setTraits] = useState<Trait[]>([]);
   const [vis, setVis] = useState<Vis[]>([]);
@@ -105,10 +107,17 @@ export default function ThreatsPanel({ table, detailOpen, setDetailOpen }: {
   }
 
   const createBtn = (
-    <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)} title="Nova ameaça" aria-label="Nova ameaça">
-      <Plus size={13} /><span className="hide-xs">Nova ameaça</span>
-    </button>
+    <>
+      <button className="btn btn-sm" onClick={() => setImporting(true)} title="Importar conjuntos prontos: ocultistas, criminosos, selvagens">
+        <PackagePlus size={13} /><span className="hide-xs">Conjuntos</span>
+      </button>
+      <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)} title="Nova ameaça" aria-label="Nova ameaça">
+        <Plus size={13} /><span className="hide-xs">Nova ameaça</span>
+      </button>
+    </>
   );
+  // Depois de importar, as novas aparecem primeiro.
+  const onImported = () => { clear(); setSort('recentes'); };
 
   return (
     <div className="col gap-lg">
@@ -132,12 +141,13 @@ export default function ThreatsPanel({ table, detailOpen, setDetailOpen }: {
           </FilterGroup>
         </FilterBar>
       )}
-      {all.length === 0 && <div className="empty">Fichas de combate com valores livres: humanos, demoníacos, etéreos e celestiais. Crie a primeira ameaça.</div>}
+      {all.length === 0 && <div className="empty">Fichas de combate com valores livres: humanos, demoníacos, etéreos, celestiais e animais. Crie a primeira ameaça ou importe um conjunto pronto.</div>}
       {all.length > 0 && threats.length === 0 && <div className="empty">Nenhuma ameaça com esses filtros.</div>}
       <div className="threat-grid">
         {threats.map((t) => <ThreatCard key={t.id} t={t} inCombat={!!table.combat} onOpen={() => open(t.id)} />)}
       </div>
       {editor}
+      {importing && <ThreatSetsModal table={table} onClose={() => setImporting(false)} onImported={onImported} />}
     </div>
   );
 }

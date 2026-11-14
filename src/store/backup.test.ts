@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { newTable, type EngineCtx } from './engine';
-import { placeholderTable } from './placeholder';
+import { dispatch, newTable, type EngineCtx } from './engine';
+import { ITEM_SETS } from './itemSets';
+import { THREAT_SETS } from './threatSets';
 import { backupContents, buildFullBackup, buildTableBackup, parseBackup } from './persistence';
 import { restoreHostKey } from '../net/identity';
 import { blankLayout } from '../model/map';
@@ -12,9 +13,12 @@ const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 
 const KEY = 'a'.repeat(64);
 const playlists: LocalPlaylist[] = [{ id: 'p1', name: 'Tensão', tracks: [{ id: 'abc', title: 'Faixa' }], createdAt: 1 }];
 
-/** Mesa com um pouco de tudo: jogador, mapa e combate. */
+/** Mesa com um pouco de tudo: itens, ameaças, jogador, mapa e combate. */
 function fullTable(): TableState {
-  const t = placeholderTable('Mesa cheia', 'Mestre', 'ABCDEF', ctx);
+  let t = newTable('Mesa cheia', 'Mestre', 'ABCDEF', ctx);
+  const gm = { role: 'gm' as const, name: 'Mestre' };
+  for (const item of ITEM_SETS[1].items) t = dispatch(t, gm, { type: 'library/upsert', item }, ctx).state;
+  for (const data of THREAT_SETS[0].items) t = dispatch(t, gm, { type: 'threat/upsert', data }, ctx).state;
   t.players.p1 = { id: 'p1', name: 'Ana', secretHash: 'h', firstSeen: 1, lastSeen: 2 };
   const map = { id: 'm1', name: 'Porão', ...blankLayout(8, 6), tokens: {}, createdAt: 1, updatedAt: 1 } as unknown as BattleMap;
   t.maps.m1 = map;

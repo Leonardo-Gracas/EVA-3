@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dispatch, MAX_LIBRARY, newTable, type EngineCtx } from './engine';
 import type { Actor, ItemData, TableState } from '../model/types';
 import { ITEM_SETS, installedSetItems, missingSetItems } from './itemSets';
-import { PLACEHOLDER_ITEMS, placeholderTable } from './placeholder';
+import { CATALOG_ITEMS } from './itemCatalog';
 
 let n = 0;
 const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 };
@@ -20,8 +20,8 @@ function importInto(s: TableState, items: ItemData[]): TableState {
 }
 
 describe('conjuntos de itens', () => {
-  it('os quatro conjuntos, cada um com armas, ferramentas e nomes sem repetir', () => {
-    expect(ITEM_SETS.map((x) => x.name)).toEqual(['Iluminação', 'Medieval', 'Old School', 'Contemporâneo']);
+  it('os conjuntos, cada um com armas, ferramentas e nomes sem repetir', () => {
+    expect(ITEM_SETS.map((x) => x.name)).toEqual(['Iluminação', 'Medieval', 'Old School', 'Contemporâneo', 'Ocultismo']);
     for (const set of ITEM_SETS) {
       const names = set.items.map((i) => i.name);
       expect(new Set(names).size, set.name).toBe(names.length);
@@ -33,17 +33,22 @@ describe('conjuntos de itens', () => {
     }
   });
 
-  it('o mesmo nome é o mesmo item em todos os conjuntos e no catálogo padrão', () => {
+  it('todo item do catálogo está em algum conjunto', () => {
+    const inSets = new Set(ITEM_SETS.flatMap((x) => x.items.map((i) => i.name)));
+    expect(CATALOG_ITEMS.filter((i) => !inSets.has(i.name)).map((i) => i.name)).toEqual([]);
+  });
+
+  it('o mesmo nome é o mesmo item em todos os conjuntos e no catálogo', () => {
     const byName = new Map<string, ItemData>();
-    for (const it of [...PLACEHOLDER_ITEMS, ...ITEM_SETS.flatMap((x) => x.items)]) {
+    for (const it of [...CATALOG_ITEMS, ...ITEM_SETS.flatMap((x) => x.items)]) {
       const seen = byName.get(it.name);
       if (seen) expect(it, it.name).toEqual(seen);
       else byName.set(it.name, it);
     }
   });
 
-  it('todos passam pelo motor e cabem juntos, com o catálogo padrão, na biblioteca', () => {
-    let s = placeholderTable('Mesa', 'Mestre', 'ABCDEF', ctx);
+  it('todos passam pelo motor e cabem juntos na biblioteca', () => {
+    let s = newTable('Mesa', 'Mestre', 'ABCDEF', ctx);
     s = importInto(s, ITEM_SETS.flatMap((x) => x.items));
     expect(Object.keys(s.itemLibrary).length).toBeLessThanOrEqual(MAX_LIBRARY);
     for (const set of ITEM_SETS) expect(missingSetItems(s.itemLibrary, set.items), set.name).toEqual({ add: [], update: [] });

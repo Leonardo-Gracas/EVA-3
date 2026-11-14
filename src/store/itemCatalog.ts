@@ -1,13 +1,8 @@
-// Mesa padrão: mesa nova com biblioteca de itens e ameaças padrão
-// (opção "Começar com itens e ameaças padrão" no lobby).
-// Tudo entra pelo motor (library/upsert, threat/upsert), então passa pelas
-// mesmas validações de uma mesa jogada de verdade.
-import type {
-  Actor, ItemData, ItemEffects, ItemSlot, ItemType, TableState, ThreatAbility, ThreatAttack, ThreatData,
-} from '../model/types';
-import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, NO_EFFECTS } from '../model/types';
-import type { Attributes } from '../rules/attributes';
-import { defaultCtx, dispatch, newTable, type EngineCtx } from './engine';
+// Catálogo de itens: a base dos conjuntos de itens (ver itemSets.ts), que o mestre
+// importa na biblioteca. Tudo entra pelo motor (library/upsert), então passa pelas
+// mesmas validações de um item criado à mão.
+import type { ItemData, ItemEffects, ItemSlot, ItemType } from '../model/types';
+import { DEFAULT_DURABILITY, DEFAULT_SLOT, NO_EFFECTS } from '../model/types';
 
 // ── Itens ────────────────────────────────────────────────────────────────────
 
@@ -140,139 +135,7 @@ export const LIGHT_ITEMS: ItemData[] = [
   item('consumivel', 'Sinalizador', '1d4', 8, 'Ilumina 30 m por 10 minutos. Arremessado, causa 1d4 de fogo.', { effects: { light: 20 } }),
 ];
 
-export const PLACEHOLDER_ITEMS: ItemData[] = [
+/** Todos os itens do catálogo; cada um está em ao menos um conjunto. */
+export const CATALOG_ITEMS: ItemData[] = [
   ...LAMINAS, ...IMPACTO, ...DISTANCIA, ...MUNICAO, ...PROTECAO, ...ESCUDOS, ...CATALISADORES, ...CONSUMIVEIS, ...EQUIPAMENTOS, ...LIGHT_ITEMS,
 ];
-
-// ── Ameaças ──────────────────────────────────────────────────────────────────
-// Inimigos humanos por força, pensados para um grupo de 3–4 personagens de nível 1:
-// Fraco (em bando), Comum (um por personagem), Forte (um para o grupo),
-// Elite (luta difícil) e Chefe (encerra um arco). A força abre a descrição,
-// para buscar por "Fraco", "Elite"... no painel.
-
-type Tier = 'Fraco' | 'Comum' | 'Forte' | 'Elite' | 'Chefe';
-
-// id vazio: o motor gera um ao salvar.
-const atk = (name: string, bonus: number, damage: string, notes = ''): ThreatAttack => ({ id: '', name, bonus, damage, notes });
-const hab = (name: string, cost: string, text: string): ThreatAbility => ({ id: '', name, cost, text });
-
-function threat(
-  tier: Tier, name: string, concept: string, attrs: Partial<Attributes>,
-  stats: { pv: number; pe?: number; def: number; von?: number; rd?: number; rdm?: number },
-  attacks: ThreatAttack[], abilities: ThreatAbility[] = [], notes = '',
-): ThreatData {
-  const attributes = { FOR: 0, CON: 0, DES: 0, FE: 0, INT: 0, PRE: 0, ...attrs };
-  return {
-    name, concept: `${tier} · ${concept}`, category: 'humano', attributes,
-    pvMax: stats.pv, peMax: stats.pe ?? 0, def: stats.def, von: stats.von ?? 10 + attributes.FE,
-    rdPhysical: stats.rd ?? 0, rdMagic: stats.rdm ?? 0, movement: DEFAULT_MOVEMENT,
-    attacks, abilities, notes,
-  };
-}
-
-export const PLACEHOLDER_THREATS: ThreatData[] = [
-  // Fracos: caem em um ou dois golpes. Use em bando.
-  threat('Fraco', 'Arruaceiro', 'Briga de rua com coragem emprestada do grupo.', { FOR: 1, DES: 0, CON: 0, INT: -1 },
-    { pv: 6, def: 10 }, [atk('Soco', 1, '1d3'), atk('Faca', 1, '1d4')], [],
-    'Foge quando metade do bando cai.'),
-  threat('Fraco', 'Viciado desesperado', 'Faz qualquer coisa pela próxima dose.', { DES: 1, CON: -1, FE: -1 },
-    { pv: 5, def: 11 }, [atk('Caco de vidro', 1, '1d4')],
-    [hab('Sem nada a perder', '', 'Não faz testes de moral. Ao chegar a 0 PV, faz um último ataque antes de cair.')]),
-  threat('Fraco', 'Capanga novato', 'Contratado ontem, ainda acha que é emprego fácil.', { FOR: 1, CON: 1 },
-    { pv: 8, def: 11 }, [atk('Taco de beisebol', 2, '1d6'), atk('Revólver .38', 1, '2d6', 'Erra muito: falha crítica com 1 ou 2.')]),
-  threat('Fraco', 'Cultista iniciado', 'Túnica nova, fé cega, faca ritual.', { FE: 1, INT: -1 },
-    { pv: 6, pe: 2, def: 10 }, [atk('Faca ritual', 1, '1d4')],
-    [hab('Cântico', '1 PE', 'Ação de movimentação: um aliado cultista em alcance curto recebe +2 no próximo ataque.')]),
-
-  // Comuns: enfrentam um personagem de igual para igual.
-  threat('Comum', 'Capanga armado', 'Pistola na cintura, ordens claras.', { FOR: 1, DES: 2, CON: 1 },
-    { pv: 12, def: 12 }, [atk('Pistola 9 mm', 3, '2d6'), atk('Coronhada', 2, '1d4+1')], [],
-    'Procura cobertura antes de atirar.'),
-  threat('Comum', 'Segurança particular', 'Terno, ponto no ouvido e colete por baixo.', { FOR: 2, CON: 2, DES: 1 },
-    { pv: 14, def: 11, rd: 2 }, [atk('Cassetete', 3, '1d6+1'), atk('Pistola 9 mm', 2, '2d6')],
-    [hab('Chamar reforços', '', 'Ação: pelo rádio, chega 1 segurança a cada 2 rodadas até o alarme ser cortado.')]),
-  threat('Comum', 'Policial', 'Treinado, armado e com a lei do lado dele.', { FOR: 1, DES: 2, CON: 1, INT: 1 },
-    { pv: 14, def: 12, rd: 2 }, [atk('Pistola 9 mm', 4, '2d6'), atk('Cassetete', 2, '1d6')],
-    [hab('Voz de prisão', '', 'Ação de movimentação: alvo em alcance curto faz PRE(15) ou perde a próxima ação de movimentação.')]),
-  threat('Comum', 'Cultista devoto', 'Já viu o que o culto promete e quer mais.', { FE: 2, INT: 1, PRE: 1 },
-    { pv: 10, pe: 6, def: 11, rdm: 1 }, [atk('Adaga ritual', 2, '1d4+1')],
-    [hab('Praga menor', '2 PE', 'Alvo em alcance curto: 2d6 de dano profano. FÉ(15) reduz à metade.')]),
-  threat('Comum', 'Caçador', 'Conhece a mata melhor que a própria casa.', { DES: 2, CON: 1, PRE: 2 },
-    { pv: 12, def: 12 }, [atk('Rifle de caça', 4, '2d8', 'Alcance longo; um tiro por turno.'), atk('Facão', 2, '1d6+1')],
-    [hab('Rastreador', '', 'Sempre sabe onde estão os personagens a até 50 m, mesmo escondidos.')]),
-
-  // Fortes: um só segura o grupo por algumas rodadas.
-  threat('Forte', 'Brutamontes', 'Grande demais para portas e paciência.', { FOR: 4, CON: 3, DES: -1, INT: -1 },
-    { pv: 28, def: 9, rd: 2 }, [atk('Marreta', 5, '1d10+4'), atk('Agarrar', 5, '1d4+4', 'Acerto: o alvo fica agarrado (FOR(16) para escapar).')],
-    [hab('Investida', '', 'Move até 9 m e ataca; se acertar, o alvo cai no chão.')]),
-  threat('Forte', 'Matador de aluguel', 'Profissional. Não erra o primeiro tiro.', { DES: 3, INT: 2, PRE: 1 },
-    { pv: 20, def: 14, rd: 1 }, [atk('Pistola com silenciador', 5, '2d6+2'), atk('Faca de combate', 4, '1d4+3')],
-    [hab('Emboscada', '', 'Contra alvo surpreso ou que ainda não agiu no combate, o dano é dobrado.'),
-      hab('Saída de emergência', '', 'Com metade do PV, foge na primeira oportunidade.')]),
-  threat('Forte', 'Mercenário', 'Ex-militar, equipamento de guerra, sem bandeira.', { FOR: 2, DES: 2, CON: 2 },
-    { pv: 22, def: 12, rd: 4 }, [atk('Fuzil de assalto', 5, '2d8', 'Rajada: +1d8 de dano, gasta 3 balas.'), atk('Granada', 3, '4d6', 'Uma por combate. Raio de 5 m; DES(15) reduz à metade.')],
-    [hab('Disciplina', '', 'Ignora a primeira condição de medo ou controle mental que sofrer no combate.')]),
-  threat('Forte', 'Sacerdote do culto', 'Prega sobre o fim do mundo e acredita nele.', { FE: 3, INT: 2, PRE: 2 },
-    { pv: 16, pe: 15, def: 11, rdm: 3 }, [atk('Adaga ritual', 2, '1d4+1')],
-    [hab('Praga', '5 PE e 2 PV', 'Alvo em alcance médio: 4d6 de dano profano. FÉ(20) reduz à metade.'),
-      hab('Fervor', '3 PE', 'Todos os cultistas em alcance curto recebem +2 nos ataques por 2 rodadas.'),
-      hab('Escudo de fiéis', '', 'Um cultista adjacente pode receber o ataque no lugar dele.')]),
-
-  // Elite: luta difícil para o grupo inteiro.
-  threat('Elite', 'Comandante mercenário', 'Planeja a luta antes de ela começar.', { FOR: 2, DES: 3, CON: 3, INT: 3 },
-    { pv: 40, pe: 6, def: 15, rd: 5 }, [atk('Fuzil de assalto', 7, '2d8+2', 'Rajada: +1d8 de dano.'), atk('Faca de combate', 6, '1d6+2')],
-    [hab('Ordens', '2 PE', 'Ação de movimentação: até dois aliados podem mover ou atacar imediatamente.'),
-      hab('Tática', '', 'Recebe +2 de DEF enquanto houver um aliado adjacente.')]),
-  threat('Elite', 'Assassina da Ordem', 'Treinada desde a infância para matar o que caça.', { DES: 4, INT: 2, PRE: 3, FE: 2 },
-    { pv: 30, pe: 10, def: 17, rd: 2, rdm: 2 }, [atk('Lâminas gêmeas', 7, '1d6+3', 'Ataca duas vezes por turno.'), atk('Facas de arremesso', 6, '1d4+3', 'Alcance curto.')],
-    [hab('Sombra', '2 PE', 'Fica invisível até o próximo ataque. O primeiro ataque vindo da sombra é crítico com 17+.'),
-      hab('Reflexos', '', 'Uma vez por rodada, reduz à metade o dano de um ataque que a atingiu.')]),
-  threat('Elite', 'Inquisidor renegado', 'Acólito que decidiu que todo mundo é herege.', { FOR: 2, CON: 3, FE: 4, PRE: 2 },
-    { pv: 36, pe: 18, def: 13, rd: 4, rdm: 5 }, [atk('Martelo de guerra consagrado', 6, '1d8+4', '+1d6 sagrado contra quem usa magia profana.'), atk('Escopeta calibre 12', 4, '3d6')],
-    [hab('Repreender', '2 PE', 'Teste de FÉ contra a VON do alvo: 2d6 de dano sagrado, crítico 18.'),
-      hab('Juízo', '5 PE', 'Alvo em alcance curto faz FÉ(20) ou fica imóvel por 1 rodada.'),
-      hab('Inabalável', '', 'Não fica inconsciente com 0 PV; continua lutando até o limite de morte.')]),
-  threat('Elite', 'Ocultista renegado', 'Aprendeu demais, rápido demais, com quem não devia.', { INT: 4, FE: 1, PRE: 2, CON: 1 },
-    { pv: 26, pe: 24, def: 12, rd: 1, rdm: 4 }, [atk('Toque de chamas', 6, '2d6', 'Alcance de toque.')],
-    [hab('Explosão de chamas', '3 PE', 'Alcance curto: 3d6 de fogo em um alvo.'),
-      hab('Alterar temperatura', '5 PE', 'Alcance médio: 6 + 1d6 de fogo ou frio. FÉ(20) reduz à metade.'),
-      hab('Escudo arcano', '2 PE', 'Reação: +4 de DEF contra um ataque.')]),
-
-  // Chefes: o fim de um arco. Quase sempre acompanhados.
-  threat('Chefe', 'Chefão do crime', 'Dono do bairro. Nunca suja as mãos se puder evitar.', { FOR: 1, DES: 2, CON: 2, INT: 3, PRE: 4 },
-    { pv: 45, pe: 10, def: 14, rd: 4 }, [atk('Revólver banhado a ouro', 6, '2d6+3'), atk('Bengala com lâmina', 5, '1d8+2')],
-    [hab('Sempre acompanhado', '', 'Entra em combate com 2 capangas armados e 1 brutamontes.'),
-      hab('Escudo humano', '', 'Reação: um capanga adjacente recebe o ataque no lugar dele.'),
-      hab('Proposta', '3 PE', 'Alvo em alcance curto faz INT(18) ou para de atacá-lo por 1 rodada para ouvir.')],
-    'Prefere negociar, subornar ou fugir a morrer. Tem informação valiosa.'),
-  threat('Chefe', 'Sumo-sacerdote', 'A voz do que o culto adora. Ou sua boca.', { FE: 5, INT: 3, PRE: 4, CON: 2 },
-    { pv: 55, pe: 35, def: 13, von: 18, rd: 3, rdm: 6 }, [atk('Cajado de osso', 5, '1d8+3'), atk('Toque profano', 7, '2d8', 'Dano profano.')],
-    [hab('Praga maior', '5 PE e 5 PV', 'Alvo em alcance médio: 6d6 de dano profano. FÉ(25) reduz à metade.'),
-      hab('Sacrifício', '', 'Reação: quando um cultista morre em alcance curto, recupera 5 PE ou 10 PV.'),
-      hab('Profanar', '8 PE', 'Área de 10 m vira solo profano por 3 rodadas: personagens recebem −2 em todos os testes.'),
-      hab('Duas ações', '', 'Age duas vezes por rodada, em iniciativas diferentes.')],
-    'Ao cair, algo do outro lado olha pelo corpo dele por um instante.'),
-  threat('Chefe', 'Caçador de bruxas veterano', 'Trinta anos matando o que se esconde no escuro. E quem o protege.', { FOR: 3, DES: 3, CON: 4, FE: 3, INT: 2 },
-    { pv: 60, pe: 15, def: 15, rd: 5, rdm: 5 }, [atk('Espada longa de prata', 8, '1d10+5', 'Ignora RD de criaturas sobrenaturais.'), atk('Escopeta com balas de prata', 7, '3d6+2')],
-    [hab('Dois golpes', '', 'Ataca duas vezes por turno.'),
-      hab('Já vi isso antes', '', 'Uma vez por rodada, anula uma habilidade sobrenatural usada contra ele (o PE é gasto).'),
-      hab('Armadilhas', '', 'Chega em combate com o terreno preparado: personagens que se movem pela primeira vez fazem DES(16) ou sofrem 2d6.')]),
-];
-
-// ── Mesa ─────────────────────────────────────────────────────────────────────
-
-export function placeholderTable(name: string, gmName: string, roomCode: string, ctx: EngineCtx = defaultCtx): TableState {
-  let s = newTable(name, gmName, roomCode, ctx);
-  // O painel lista ameaças por criação: um relógio crescente mantém a ordem por força.
-  let clock = s.createdAt;
-  const seed: EngineCtx = { ...ctx, now: () => clock++ };
-  const gm: Actor = { role: 'gm', name: gmName };
-  const run = (a: Parameters<typeof dispatch>[2], what: string) => {
-    const r = dispatch(s, gm, a, seed);
-    if (!r.ok) throw new Error(`Campanha de exemplo: ${what}: ${r.error}`);
-    s = r.state;
-  };
-  for (const item of PLACEHOLDER_ITEMS) run({ type: 'library/upsert', item }, item.name);
-  for (const data of PLACEHOLDER_THREATS) run({ type: 'threat/upsert', data }, data.name);
-  return s;
-}

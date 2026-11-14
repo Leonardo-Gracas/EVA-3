@@ -1,10 +1,11 @@
 // Conjuntos de itens para importar na biblioteca do mestre (modal "Conjuntos de itens").
-// Cada conjunto reaproveita itens do catálogo padrão pelo nome (mesmo item, mesmos números)
+// Cada conjunto reaproveita itens do catálogo (itemCatalog.ts) pelo nome (mesmo item, mesmos números)
 // e soma os da sua época. Importar só traz o que a biblioteca ainda não tem, pelo nome.
 import type { ItemData, LibraryItem } from '../model/types';
-import { LIGHT_ITEMS, PLACEHOLDER_ITEMS, item } from './placeholder';
+import { installedInSet, nameKey, type SetRemoval } from './catalogSets';
+import { CATALOG_ITEMS, LIGHT_ITEMS, item } from './itemCatalog';
 
-export type ItemSetId = 'iluminacao' | 'medieval' | 'old_school' | 'contemporaneo';
+export type ItemSetId = 'iluminacao' | 'medieval' | 'old_school' | 'contemporaneo' | 'ocultismo';
 
 export interface ItemSet {
   id: ItemSetId;
@@ -13,16 +14,16 @@ export interface ItemSet {
   items: ItemData[];
 }
 
-/** Itens do catálogo padrão pelo nome; nome errado quebra já no carregamento (e no teste). */
+/** Itens do catálogo pelo nome; nome errado quebra já no carregamento (e no teste). */
 function pick(...names: string[]): ItemData[] {
-  return names.map((n) => PLACEHOLDER_ITEMS.find((i) => i.name === n) ?? (() => { throw new Error(`Conjunto de itens: "${n}" não existe no catálogo.`); })());
+  return names.map((n) => CATALOG_ITEMS.find((i) => i.name === n) ?? (() => { throw new Error(`Conjunto de itens: "${n}" não existe no catálogo.`); })());
 }
 
 // ── Medieval ─────────────────────────────────────────────────────────────────
 
 const MEDIEVAL: ItemData[] = [
   // Armas
-  ...pick('Adaga', 'Espada curta', 'Espada longa', 'Montante', 'Lança', 'Maça', 'Martelo de guerra', 'Machadinha', 'Machado', 'Arco curto', 'Besta'),
+  ...pick('Adaga', 'Espada curta', 'Espada longa', 'Sabre', 'Montante', 'Lança', 'Maça', 'Martelo de guerra', 'Machadinha', 'Machado', 'Arco curto', 'Besta'),
   item('arma', 'Arco longo', '1d8', 60, 'Teixo da altura de um homem. Duas mãos; alcance longo. Exige FOR +1 para puxar sem desvantagem. Usa flechas.', { slot: 'duas_maos', durability: { pv: 8, rd: 2 } }),
   item('arma', 'Alabarda', '1d10', 70, 'Lâmina de machado e ponta de lança numa haste longa. Duas mãos; alcance de 3 m.', { slot: 'duas_maos', durability: { pv: 14, rd: 6 } }),
   item('arma', 'Mangual', '1d8', 50, 'Bola de ferro com cravos presa por corrente. A corrente contorna o escudo: o alvo não soma a DEF do escudo.', { durability: { pv: 12, rd: 6 } }),
@@ -56,7 +57,7 @@ const MEDIEVAL: ItemData[] = [
   item('consumivel', 'Frasco de óleo', '1d4', 1, 'Abastece a lamparina por quatro horas. Arremessado e aceso, 1d4 de fogo e o chão queima por uma rodada.'),
   item('consumivel', 'Unguento de ervas', '', 25, 'Pomada de confrei e mel. Uma ação: recupera 2d4 PV. Uma vez por descanso por pessoa.'),
   item('consumivel', 'Veneno de lâmina', '', 50, 'Uma ação para untar a arma: o próximo acerto causa +1d6, e o alvo faz CON(14) ou fica Envenenado.'),
-  ...pick('Água benta', 'Relicário'),
+  ...pick('Bandagens', 'Água benta', 'Relicário'),
 ];
 
 // ── Old School (anos 1920 a 1950) ────────────────────────────────────────────
@@ -101,13 +102,13 @@ const OLD_SCHOOL: ItemData[] = [
 
 const CONTEMPORANEO: ItemData[] = [
   // Armas
-  ...pick('Faca', 'Cassetete', 'Taco de beisebol', 'Pé de cabra'),
+  ...pick('Faca', 'Cassetete', 'Taco de beisebol', 'Pé de cabra', 'Marreta'),
   item('arma', 'Faca tática', '1d4+1', 25, 'Lâmina serrilhada e cabo emborrachado. Pode ser arremessada (alcance curto).', { durability: { pv: 8, rd: 5 } }),
   item('arma', 'Bastão retrátil', '1d6', 30, 'Abre com um movimento do pulso. Cabe no bolso.', { durability: { pv: 10, rd: 6 } }),
   item('arma', 'Machado de incêndio', '1d10', 45, 'Lâmina e ponta de bombeiro. Duas mãos; +5 em FOR para arrombar portas.', { slot: 'duas_maos', durability: { pv: 16, rd: 7 } }),
   item('arma', 'Taser', '1d4', 80, 'Dispara dois dardos elétricos (alcance curto). O alvo faz CON(14) ou fica atordoado por uma rodada. Um tiro por cartucho.', { durability: { pv: 5, rd: 2 } }),
   item('arma', 'Arco composto', '1d8', 150, 'Roldanas e fibra de carbono. Duas mãos; alcance longo. Silencioso.', { slot: 'duas_maos', durability: { pv: 8, rd: 3 } }),
-  ...pick('Pistola 9 mm', 'Escopeta calibre 12', 'Submetralhadora', 'Fuzil de assalto'),
+  ...pick('Pistola 9 mm', 'Escopeta calibre 12', 'Escopeta de cano serrado', 'Submetralhadora', 'Fuzil de assalto'),
   item('arma', 'Fuzil de precisão', '2d10', 1500, 'Duas mãos; alcance extremo. Ferrolho, luneta e bipé: parado e mirando por uma ação, +2 no ataque.', { slot: 'duas_maos', durability: { pv: 12, rd: 6 } }),
   // Munição
   ...pick('Balas 9 mm', 'Cartuchos calibre 12', 'Munição de fuzil'),
@@ -115,6 +116,7 @@ const CONTEMPORANEO: ItemData[] = [
   item('municao', 'Cartuchos de taser', '', 25, 'Cinco cartuchos de dardos.', { pack: 5 }),
   item('municao', 'Flechas de carbono', '', 30, 'Doze flechas de ponta de caça para arco composto.', { pack: 12 }),
   // Proteção
+  ...pick('Jaqueta de couro grosso'),
   item('protecao', 'Jaqueta de motociclista', '', 60, 'Couro com proteções nos ombros e cotovelos.', { effects: { rdPhysical: 1 }, durability: { pv: 14, rd: 3 } }),
   ...pick('Colete balístico', 'Colete tático com placas', 'Escudo balístico'),
   // Ferramentas e equipamentos
@@ -125,13 +127,32 @@ const CONTEMPORANEO: ItemData[] = [
   item('equipamento', 'Drone com câmera', '', 600, 'Voa por 25 minutos, até 1 km de quem pilota. Zumbido audível a 20 m.', { durability: { pv: 3, rd: 1 } }),
   item('equipamento', 'Câmera térmica', '', 700, 'Vê calor através de fumaça e escuridão. E pontos frios onde não deveria haver.', { slot: 'uma_mao', durability: { pv: 3, rd: 1 } }),
   item('equipamento', 'Detector de campo eletromagnético', '', 60, 'Os LEDs acendem perto de fiação, de aparelhos e de presenças.', { slot: 'uma_mao', durability: { pv: 2, rd: 0 } }),
-  ...pick('Óculos de visão noturna', 'Rádio comunicador (par)', 'Máscara de gás', 'Kit forense', 'Corda (15 m)', 'Mochila'),
+  ...pick('Óculos de visão noturna', 'Rádio comunicador (par)', 'Máscara de gás', 'Kit forense', 'Câmera fotográfica', 'Gravador de áudio', 'Corda (15 m)', 'Mochila'),
   item('equipamento', 'Abraçadeiras plásticas', '', 2, 'Dez lacres de náilon que servem de algema. FOR(18) para arrebentar.', { pack: 10 }),
   item('equipamento', 'Carregador portátil', '', 40, 'Recarrega um celular duas vezes ou o rádio uma vez.'),
   // Consumíveis
-  ...pick('Kit de primeiros socorros', 'Seringa de adrenalina'),
+  ...pick('Kit de primeiros socorros', 'Bandagens', 'Seringa de adrenalina', 'Coquetel molotov', 'Granada de fragmentação'),
   item('consumivel', 'Torniquete', '', 8, 'Uma ação, até em si mesmo: encerra Sangrando.'),
   item('consumivel', 'Spray de pimenta', '', 10, 'Cone curto. O alvo faz CON(13) ou fica cego por uma rodada. Cinco jatos.', { pack: 5 }),
+];
+
+// ── Ocultismo ────────────────────────────────────────────────────────────────
+
+const OCULTISMO: ItemData[] = [
+  // Armas e catalisadores
+  item('arma', 'Estaca de freixo', '1d6', 4, 'Ponta endurecida no fogo. Cravada no peito de quem não deveria estar vivo, faz mais do que ferir.', { durability: { pv: 4, rd: 1 } }),
+  ...pick('Crucifixo de prata', 'Rosário', 'Livro de orações', 'Relicário'),
+  ...pick('Grimório encadernado em couro', 'Ídolo de osso', 'Adaga ritual'),
+  ...pick('Pêndulo de cristal', 'Baralho de tarô', 'Espelho negro'),
+  // Proteção e munição
+  ...pick('Hábito consagrado', 'Manto de runas', 'Balas de prata'),
+  // Ferramentas e equipamentos
+  ...pick('Castiçal com vela', 'Velas', 'Gravador de áudio', 'Câmera fotográfica'),
+  item('equipamento', 'Giz e carvão ritual', '', 3, 'Para traçar círculos e selos. Um círculo bem fechado (INT(15)) segura entidades menores do lado de fora.', { durability: { pv: 1, rd: 0 } }),
+  item('equipamento', 'Incensário', '', 20, 'Mirra e olíbano numa corrente de latão. A fumaça revela por um instante o contorno do que é invisível.', { slot: 'uma_mao', durability: { pv: 5, rd: 3 } }),
+  // Consumíveis
+  ...pick('Água benta', 'Sal grosso (saco)'),
+  item('consumivel', 'Óleo de unção', '', 30, 'Frasco consagrado. Uma ação para ungir uma arma: por um combate, ela causa +1d4 de dano sagrado.', { pack: 3 }),
 ];
 
 export const ITEM_SETS: ItemSet[] = [
@@ -139,9 +160,8 @@ export const ITEM_SETS: ItemSet[] = [
   { id: 'medieval', name: 'Medieval', description: 'Espadas, arcos e armaduras, ferramentas de estrada e de masmorra, ervas e venenos.', items: MEDIEVAL },
   { id: 'old_school', name: 'Old School', description: 'Anos 1920 a 1950: revólveres, Thompson e dinamite, câmera de fole, lupa e kit de digitais.', items: OLD_SCHOOL },
   { id: 'contemporaneo', name: 'Contemporâneo', description: 'Pistolas, fuzis e taser, coletes, drones, câmera térmica e kit de invasão eletrônica.', items: CONTEMPORANEO },
+  { id: 'ocultismo', name: 'Ocultismo', description: 'Catalisadores sagrados, profanos e etéreos, água benta, sal, balas de prata e o que se usa num ritual.', items: OCULTISMO },
 ];
-
-const nameKey = (s: string) => s.trim().toLocaleLowerCase('pt-BR');
 
 export interface SetGap {
   /** Itens que a biblioteca não tem (pelo nome). */
@@ -178,37 +198,9 @@ function sameItem(a: ItemData, b: ItemData): boolean {
     && a.durability.pv === b.durability.pv && a.durability.rd === b.durability.rd && a.durability.def === b.durability.def;
 }
 
-export interface SetRemoval {
-  /** Item da biblioteca. */
-  id: string;
-  name: string;
-  /** Diferente da versão do conjunto: editado pelo mestre ou um item próprio de mesmo nome. */
-  changed: boolean;
-  /** Outros conjuntos que também têm este item e estão (ao menos em parte) na biblioteca. */
-  alsoIn: string[];
-}
+export type { SetRemoval };
 
-/**
- * Itens do conjunto que estão na biblioteca (pelo nome), para desimportar. Sair por padrão
- * (`changed` falso e `alsoIn` vazio) só o que está igual ao conjunto e não é de outro conjunto em uso.
- */
+/** Itens do conjunto que estão na biblioteca (pelo nome), para desimportar. */
 export function installedSetItems(library: Record<string, LibraryItem>, setId: ItemSetId): SetRemoval[] {
-  const set = ITEM_SETS.find((s) => s.id === setId);
-  if (!set) return [];
-  const byName = new Map(Object.values(library).map((it) => [nameKey(it.name), it]));
-  const mine = new Set(set.items.map((i) => nameKey(i.name)));
-  // Conjunto em uso: tem na biblioteca algum item que não é deste.
-  const inUse = ITEM_SETS.filter((s) => s.id !== setId && s.items.some((i) => !mine.has(nameKey(i.name)) && byName.has(nameKey(i.name))));
-  const out: SetRemoval[] = [];
-  for (const it of set.items) {
-    const have = byName.get(nameKey(it.name));
-    if (!have || out.some((r) => r.id === have.id)) continue;
-    out.push({
-      id: have.id,
-      name: have.name,
-      changed: !sameItem(have, it),
-      alsoIn: inUse.filter((s) => s.items.some((i) => nameKey(i.name) === nameKey(it.name))).map((s) => s.name),
-    });
-  }
-  return out;
+  return installedInSet(library, ITEM_SETS, setId, sameItem);
 }

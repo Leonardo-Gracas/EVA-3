@@ -5,7 +5,6 @@ import {
   type Backup, type BackupContents, type TableSummary,
 } from '../store/persistence';
 import { newTable } from '../store/engine';
-import { placeholderTable } from '../store/placeholder';
 import { isValidCode, newRoomCode, normalizeCode } from '../net/config';
 import { lastJoinCode } from '../net/identity';
 import { LIMITS } from '../rules/validate';
@@ -22,7 +21,6 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
 }) {
   const [tables, setTables] = useState<TableSummary[] | null>(null);
   const [tableName, setTableName] = useState('');
-  const [withDefaults, setWithDefaults] = useState(false);
   const [code, setCode] = useState(lastJoinCode());
   const [pending, setPending] = useState<Backup | null>(null);
 
@@ -30,7 +28,7 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
   useEffect(() => { void refresh(); }, []);
 
   const create = async () => {
-    const t = (withDefaults ? placeholderTable : newTable)(tableName || 'Nova mesa', userName, newRoomCode());
+    const t = newTable(tableName || 'Nova mesa', userName, newRoomCode());
     await saveTable(t);
     onHost(t);
   };
@@ -103,10 +101,6 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
             <label className="label">Nome da mesa</label>
             <input className="input" value={tableName} maxLength={LIMITS.tableName} placeholder="Ex.: O Nome Deles é Legião" onChange={(e) => setTableName(e.target.value)} />
           </div>
-          <label className="check" title="A biblioteca de itens e o painel de ameaças já começam preenchidos; dá para editar ou apagar depois">
-            <input type="checkbox" checked={withDefaults} onChange={(e) => setWithDefaults(e.target.checked)} />
-            Começar com itens e ameaças padrão
-          </label>
           <button className="btn btn-primary btn-lg">Criar e abrir sala</button>
         </form>
 

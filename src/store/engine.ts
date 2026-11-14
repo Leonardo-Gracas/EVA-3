@@ -60,7 +60,8 @@ const MAX_QTY = 999;
 /** Itens na biblioteca do mestre, no máximo. */
 export const MAX_LIBRARY = 500;
 const MAX_NPCS = 200;
-const MAX_THREATS = 300;
+/** Ameaças no painel do mestre, no máximo. */
+export const MAX_THREATS = 300;
 const MAX_GOLD = 9_999_999;
 const MAX_CONDITIONS = 12;
 const MAX_SPAWN = 20;

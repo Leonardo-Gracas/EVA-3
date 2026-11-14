@@ -610,11 +610,12 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .threat-cat-demoniaco { --t: #e0454f; }
 .threat-cat-etereo { --t: #4fd0e0; }
 .threat-cat-celestial { --t: #e8cf86; }
+.threat-cat-animal { --t: #c39a62; }
 /* Humano: caveira clara sobre fundo preto. */
 .threat-icon.threat-cat-humano { background: #070605; border-color: #4a4034; }
 .threat-cat-etereo.threat-icon { box-shadow: inset 0 0 10px color-mix(in srgb, var(--t) 18%, transparent); }
 .pick-cat { display: inline-grid; place-items: center; color: var(--t); flex-shrink: 0; }
-.cat-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.cat-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
 .cat-opt {
   display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 6px 8px;
   border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated);
@@ -623,7 +624,6 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .cat-opt svg { color: var(--t); }
 .cat-opt:hover { border-color: var(--border-light); color: var(--text-primary); }
 .cat-opt.on { color: var(--text-primary); border-color: color-mix(in srgb, var(--t) 70%, transparent); background: color-mix(in srgb, var(--t) 12%, var(--bg-elevated)); }
-@media (max-width: 560px) { .cat-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ── Biblioteca de itens do mestre: grade de cards, até 4 por fileira ─ */
 .lib-grid {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch, newTable, type EngineCtx } from './engine';
 import type { Actor } from '../model/types';
-import { LIGHT_ITEMS, PLACEHOLDER_ITEMS, PLACEHOLDER_THREATS, placeholderTable } from './placeholder';
+import { CATALOG_ITEMS, LIGHT_ITEMS } from './itemCatalog';
 import { missingSetItems } from './itemSets';
 
 const missingLightItems = (lib: Parameters<typeof missingSetItems>[0]) => missingSetItems(lib, LIGHT_ITEMS);
@@ -9,23 +9,13 @@ const missingLightItems = (lib: Parameters<typeof missingSetItems>[0]) => missin
 let n = 0;
 const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 };
 
-describe('campanha de exemplo', () => {
-  it('cria todos os itens e ameaças pelo motor, ameaças na ordem por força', () => {
-    const s = placeholderTable('Mesa', 'Mestre','ABCDEF', ctx);
-    expect(Object.keys(s.itemLibrary)).toHaveLength(PLACEHOLDER_ITEMS.length);
-    const threats = Object.values(s.threats).sort((a, b) => a.createdAt - b.createdAt);
-    expect(threats.map((t) => t.name)).toEqual(PLACEHOLDER_THREATS.map((t) => t.name));
-    expect(threats.every((t) => t.current.pv === t.pvMax && t.attacks.every((a) => a.id))).toBe(true);
-  });
-
+describe('catálogo de itens', () => {
   it('não repete nomes', () => {
-    const names = [...PLACEHOLDER_ITEMS, ...PLACEHOLDER_THREATS].map((x) => x.name);
+    const names = CATALOG_ITEMS.map((x) => x.name);
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('itens de iluminação: mesa nova já tem; mesa antiga ganha os que faltam e a luz nos de mesmo nome', () => {
-    const fresh = placeholderTable('Mesa', 'Mestre', 'ABCDEF', ctx);
-    expect(missingLightItems(fresh.itemLibrary)).toEqual({ add: [], update: [] });
+  it('itens de iluminação: a biblioteca ganha os que faltam e a luz nos de mesmo nome', () => {
     expect(LIGHT_ITEMS.every((i) => (i.effects.light ?? 0) > 0)).toBe(true);
 
     // Biblioteca de antes: sem os itens novos, e a lanterna sem luz.

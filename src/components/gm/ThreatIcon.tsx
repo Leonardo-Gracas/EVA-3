@@ -1,4 +1,4 @@
-import { Scale, Skull } from 'lucide-react';
+import { PawPrint, Scale, Skull } from 'lucide-react';
 import type { ThreatCategory } from '../../model/types';
 
 type IconProps = { size?: number };
@@ -30,6 +30,7 @@ const ICONS: Record<ThreatCategory, (p: IconProps) => JSX.Element> = {
   demoniaco: Pentagram,
   etereo: EtherRing,
   celestial: ({ size }) => <Scale size={size} />,
+  animal: ({ size }) => <PawPrint size={size} />,
 };
 
 /** Só o desenho da categoria, para chips e botões. */
@@ -40,7 +41,7 @@ export function ThreatGlyph({ category, size = 14 }: { category: ThreatCategory;
 
 /**
  * Selo da categoria: caveira clara no fundo escuro (humano), pentagrama vermelho (demoníaco),
- * anel ciano (etéreo) e balança dourada (celestial).
+ * anel ciano (etéreo), balança dourada (celestial) e pegada cor de terra (animal).
  */
 export default function ThreatIcon({ category, size = 18, box = 36 }: { category: ThreatCategory; size?: number; box?: number }) {
   return (
