@@ -1,5 +1,5 @@
 // Playlists montadas no EVA e preferências do player. Ficam no navegador do mestre
-// (localStorage), fora da mesa: não entram no backup nem chegam aos jogadores.
+// (localStorage), fora da mesa: não chegam aos jogadores, mas vão junto no backup.
 import { Store } from '../net/emitter';
 import type { Track } from './youtube';
 
@@ -44,7 +44,7 @@ function write(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* segue só na memória */ }
 }
 
-function validPlaylists(v: unknown): LocalPlaylist[] {
+export function validPlaylists(v: unknown): LocalPlaylist[] {
   if (!Array.isArray(v)) return [];
   return v.filter((p): p is LocalPlaylist => !!p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.tracks))
     .map((p) => ({ ...p, tracks: p.tracks.filter((t) => t && typeof t.id === 'string').map((t) => ({ ...t, title: t.title ?? '' })) }));
@@ -124,4 +124,12 @@ export function fillTrackInfo(videoId: string, title: string, channel?: string) 
     ...p,
     tracks: p.tracks.map((t) => (t.id === videoId ? { ...t, title: t.title || title, channel: t.channel || channel } : t)),
   })));
+}
+
+/** Playlists de um backup: entram as que ainda não existem aqui (pelo id). Devolve quantas entraram. */
+export function mergePlaylists(list: LocalPlaylist[]): number {
+  const have = new Set(libraryStore.get().map((p) => p.id));
+  const fresh = validPlaylists(list).filter((p) => !have.has(p.id) && have.add(p.id));
+  if (fresh.length) libraryStore.set([...libraryStore.get(), ...fresh]);
+  return fresh.length;
 }

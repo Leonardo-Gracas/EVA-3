@@ -7,6 +7,10 @@ import { equipBlock } from '../rules/equipment';
 import { snapshotOf } from '../model/cases';
 import { fixMap } from '../model/map';
 import { emptyCampaign, emptySessionData } from '../model/campaign';
+import { isHostKey, peekHostKey, restoreHostKey } from '../net/identity';
+import { libraryStore, mergePlaylists, validPlaylists, type LocalPlaylist } from '../music/library';
+import { defaultCtx } from './engine';
+import { LIMITS } from '../rules/validate';
 
 const DB_NAME = 'eva3';
 const STORE = 'tables';
@@ -81,12 +85,73 @@ export async function requestPersistentStorage(): Promise<boolean> {
 }
 
 // ── Backup em arquivo ────────────────────────────────────────────────────────
+// Um backup leva a mesa inteira (jogadores, fichas, NPCs, ameaças, itens, mapas,
+// combate, casos, caderno da campanha, permissões, pedidos e registro), a chave da
+// sala (para a mesa voltar com o mesmo código em outro navegador) e as playlists.
 
-interface BackupFile {
-  app: 'eva3';
-  version: 1;
-  exportedAt: string;
+/** O que há numa mesa, para o mestre conferir antes de importar (vai também no arquivo). */
+export interface BackupContents {
+  players: number;
+  pcs: number;
+  npcs: number;
+  threats: number;
+  items: number;
+  maps: number;
+  cases: number;
+  sessions: number;
+  combat: boolean;
+  logEntries: number;
+}
+
+export interface BackupEntry {
   table: TableState;
+  /** Chave que reserva o código da sala para o mestre. */
+  hostKey?: string;
+}
+
+/** Uma mesa (versão 1: só `table`). */
+interface TableBackupFile {
+  app: 'eva3';
+  type?: 'table';
+  version: 1 | 2;
+  exportedAt: string;
+  contents?: BackupContents;
+  table: TableState;
+  hostKey?: string;
+  playlists?: LocalPlaylist[];
+}
+
+/** Todas as mesas deste navegador. */
+interface FullBackupFile {
+  app: 'eva3';
+  type: 'all';
+  version: 2;
+  exportedAt: string;
+  tables: Array<BackupEntry & { contents?: BackupContents }>;
+  playlists: LocalPlaylist[];
+}
+
+/** Backup lido e conferido, pronto para importar. */
+export interface Backup {
+  exportedAt: string | null;
+  tables: BackupEntry[];
+  playlists: LocalPlaylist[];
+}
+
+export function backupContents(t: TableState): BackupContents {
+  const chars = Object.values(t.characters ?? {});
+  return {
+    players: Object.keys(t.players ?? {}).length,
+    pcs: chars.filter((c) => c.kind !== 'npc').length,
+    npcs: chars.filter((c) => c.kind === 'npc').length,
+    threats: Object.keys(t.threats ?? {}).length,
+    items: Object.keys(t.itemLibrary ?? {}).length,
+    maps: Object.keys(t.maps ?? {}).length,
+    cases: Object.keys(t.cases ?? {}).length,
+    sessions: Object.keys(t.campaign?.sessions ?? {}).length,
+    combat: !!t.combat,
+    logEntries: (t.log ?? []).length,
+  };
 }
 
 /** Nome de arquivo sem acentos nem símbolos. */
@@ -106,10 +171,37 @@ function downloadJson(data: unknown, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+const fileStamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+
+function entryOf(t: TableState): BackupEntry {
+  const hostKey = peekHostKey(t.id);
+  return hostKey ? { table: t, hostKey } : { table: t };
+}
+
+export function buildTableBackup(t: TableState, playlists: LocalPlaylist[]): TableBackupFile {
+  return { app: 'eva3', type: 'table', version: 2, exportedAt: new Date().toISOString(), contents: backupContents(t), ...entryOf(t), playlists };
+}
+
+export function buildFullBackup(tables: TableState[], playlists: LocalPlaylist[]): FullBackupFile {
+  return {
+    app: 'eva3', type: 'all', version: 2, exportedAt: new Date().toISOString(),
+    tables: tables.map((t) => ({ contents: backupContents(t), ...entryOf(t) })),
+    playlists,
+  };
+}
+
+/** Backup de uma mesa (com a chave da sala e as playlists deste navegador). */
 export function downloadTable(t: TableState): void {
-  const data: BackupFile = { app: 'eva3', version: 1, exportedAt: new Date().toISOString(), table: t };
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  downloadJson(data, `eva3-${slug(t.name, 'mesa')}-${stamp}.json`);
+  downloadJson(buildTableBackup(t, libraryStore.get()), `eva3-${slug(t.name, 'mesa')}-${fileStamp()}.json`);
+}
+
+/** Backup de todas as mesas deste navegador num arquivo só. Devolve quantas foram. */
+export async function downloadAllTables(): Promise<number> {
+  const all = await tx<TableState[]>('readonly', (s) => s.getAll());
+  const tables = (all ?? []).map(migrate).sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!tables.length) return 0;
+  downloadJson(buildFullBackup(tables, libraryStore.get()), `eva3-todas-as-mesas-${fileStamp()}.json`);
+  return tables.length;
 }
 
 export function pickFile(accept: string): Promise<File | null> {
@@ -123,20 +215,78 @@ export function pickFile(accept: string): Promise<File | null> {
   });
 }
 
-export async function readBackup(file: File): Promise<TableState> {
-  if (file.size > 20_000_000) throw new Error('Arquivo grande demais.');
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Confere o mínimo de uma mesa; o resto o `migrate` completa ou acerta. */
+function checkTable(v: unknown): TableState {
+  const t = v as TableState;
+  if (!isObj(t) || t.schema !== 1 || typeof t.id !== 'string' || !t.id || !isObj(t.characters)) {
+    throw new Error('Esse arquivo não é um backup de mesa do EVA 3.');
+  }
+  t.name = typeof t.name === 'string' && t.name.trim() ? t.name : 'Mesa sem nome';
+  for (const k of ['players', 'threats', 'itemLibrary', 'cases', 'maps'] as const) {
+    if (t[k] != null && !isObj(t[k])) throw new Error(`Backup danificado: a parte "${k}" da mesa "${t.name}" não pôde ser lida.`);
+  }
+  if (t.log != null && !Array.isArray(t.log)) throw new Error(`Backup danificado: o registro da mesa "${t.name}" não pôde ser lido.`);
+  return migrate(t);
+}
+
+function entryFrom(v: unknown): BackupEntry {
+  const e = isObj(v) ? v : {};
+  const table = checkTable(e.table);
+  return isHostKey(e.hostKey) ? { table, hostKey: e.hostKey } : { table };
+}
+
+/** Confere o conteúdo de um arquivo de backup: de uma mesa, de todas, da versão 1 ou uma mesa solta. */
+export function parseBackup(data: unknown): Backup {
+  if (!isObj(data)) throw new Error('Esse arquivo não é um backup de mesa do EVA 3.');
+  const d = data as { app?: unknown; type?: unknown; exportedAt?: unknown; playlists?: unknown; tables?: unknown };
+  if (d.app === 'eva3' && d.type === 'characters') {
+    throw new Error('Esse arquivo é de fichas, não de uma mesa. Importe pela aba Jogadores ou NPCs e Ameaças.');
+  }
+  if (d.app !== 'eva3') return { exportedAt: null, tables: [{ table: checkTable(data) }], playlists: [] };
+  const exportedAt = typeof d.exportedAt === 'string' ? d.exportedAt : null;
+  const playlists = validPlaylists(d.playlists);
+  if (d.type === 'all') {
+    if (!Array.isArray(d.tables) || !d.tables.length) throw new Error('Esse backup não tem nenhuma mesa.');
+    const tables = d.tables.map(entryFrom);
+    if (new Set(tables.map((e) => e.table.id)).size !== tables.length) throw new Error('Backup danificado: a mesma mesa aparece duas vezes.');
+    return { exportedAt, tables, playlists };
+  }
+  return { exportedAt, tables: [entryFrom(d)], playlists };
+}
+
+export async function readBackup(file: File): Promise<Backup> {
+  if (file.size > 100_000_000) throw new Error('Arquivo grande demais.');
   let data: unknown;
   try {
     data = JSON.parse(await file.text());
   } catch {
     throw new Error('Arquivo inválido: não é um JSON.');
   }
-  const d = data as Partial<BackupFile>;
-  const t = d?.app === 'eva3' ? d.table : (data as TableState);
-  if (!t || typeof t !== 'object' || t.schema !== 1 || typeof t.id !== 'string' || typeof t.characters !== 'object') {
-    throw new Error('Esse arquivo não é um backup de mesa do EVA 3.');
+  return parseBackup(data);
+}
+
+/**
+ * Grava as mesas de um backup neste navegador. Com `asCopy`, as que já existem aqui
+ * entram como mesas novas (outro id e outro código de sala), sem tocar nas atuais.
+ * As playlists que ainda não existem entram na biblioteca de música.
+ */
+export async function restoreBackup(b: Backup, existing: Set<string>, asCopy: boolean, roomCode: () => string): Promise<{ tables: TableState[]; playlists: number }> {
+  const saved: TableState[] = [];
+  for (const { table, hostKey } of b.tables) {
+    if (asCopy && existing.has(table.id)) {
+      const copy: TableState = { ...structuredClone(table), id: defaultCtx.newId(), name: `${table.name} (cópia)`.slice(0, LIMITS.tableName), roomCode: roomCode() };
+      await saveTable(copy);
+      saved.push(copy);
+      continue;
+    }
+    // A chave vem junto: a mesa volta com o mesmo código, e os jogadores entram como antes.
+    if (hostKey) restoreHostKey(table.id, hostKey);
+    await saveTable(table);
+    saved.push(table);
   }
-  return migrate(t);
+  return { tables: saved, playlists: b.playlists.length ? mergePlaylists(b.playlists) : 0 };
 }
 
 // ── Fichas em arquivo ────────────────────────────────────────────────────────
@@ -176,9 +326,9 @@ export async function readCharacterFile(file: File): Promise<CharacterExport[]> 
   } catch {
     throw new Error('Arquivo inválido: não é um JSON.');
   }
-  const d = (data ?? {}) as Partial<CharacterFile> & Partial<BackupFile> & Partial<CharacterExport>;
+  const d = (data ?? {}) as Partial<CharacterFile> & Partial<TableBackupFile> & Partial<CharacterExport> & { tables?: unknown };
   if (d.app === 'eva3' && d.type === 'characters' && Array.isArray(d.characters) && d.characters.length) return d.characters;
-  if (d.app === 'eva3' && d.table) throw new Error('Esse arquivo é o backup de uma mesa inteira. Exporte as fichas pela ficha ou pela aba NPCs e Ameaças.');
+  if (d.app === 'eva3' && (d.table || d.tables)) throw new Error('Esse arquivo é o backup de uma mesa inteira (importe pela tela inicial). Exporte as fichas pela ficha ou pela aba NPCs e Ameaças.');
   if (typeof d.name === 'string' && d.attributes && Array.isArray(d.levels)) return [d as CharacterExport];
   throw new Error('Esse arquivo não é uma ficha do EVA 3.');
 }

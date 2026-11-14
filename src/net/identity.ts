@@ -79,3 +79,22 @@ export function hostKeyFor(tableId: string): string {
     return key;
   }
 }
+
+export const isHostKey = (key: unknown): key is string => typeof key === 'string' && /^[0-9a-f]{64}$/.test(key);
+
+/** Chave já existente desta mesa (sem criar uma nova), para ir no backup. */
+export function peekHostKey(tableId: string): string | null {
+  try {
+    const saved = localStorage.getItem(HOST_KEY + tableId);
+    return isHostKey(saved) ? saved : memKeys.get(tableId) ?? null;
+  } catch {
+    return memKeys.get(tableId) ?? null;
+  }
+}
+
+/** Restaura a chave vinda de um backup: a mesa volta com o mesmo código de sala. */
+export function restoreHostKey(tableId: string, key: string): void {
+  if (!isHostKey(key)) return;
+  memKeys.set(tableId, key);
+  try { localStorage.setItem(HOST_KEY + tableId, key); } catch { /* fica só na memória */ }
+}

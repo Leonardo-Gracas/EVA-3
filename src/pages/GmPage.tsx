@@ -91,7 +91,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
           <GmInbox table={table} onOpenSheet={openSheet} onOpenRequests={openRequests} />
           <button className="code-pill desktop-only" onClick={() => setInvite(true)} title="Convidar jogadores">{table.roomCode}</button>
           {!saveError && savedAt && <span className="tiny muted desktop-only">Salvo {savedAt}</span>}
-          <button className="btn btn-sm btn-ghost desktop-only" onClick={() => downloadTable(table)} title="Exportar backup (.json)"><Download size={14} />Backup</button>
+          <button className="btn btn-sm btn-ghost desktop-only" onClick={() => downloadTable(table)} title="Exportar backup (.json): a mesa inteira, as playlists e o código da sala"><Download size={14} />Backup</button>
           <button className="btn btn-sm btn-ghost desktop-only" onClick={leave} title="Fechar sala"><LogOut size={14} /></button>
         </TopBar>
         <Tabs<Tab>

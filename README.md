@@ -11,7 +11,7 @@ Gerenciador de campanhas online para o sistema de RPG **EVA 3**. O navegador do 
 3. **Entrar com código**: vira jogador, monta a ficha no assistente e envia para o mestre aprovar.
 4. Durante o jogo, cada ação do jogador segue as permissões que o mestre definiu: **livre**, **solicitar** (vira pedido na aba Pedidos) ou **bloqueada**. Há permissão global e exceções por jogador.
 
-A mesa fica salva no IndexedDB do navegador do mestre (salvamento automático) e pode ser exportada e importada como `.json` pelo botão **Backup** e pelo lobby. Se o mestre recarregar a página ou voltar outro dia, a sala reabre com o mesmo código e os jogadores reconectam sozinhos.
+A mesa fica salva no IndexedDB do navegador do mestre (salvamento automático) e pode ser exportada e importada como `.json` pelo botão **Backup** e pelo lobby. O backup leva tudo: jogadores, fichas, NPCs, ameaças, itens, mapas, combate, casos, caderno da campanha, permissões, pedidos e registro, além das playlists e da chave da sala (restaurada em outro navegador, a mesa volta com o mesmo código e os jogadores reconectam sem convite novo). No lobby, **Backup de tudo** junta todas as mesas num arquivo só; ao importar, o EVA mostra o que vem no arquivo e, se a mesa já existe, deixa substituir ou manter as duas. Se o mestre recarregar a página ou voltar outro dia, a sala reabre com o mesmo código e os jogadores reconectam sozinhos.
 
 ## Regras no código
 
@@ -46,7 +46,7 @@ Transição, e duas abas. As explicações e o botão para entrar no YouTube fic
 
 - **Tocando**: a fila atual, com o nome de cada vídeo. Uma fila aberta por link pode ser salva como playlist do sistema.
 - **Do sistema**: playlists montadas no EVA colando links de vídeos. Ficam no `localStorage` do navegador do mestre
-  (não entram no backup da mesa).
+  (vão junto no backup `.json` da mesa).
 
 **Transição (crossfade)**: são dois iframes do YouTube que se revezam. Uns segundos antes do fim, o próximo vídeo é
 carregado mudo e pausado no começo; na hora da transição ele entra subindo o volume enquanto o atual desce (curva de potência

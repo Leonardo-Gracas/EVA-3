@@ -235,7 +235,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       <ul>
         <li><strong>Só você ouve.</strong> A música toca só neste navegador; os jogadores não ouvem nada.</li>
         <li><strong>Tocar um link:</strong> cole o endereço de um vídeo ou de uma playlist do YouTube. A playlist colada pode virar playlist do sistema pelo botão <em>Salvar</em>, na aba Tocando.</li>
-        <li><strong>Playlists do sistema</strong> ficam salvas neste navegador e não entram no backup da mesa. Crie uma e cole links de vídeos.</li>
+        <li><strong>Playlists do sistema</strong> ficam salvas neste navegador e vão junto no backup (.json) da mesa. Crie uma e cole links de vídeos.</li>
         <li><strong>Recomeçar faixa</strong> (<Repeat1 size={12} /> na barra) repete a música atual. <strong>Repetir playlist</strong> volta ao começo depois da última faixa.</li>
         <li><strong>Transição:</strong> perto do fim, a próxima música entra enquanto a atual some. Clique no botão para trocar a duração. No iPhone e no iPad a troca é seca.</li>
         <li>Vídeos que o dono não deixa tocar fora do YouTube são pulados.</li>

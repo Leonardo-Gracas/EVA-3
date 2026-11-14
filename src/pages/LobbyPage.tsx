@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Crown, Download, LogIn, Pencil, Play, Trash2, Upload, Users } from 'lucide-react';
-import { deleteTable, downloadTable, listTables, loadTable, pickFile, readBackup, saveTable, type TableSummary } from '../store/persistence';
+import { Archive, Crown, Download, LogIn, Pencil, Play, Trash2, Upload, Users } from 'lucide-react';
+import {
+  backupContents, deleteTable, downloadAllTables, downloadTable, listTables, loadTable, pickFile, readBackup, restoreBackup, saveTable,
+  type Backup, type BackupContents, type TableSummary,
+} from '../store/persistence';
 import { newTable } from '../store/engine';
 import { placeholderTable } from '../store/placeholder';
 import { isValidCode, newRoomCode, normalizeCode } from '../net/config';
@@ -9,6 +12,7 @@ import { LIMITS } from '../rules/validate';
 import type { TableState } from '../model/types';
 import { toast } from '../components/common/toast';
 import ConfirmButton from '../components/common/ConfirmButton';
+import Modal from '../components/common/Modal';
 
 export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
   userName: string;
@@ -20,6 +24,7 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
   const [tableName, setTableName] = useState('');
   const [withDefaults, setWithDefaults] = useState(false);
   const [code, setCode] = useState(lastJoinCode());
+  const [pending, setPending] = useState<Backup | null>(null);
 
   const refresh = () => listTables().then(setTables).catch(() => setTables([]));
   useEffect(() => { void refresh(); }, []);
@@ -40,11 +45,30 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
     const f = await pickFile('application/json,.json');
     if (!f) return;
     try {
-      const t = await readBackup(f);
-      const exists = tables?.some((x) => x.id === t.id);
-      await saveTable(t);
-      toast(exists ? `Mesa "${t.name}" substituída pelo backup.` : `Mesa "${t.name}" importada.`, 'ok');
-      void refresh();
+      setPending(await readBackup(f));
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  };
+
+  const restore = async (asCopy: boolean) => {
+    if (!pending) return;
+    try {
+      const existing = new Set((await listTables()).map((x) => x.id));
+      const r = await restoreBackup(pending, existing, asCopy, newRoomCode);
+      const what = r.tables.length === 1 ? `Mesa "${r.tables[0].name}" restaurada` : `${r.tables.length} mesas restauradas`;
+      toast(`${what}${r.playlists ? ` e ${r.playlists} playlist${r.playlists === 1 ? '' : 's'}` : ''}.`, 'ok');
+      setPending(null);
+    } catch (e) {
+      toast(`Não deu para importar: ${(e as Error).message}`, 'error');
+    }
+    void refresh();
+  };
+
+  const exportAll = async () => {
+    try {
+      const n = await downloadAllTables();
+      if (!n) toast('Nenhuma mesa salva neste navegador.', 'error');
     } catch (e) {
       toast((e as Error).message, 'error');
     }
@@ -101,6 +125,7 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
         <div className="row-wrap mb">
           <div className="card-title" style={{ margin: 0 }}>Minhas mesas (mestre)</div>
           <div className="spacer" />
+          {!!tables?.length && <button className="btn btn-sm" onClick={exportAll} title="Todas as mesas e as playlists num arquivo só"><Archive size={14} /> Backup de tudo</button>}
           <button className="btn btn-sm" onClick={importFile}><Upload size={14} /> Importar backup</button>
         </div>
         {tables === null ? <div className="muted small">Carregando…</div> : tables.length === 0 ? (
@@ -124,8 +149,74 @@ export default function LobbyPage({ userName, onEditName, onHost, onJoin }: {
             ))}
           </div>
         )}
-        <p className="tiny muted mt">As mesas ficam salvas só neste navegador. Exporte o backup (.json) com frequência para não perder nada.</p>
+        <p className="tiny muted mt">
+          As mesas ficam salvas só neste navegador. Exporte o backup (.json) com frequência para não perder nada: ele leva tudo da mesa
+          (jogadores, fichas, NPCs, ameaças, itens, mapas, combate, casos, campanha e registro), as playlists e o código da sala.
+          Guarde o arquivo com cuidado: quem tiver ele pode abrir a mesa com o mesmo código.
+        </p>
       </div>
+      {pending && <ImportModal backup={pending} existing={new Set(tables?.map((t) => t.id) ?? [])} onClose={() => setPending(null)} onImport={restore} />}
     </div>
+  );
+}
+
+function contentsLine(c: BackupContents): string {
+  const n = (v: number, one: string, many: string) => (v ? `${v} ${v === 1 ? one : many}` : null);
+  return [
+    n(c.players, 'jogador', 'jogadores'),
+    n(c.pcs, 'ficha', 'fichas'),
+    n(c.npcs, 'NPC', 'NPCs'),
+    n(c.threats, 'ameaça', 'ameaças'),
+    n(c.items, 'item', 'itens'),
+    n(c.maps, 'mapa', 'mapas'),
+    c.combat ? 'combate em andamento' : null,
+    n(c.cases, 'caso', 'casos'),
+    n(c.sessions, 'sessão', 'sessões'),
+    n(c.logEntries, 'registro', 'registros'),
+  ].filter(Boolean).join(' · ') || 'mesa vazia';
+}
+
+/** Mostra o que vem no backup antes de gravar; se alguma mesa já existe, o mestre escolhe substituir ou manter as duas. */
+function ImportModal({ backup, existing, onClose, onImport }: {
+  backup: Backup;
+  existing: Set<string>;
+  onClose: () => void;
+  onImport: (asCopy: boolean) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const clashes = backup.tables.filter((e) => existing.has(e.table.id)).length;
+  const go = async (asCopy: boolean) => { setBusy(true); await onImport(asCopy); setBusy(false); };
+  return (
+    <Modal open onClose={onClose} title="Importar backup" width={560}
+      footer={(
+        <>
+          <button className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
+          {clashes > 0 && <button className="btn" onClick={() => go(true)} disabled={busy} title="As mesas atuais ficam como estão; as do backup entram como cópias, com outro código">Manter as duas</button>}
+          <button className={`btn ${clashes ? 'btn-danger' : 'btn-primary'}`} onClick={() => go(false)} disabled={busy}>{clashes ? 'Substituir' : 'Importar'}</button>
+        </>
+      )}>
+      <div className="col">
+        {backup.exportedAt && <p className="small muted">Backup de {new Date(backup.exportedAt).toLocaleString('pt-BR')}.</p>}
+        {backup.tables.map(({ table, hostKey }) => (
+          <div key={table.id} className="inv-row">
+            <div className="grow">
+              <strong>{table.name}</strong>
+              {existing.has(table.id) && <span className="tiny" style={{ color: 'var(--error)' }}> · já existe neste navegador</span>}
+              <div className="tiny muted">{contentsLine(backupContents(table))}</div>
+              <div className="tiny muted">Código {table.roomCode}{hostKey ? ' (mantido)' : ' (pode mudar ao abrir a sala)'}</div>
+            </div>
+          </div>
+        ))}
+        {backup.playlists.length > 0 && (
+          <p className="small secondary">{backup.playlists.length} playlist{backup.playlists.length === 1 ? '' : 's'} de música (só as que ainda não existem aqui serão adicionadas).</p>
+        )}
+        {clashes > 0 && (
+          <p className="small secondary">
+            {clashes === 1 ? 'Uma mesa' : `${clashes} mesas`} do backup já {clashes === 1 ? 'existe' : 'existem'} aqui. <strong>Substituir</strong> troca
+            a versão deste navegador pela do arquivo (não dá para desfazer). <strong>Manter as duas</strong> importa como cópia, com outro código de sala.
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }
