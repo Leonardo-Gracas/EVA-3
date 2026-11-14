@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasRich, parseRich, toggleMark, type Mark, type RichNode, type TextEdit } from './format';
+import { parseRich, richFromRuns, type RichNode, type RichRun } from './format';
 
 const b = (...children: RichNode[]): RichNode => ({ kind: 'b', children });
 const i = (...children: RichNode[]): RichNode => ({ kind: 'i', children });
@@ -29,54 +29,42 @@ describe('parseRich', () => {
   it('não atravessa linhas', () => {
     expect(parseRich('**uma\noutra**')).toEqual(['**uma\noutra**']);
   });
-
-  it('hasRich', () => {
-    expect(hasRich('o **padre**')).toBe(true);
-    expect(hasRich('2 * 3')).toBe(false);
-    expect(hasRich('sem nada')).toBe(false);
-  });
 });
 
-/** Aplica a edição e marca a seleção com [ ]. */
-function run(text: string, mark: Mark) {
-  const start = text.indexOf('['), end = text.indexOf(']') - 1;
-  const value = text.replace('[', '').replace(']', '');
-  const ed: TextEdit = toggleMark(value, start, end, mark);
-  const out = value.slice(0, ed.from) + ed.insert + value.slice(ed.to);
-  return out.slice(0, ed.selStart) + '[' + out.slice(ed.selStart, ed.selEnd) + ']' + out.slice(ed.selEnd);
-}
+const run = (text: string, b = false, it = false): RichRun => ({ text, b, i: it });
 
-describe('toggleMark', () => {
-  it('envolve a seleção', () => {
-    expect(run('o [padre] mente', '**')).toBe('o **[padre]** mente');
-    expect(run('o [padre] mente', '*')).toBe('o *[padre]* mente');
+describe('richFromRuns', () => {
+  it('texto simples fica igual', () => {
+    expect(richFromRuns([run('nada aqui')])).toBe('nada aqui');
+    expect(richFromRuns([])).toBe('');
   });
 
-  it('não leva os espaços das pontas para dentro da marca', () => {
-    expect(run('o[ padre ]mente', '**')).toBe('o **[padre]** mente');
+  it('marca negrito e itálico', () => {
+    expect(richFromRuns([run('o '), run('padre', true), run(' mente e '), run('sabe', false, true)])).toBe('o **padre** mente e *sabe*');
+    expect(richFromRuns([run('os dois', true, true)])).toBe('***os dois***');
   });
 
-  it('sem seleção, abre o par com o cursor no meio; de novo, desfaz', () => {
-    expect(run('a []b', '**')).toBe('a **[]**b');
-    expect(run('a **[]**b', '**')).toBe('a []b');
+  it('junta trechos vizinhos com a mesma formatação', () => {
+    expect(richFromRuns([run('pa', true), run('dre', true)])).toBe('**padre**');
   });
 
-  it('tira a marca de fora ou de dentro da seleção', () => {
-    expect(run('o **[padre]** mente', '**')).toBe('o [padre] mente');
-    expect(run('o [**padre**] mente', '**')).toBe('o [padre] mente');
-    expect(run('o *[padre]* mente', '*')).toBe('o [padre] mente');
+  it('deixa os espaços das pontas fora das marcas', () => {
+    expect(richFromRuns([run('o'), run(' padre ', true), run('mente')])).toBe('o **padre** mente');
+    expect(richFromRuns([run('a'), run('  ', true), run('b')])).toBe('a  b');
   });
 
-  it('negrito e itálico se combinam', () => {
-    expect(run('**[padre]**', '*')).toBe('***[padre]***');
-    expect(run('***[padre]***', '*')).toBe('**[padre]**');
-    expect(run('***[padre]***', '**')).toBe('*[padre]*');
-    // Itálico não confunde o negrito com uma marca de itálico.
-    expect(run('**[padre]**', '**')).toBe('[padre]');
+  it('marca cada linha à parte', () => {
+    expect(richFromRuns([run('um\ndois', true)])).toBe('**um**\n**dois**');
+    expect(richFromRuns([run('um\n\ndois', true)])).toBe('**um**\n\n**dois**');
   });
 
-  it('várias linhas: cada uma à parte, e desfaz do mesmo jeito', () => {
-    expect(run('[um\n  dois\n\ntrês]', '**')).toBe('[**um**\n  **dois**\n\n**três**]');
-    expect(run('[**um**\n**dois**]', '**')).toBe('[um\ndois]');
+  it('itálico dentro do negrito', () => {
+    const md = richFromRuns([run('fala ', true), run('muito', true, true), run(' baixo', true)]);
+    expect(parseRich(md)).toEqual([b('fala ', i('muito'), ' baixo')]);
+  });
+
+  it('ida e volta pelo parseRich', () => {
+    const md = richFromRuns([run('o '), run('padre', true), run(' sabe de '), run('tudo', false, true), run('.')]);
+    expect(parseRich(md)).toEqual(['o ', b('padre'), ' sabe de ', i('tudo'), '.']);
   });
 });

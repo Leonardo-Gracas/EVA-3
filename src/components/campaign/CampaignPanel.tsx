@@ -178,7 +178,7 @@ function Overview({ table, onOpen, onNewSession, onEditArc }: {
           onChange={(e) => up({ title: e.target.value })} aria-label="Nome da campanha" />
         <AutoTextarea className="camp-premise" value={info.premise} maxLength={LIMITS.campaignText} minRows={1}
           placeholder="Premissa: do que trata a campanha, em poucas linhas. O tom, o conflito central, o que está em jogo."
-          onChange={(e) => up({ premise: e.target.value })} aria-label="Premissa" />
+          onChange={(premise) => up({ premise })} aria-label="Premissa" />
         <dl className="camp-kpis">
           <div><dt>Arcos</dt><dd>{camp.arcs.length}</dd></div>
           <div><dt>Jogadas</dt><dd>{played.length}</dd></div>
@@ -282,7 +282,7 @@ function Overview({ table, onOpen, onNewSession, onEditArc }: {
         </Section>
 
         <Section icon={<NotebookText size={15} />} title="Anotações gerais" hint="Mundo, facções, linha do tempo, regras da casa. O que não cabe num arco.">
-          <AutoTextarea value={info.notes} maxLength={LIMITS.campaignText} minRows={6} onChange={(e) => up({ notes: e.target.value })} aria-label="Anotações gerais" />
+          <AutoTextarea value={info.notes} maxLength={LIMITS.campaignText} minRows={6} onChange={(notes) => up({ notes })} aria-label="Anotações gerais" />
         </Section>
       </div>
     </div>
@@ -345,7 +345,7 @@ function ArcModal({ arc, onClose }: { arc: CampaignArc | null; onClose: () => vo
         <label className="field">
           <span className="label">Resumo</span>
           <AutoTextarea value={summary} maxLength={LIMITS.campaignText} minRows={3} placeholder="Do que trata, como começa, como pode terminar."
-            onChange={(e) => setSummary(e.target.value)} />
+            onChange={setSummary} aria-label="Resumo" />
         </label>
         <button type="submit" hidden />
       </form>

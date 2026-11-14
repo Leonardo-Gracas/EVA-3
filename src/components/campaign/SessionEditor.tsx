@@ -87,16 +87,16 @@ export default function SessionEditor({ table, session, onDeleted }: {
           <div className="camp-col">
             <Section icon={<Target size={15} />} title="Objetivo" hint="Em uma frase: o que esta sessão precisa entregar.">
               <RichLine bar className="input" value={d.plan.goal} maxLength={LIMITS.campaignLine} placeholder="Ex.: os personagens descobrem quem mandou matar o padre"
-                onChange={(e) => upPlan({ goal: e.target.value })} />
+                onChange={(goal) => upPlan({ goal })} aria-label="Objetivo" />
             </Section>
             <Section icon={<Flag size={15} />} title="Abertura" hint="A primeira cena: comece perto da ação.">
               <AutoTextarea value={d.plan.opening} maxLength={LIMITS.campaignText} minRows={2} placeholder="Onde estão, o que acontece logo de cara?"
-                onChange={(e) => upPlan({ opening: e.target.value })} />
+                onChange={(opening) => upPlan({ opening })} aria-label="Abertura" />
             </Section>
             <Section icon={<ScrollText size={15} />} title="Roteiro e cenas" hint="Cenas possíveis, em tópicos. Não precisa seguir uma ordem.">
               <AutoTextarea value={d.plan.outline} maxLength={LIMITS.campaignText} minRows={6}
                 placeholder={'- Interrogatório na delegacia\n- Perseguição pelo mercado\n- O culto se reúne à meia-noite'}
-                onChange={(e) => upPlan({ outline: e.target.value })} />
+                onChange={(outline) => upPlan({ outline })} aria-label="Roteiro e cenas" />
             </Section>
           </div>
           <div className="camp-col">
@@ -129,7 +129,7 @@ export default function SessionEditor({ table, session, onDeleted }: {
                   onChange={(e) => upReport({ guests: e.target.value })} />
               </Section>
               <Section icon={<NotebookPen size={15} />} title="Anotações da mesa" hint="Rascunho rápido: nomes improvisados, decisões, rolagens marcantes.">
-                <AutoTextarea value={d.report.live} maxLength={LIMITS.campaignText} minRows={5} onChange={(e) => upReport({ live: e.target.value })} />
+                <AutoTextarea value={d.report.live} maxLength={LIMITS.campaignText} minRows={5} onChange={(live) => upReport({ live })} aria-label="Anotações da mesa" />
               </Section>
               <Section icon={<Eye size={15} />} title="Segredos revelados"
                 aside={secrets.length > 0 && <span className="camp-count">{revealed}/{secrets.length}</span>}>
@@ -141,13 +141,13 @@ export default function SessionEditor({ table, session, onDeleted }: {
             <div className="camp-col">
               <div className="camp-col-label">Depois</div>
               <Section icon={<ScrollText size={15} />} title="Resumo" hint="O que aconteceu. É o que você vai reler antes da próxima sessão.">
-                <AutoTextarea value={d.report.recap} maxLength={LIMITS.campaignText} minRows={6} onChange={(e) => upReport({ recap: e.target.value })} />
+                <AutoTextarea value={d.report.recap} maxLength={LIMITS.campaignText} minRows={6} onChange={(recap) => upReport({ recap })} aria-label="Resumo" />
               </Section>
               <Section icon={<Sparkles size={15} />} title="Ganchos e consequências" hint="O que ficou em aberto, uma ideia por linha."
                 aside={<HooksToThreads table={table} hooks={d.report.hooks} />}>
                 <AutoTextarea value={d.report.hooks} maxLength={LIMITS.campaignText} minRows={4}
                   placeholder={'O delegado agora desconfia do grupo\nA chave do porão sumiu'}
-                  onChange={(e) => upReport({ hooks: e.target.value })} />
+                  onChange={(hooks) => upReport({ hooks })} aria-label="Ganchos e consequências" />
               </Section>
             </div>
           </div>

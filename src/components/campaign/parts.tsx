@@ -2,13 +2,13 @@
 // itálico), lista com marcação, o cartão de seção e os seletores de data e de arco.
 import {
   Fragment, useEffect, useLayoutEffect, useRef, useState,
-  type InputHTMLAttributes, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type TextareaHTMLAttributes,
+  type ClipboardEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject,
 } from 'react';
 import { Bold, CalendarDays, Check, ChevronDown, GripVertical, Italic, Milestone, Plus, X } from 'lucide-react';
 import { ARC_STATUS, type CampaignArc, type CampaignCheck } from '../../model/types';
 import { formatSessionDate } from '../../model/campaign';
 import { LIMITS } from '../../rules/validate';
-import { hasRich, parseRich, toggleMark, type Mark, type RichNode } from './format';
+import { parseRich, richFromRuns, type RichNode, type RichRun } from './format';
 
 export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -64,8 +64,9 @@ export function SaveBadge({ state }: { state: SaveState }) {
 }
 
 // ── Negrito e itálico ────────────────────────────────────────────────────────
-
-type Field = HTMLInputElement | HTMLTextAreaElement;
+// Os campos de texto da campanha são editores que já mostram o negrito e o itálico (sem os
+// asteriscos à vista) e quebram a linha quando o texto passa da largura. Por baixo, o texto
+// continua guardado com as marcas do Markdown (**negrito** e *itálico*).
 
 function renderRich(nodes: RichNode[]): ReactNode[] {
   return nodes.map((n, k) => (typeof n === 'string'
@@ -78,83 +79,206 @@ export function RichText({ text }: { text: string }) {
   return <>{renderRich(parseRich(text))}</>;
 }
 
-/** Liga/desliga a marca na seleção do campo como se fosse digitado: avisa o React e mantém o Ctrl+Z. */
-function applyMark(el: Field, mark: Mark) {
-  const ed = toggleMark(el.value, el.selectionStart ?? 0, el.selectionEnd ?? 0, mark);
-  const next = el.value.slice(0, ed.from) + ed.insert + el.value.slice(ed.to);
-  if (el.maxLength > 0 && next.length > el.maxLength) return;
-  el.focus();
-  el.setSelectionRange(ed.from, ed.to);
-  let ok = false;
-  try { ok = document.execCommand('insertText', false, ed.insert); } catch { ok = false; }
-  if (!ok || el.value !== next) {
-    // Navegador sem insertText: troca o valor direto (perde só o desfazer).
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, next);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  el.setSelectionRange(ed.selStart, ed.selEnd);
+/** Monta no editor o texto com marcas, já formatado. */
+function fillEditor(el: HTMLElement, text: string) {
+  const build = (nodes: RichNode[], parent: Node) => {
+    for (const n of nodes) {
+      if (typeof n === 'string') {
+        n.split('\n').forEach((part, k) => {
+          if (k > 0) parent.appendChild(document.createElement('br'));
+          if (part) parent.appendChild(document.createTextNode(part));
+        });
+      } else {
+        const tag = document.createElement(n.kind === 'b' ? 'strong' : 'em');
+        build(n.children, tag);
+        parent.appendChild(tag);
+      }
+    }
+  };
+  el.replaceChildren();
+  build(parseRich(text), el);
+  // Uma quebra no fim só aparece na tela com outra <br> depois dela.
+  if (text.endsWith('\n')) el.appendChild(document.createElement('br'));
 }
 
-/** Ctrl+B / Ctrl+I (Cmd no Mac). Devolve true se tratou a tecla. */
-function markKey(e: KeyboardEvent<Field>): boolean {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return false;
-  const k = e.key.toLowerCase();
-  if (k !== 'b' && k !== 'i') return false;
-  e.preventDefault();
-  applyMark(e.currentTarget, k === 'b' ? '**' : '*');
-  return true;
+const BLOCKS = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'H1', 'H2', 'H3', 'H4', 'BLOCKQUOTE', 'PRE']);
+
+/** Lê o editor de volta para o texto com marcas. */
+function readEditor(el: HTMLElement): string {
+  const runs: RichRun[] = [];
+  let text = '';
+  let afterBlock = false;
+  const push = (t: string, b: boolean, i: boolean) => {
+    if (!t) return;
+    if (afterBlock && text && !text.endsWith('\n')) { runs.push({ text: '\n', b: false, i: false }); text += '\n'; }
+    afterBlock = false;
+    runs.push({ text: t, b, i });
+    text += t;
+  };
+  const walk = (node: Node, b: boolean, i: boolean) => {
+    node.childNodes.forEach((c) => {
+      if (c.nodeType === Node.TEXT_NODE) { push((c.textContent ?? '').replace(/ /g, ' ').replace(/\r/g, ''), b, i); return; }
+      if (!(c instanceof HTMLElement)) return;
+      if (c.tagName === 'BR') { push('\n', b, i); return; }
+      let cb = b, ci = i;
+      if (c.tagName === 'B' || c.tagName === 'STRONG') cb = true;
+      if (c.tagName === 'I' || c.tagName === 'EM') ci = true;
+      const fw = c.style.fontWeight;
+      if (fw) cb = fw === 'bold' || fw === 'bolder' || Number(fw) >= 600;
+      const fs = c.style.fontStyle;
+      if (fs) ci = fs === 'italic' || fs === 'oblique';
+      const block = BLOCKS.has(c.tagName);
+      if (block) afterBlock = true;
+      walk(c, cb, ci);
+      if (block) afterBlock = true;
+    });
+  };
+  walk(el, false, false);
+  // A <br> do fim só serve para mostrar a linha vazia: não é mais uma quebra.
+  let last: Node | null = el.lastChild;
+  while (last?.lastChild) last = last.lastChild;
+  if (last instanceof HTMLElement && last.tagName === 'BR' && runs[runs.length - 1]?.text === '\n') runs.pop();
+  return richFromRuns(runs);
+}
+
+/** Liga/desliga negrito ou itálico na seleção (ou no que for digitado a seguir), mantendo o Ctrl+Z. */
+function applyFormat(el: HTMLElement, cmd: 'bold' | 'italic') {
+  if (document.activeElement !== el) el.focus();
+  try {
+    document.execCommand('styleWithCSS', false, 'false');
+    document.execCommand(cmd);
+  } catch { /* navegador sem execCommand: fica sem formatar */ }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /** Botões B e I (para o celular, sem atalho). Não tiram o foco do campo. */
-function MarkButtons({ target, className = '' }: { target: (btn: HTMLElement) => Field | null | undefined; className?: string }) {
-  const press = (btn: HTMLElement, mark: Mark) => { const el = target(btn); if (el) applyMark(el, mark); };
+function MarkButtons({ target, className = '' }: { target: (btn: HTMLElement) => HTMLElement | null | undefined; className?: string }) {
+  const press = (btn: HTMLElement, cmd: 'bold' | 'italic') => { const el = target(btn); if (el) applyFormat(el, cmd); };
   return (
     <span className={`mark-bar ${className}`} onMouseDown={(e) => e.preventDefault()}>
-      <button type="button" tabIndex={-1} title="Negrito (Ctrl+B)" aria-label="Negrito" onClick={(e) => press(e.currentTarget, '**')}><Bold size={13} /></button>
-      <button type="button" tabIndex={-1} title="Itálico (Ctrl+I)" aria-label="Itálico" onClick={(e) => press(e.currentTarget, '*')}><Italic size={13} /></button>
+      <button type="button" tabIndex={-1} title="Negrito (Ctrl+B)" aria-label="Negrito" onClick={(e) => press(e.currentTarget, 'bold')}><Bold size={13} /></button>
+      <button type="button" tabIndex={-1} title="Itálico (Ctrl+I)" aria-label="Itálico" onClick={(e) => press(e.currentTarget, 'italic')}><Italic size={13} /></button>
     </span>
   );
 }
 
-/**
- * Caixa de texto que cresce com o conteúdo, com negrito e itálico. Fora da edição, uma cópia
- * formatada fica por cima do campo, com as mesmas medidas; ao tocar, volta o texto cru.
- */
-export function AutoTextarea({ value, minRows = 2, className = '', onKeyDown, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string; minRows?: number }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const view = useRef<HTMLDivElement>(null);
-  const rich = hasRich(value);
+interface EditorProps {
+  value: string;
+  onChange: (value: string) => void;
+  /** Com várias linhas (Enter quebra a linha); sem, Enter chama `onEnter`. */
+  multiline?: boolean;
+  minRows?: number;
+  maxLength?: number;
+  placeholder?: string;
+  className?: string;
+  onEnter?: () => void;
+  onBlur?: (value: string) => void;
+  'aria-label'?: string;
+  enterKeyHint?: 'done' | 'enter' | 'next';
+  editorRef?: RefObject<HTMLDivElement>;
+}
+
+/** Editor de texto com negrito e itálico à vista. O texto quebra a linha sozinho. */
+function RichEditor({ value, onChange, multiline = false, minRows, maxLength, placeholder, className = '', onEnter, onBlur, editorRef, ...rest }: EditorProps) {
+  const own = useRef<HTMLDivElement>(null);
+  const ref = editorRef ?? own;
+  // O texto que está no editor agora. Só redesenha quando o valor muda por fora.
+  const shown = useRef<string | null>(null);
+  const max = useRef(maxLength);
+  max.current = maxLength;
+
   useLayoutEffect(() => {
     const el = ref.current;
+    if (!el || value === shown.current) return;
+    shown.current = value;
+    fillEditor(el, value);
+  }, [value, ref]);
+
+  // Não deixa digitar além do limite.
+  useEffect(() => {
+    const el = ref.current;
     if (!el) return;
-    el.style.height = 'auto';
-    // O negrito é mais largo e pode quebrar uma linha a mais: cabe o maior dos dois.
-    el.style.height = `${Math.max(el.scrollHeight + 2, view.current?.offsetHeight ?? 0)}px`;
-  }, [value]);
+    const onBefore = (e: InputEvent) => {
+      if (!max.current || !e.inputType.startsWith('insert')) return;
+      if ((shown.current?.length ?? 0) >= max.current && window.getSelection()?.isCollapsed) e.preventDefault();
+    };
+    el.addEventListener('beforeinput', onBefore);
+    return () => el.removeEventListener('beforeinput', onBefore);
+  }, [ref]);
+
+  const sync = () => {
+    const el = ref.current;
+    if (!el) return;
+    let v = readEditor(el);
+    if (!multiline) v = v.replace(/\n+/g, ' ');
+    if (maxLength && v.length > maxLength) v = v.slice(0, maxLength);
+    if (v === shown.current) return;
+    shown.current = v;
+    onChange(v);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'b' || k === 'i') { e.preventDefault(); applyFormat(e.currentTarget, k === 'b' ? 'bold' : 'italic'); return; }
+      if (k === 'u') { e.preventDefault(); return; } // sublinhado não é guardado
+    }
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (!multiline) { onEnter?.(); return; }
+      if ((shown.current?.length ?? 0) >= (maxLength ?? Infinity)) return;
+      let ok = false;
+      try { ok = document.execCommand('insertLineBreak'); } catch { ok = false; }
+      if (!ok) document.execCommand('insertText', false, '\n');
+    }
+  };
+
+  // Colar entra como texto puro (sem a formatação de onde veio).
+  const onPaste = (e: ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    let t = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
+    if (!multiline) t = t.replace(/\s*\n\s*/g, ' ');
+    if (maxLength) {
+      const selected = window.getSelection()?.toString().length ?? 0;
+      t = t.slice(0, Math.max(0, maxLength - (shown.current?.length ?? 0) + selected));
+    }
+    if (t) document.execCommand('insertText', false, t);
+  };
+
   return (
-    <div className={`rich-field${rich ? ' has-rich' : ''}`}>
-      <textarea ref={ref} rows={minRows} className={`textarea camp-text ${className}`} value={value}
-        onKeyDown={(e) => { if (!markKey(e)) onKeyDown?.(e); }} {...rest} />
-      {rich && <div ref={view} className={`textarea camp-text ${className} rich-view`} aria-hidden><RichText text={value} /></div>}
+    <div ref={ref} className={`rich-edit ${className}${value ? '' : ' is-empty'}`} contentEditable suppressContentEditableWarning
+      role="textbox" aria-multiline={multiline} aria-label={rest['aria-label']} aria-placeholder={placeholder} data-placeholder={placeholder}
+      enterKeyHint={rest.enterKeyHint} tabIndex={0}
+      style={multiline && minRows ? { minHeight: `calc(${(minRows * 1.6).toFixed(2)}em + 20px)` } : undefined}
+      onInput={sync} onKeyDown={onKeyDown} onPaste={onPaste} onDrop={(e) => e.preventDefault()}
+      onBlur={() => onBlur?.(shown.current ?? '')} />
+  );
+}
+
+type FieldProps = Omit<EditorProps, 'multiline' | 'editorRef'>;
+
+/** Caixa de texto da campanha: cresce com o conteúdo, com negrito e itálico (botões B e I ao editar). */
+export function AutoTextarea({ minRows = 2, className = '', ...rest }: FieldProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div className="rich-field">
+      <RichEditor multiline minRows={minRows} editorRef={ref} className={`textarea camp-text ${className}`} {...rest} />
       <MarkButtons target={() => ref.current} />
     </div>
   );
 }
 
 /**
- * Campo de uma linha com negrito e itálico (mesma ideia da caixa de texto). Com `bar`, traz
- * os próprios botões B e I; sem, quem usa põe os botões ao lado (como nas listas).
+ * Campo de uma linha só (Enter não quebra), mas que quebra na tela quando o texto é comprido.
+ * Com `bar`, traz os próprios botões B e I; sem, quem usa põe os botões ao lado (como nas listas).
  */
-export function RichLine({ value, className = '', onKeyDown, bar = false, ...rest }: InputHTMLAttributes<HTMLInputElement> & { value: string; bar?: boolean }) {
-  const ref = useRef<HTMLInputElement>(null);
-  const rich = hasRich(value);
+export function RichLine({ bar = false, ...rest }: FieldProps & { bar?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
   return (
-    <span className={`rich-line${rich ? ' has-rich' : ''}`}>
-      <input ref={ref} className={className} value={value} onKeyDown={(e) => { if (!markKey(e)) onKeyDown?.(e); }} {...rest} />
-      {rich && <span className={`${className} rich-view`} aria-hidden><RichText text={value} /></span>}
+    <div className="rich-line">
+      <RichEditor editorRef={ref} {...rest} />
       {bar && <MarkButtons target={() => ref.current} />}
-    </span>
+    </div>
   );
 }
 
@@ -268,7 +392,7 @@ let tmp = 0;
 export const tmpId = () => `c${Date.now().toString(36)}${(tmp++).toString(36)}`;
 
 /** O campo de texto da linha em que está o botão (para os botões B e I). */
-const rowInput = (btn: HTMLElement) => btn.closest('.check-row, .check-add')?.querySelector<HTMLInputElement>('input.check-text');
+const rowInput = (btn: HTMLElement) => btn.closest('.check-row, .check-add')?.querySelector<HTMLElement>('.check-text');
 
 /**
  * Lista com marcação: cada linha se edita no lugar; Enter no campo de baixo acrescenta.
@@ -354,8 +478,8 @@ export function CheckList({ items, onChange, placeholder, doneLabel, max = 80, s
             {x.done && <Check size={12} />}
           </button>
           <RichLine className="check-text" value={x.text} maxLength={LIMITS.campaignLine} aria-label="Texto"
-            onChange={(e) => set(x.id, { text: e.target.value })}
-            onBlur={(e) => { if (!e.target.value.trim()) onChange(items.filter((y) => y.id !== x.id)); }} />
+            onChange={(v) => set(x.id, { text: v })}
+            onBlur={(v) => { if (!v.trim()) onChange(items.filter((y) => y.id !== x.id)); }} />
           <MarkButtons target={rowInput} />
           <button type="button" className="check-del" title="Remover" onClick={() => onChange(items.filter((y) => y.id !== x.id))}><X size={13} /></button>
         </div>
@@ -364,8 +488,8 @@ export function CheckList({ items, onChange, placeholder, doneLabel, max = 80, s
         <div className="check-add">
           <Plus size={13} className="muted" />
           <RichLine className="check-text" value={draft} maxLength={LIMITS.campaignLine} placeholder={placeholder} enterKeyHint="done"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+            onChange={setDraft}
+            onEnter={add}
             onBlur={add} />
           <MarkButtons target={rowInput} />
         </div>

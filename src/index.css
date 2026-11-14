@@ -1759,18 +1759,19 @@ button.camp-pill { min-height: 36px; }
 
 /* Lista com marcação (segredos, preparativos, fios soltos) */
 .checklist { display: flex; flex-direction: column; }
-.check-row, .check-add { display: flex; align-items: center; gap: 8px; min-height: 38px; border-bottom: 1px solid var(--border); }
+.check-row, .check-add { display: flex; align-items: flex-start; gap: 8px; min-height: 38px; border-bottom: 1px solid var(--border); }
 .check-row:last-child { border-bottom: none; }
 .check-box {
-  flex-shrink: 0; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px;
+  flex-shrink: 0; width: 20px; height: 20px; margin-top: 8px; display: grid; place-items: center; border-radius: 6px;
   border: 1.5px solid var(--border-light); color: #1a140c; transition: all var(--transition);
 }
 .check-box:hover { border-color: var(--gold); }
 .check-row.done .check-box { background: var(--gold); border-color: var(--gold); }
-.check-text { flex: 1; min-width: 0; border: none; background: transparent; outline: none; padding: 8px 0; font-size: 13.5px; color: var(--text-primary); }
-.check-text::placeholder { color: var(--text-muted); }
+.check-text { flex: 1; min-width: 0; border: none; background: transparent; outline: none; padding: 8px 0; font-size: 13.5px; line-height: 1.5; color: var(--text-primary); }
+.check-add > svg { flex-shrink: 0; margin-top: 12px; }
+.check-row > .mark-bar, .check-add > .mark-bar { margin-top: 6px; }
 .check-row.done .check-text { color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--text-disabled); }
-.check-del { flex-shrink: 0; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--text-muted); opacity: 0; transition: opacity var(--transition); }
+.check-del { flex-shrink: 0; margin-top: 6px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--text-muted); opacity: 0; transition: opacity var(--transition); }
 .check-row:hover .check-del, .check-del:focus-visible { opacity: 1; }
 .check-del:hover { background: var(--bg-hover); color: var(--text-primary); }
 .check-add { padding-left: 4px; }
@@ -1794,24 +1795,17 @@ button.camp-pill { min-height: 36px; }
 .check-row.dragging .check-grip { color: var(--gold); cursor: grabbing; }
 @media (hover: none) { .check-grip { color: var(--text-muted); width: 24px; } .checklist.sortable .check-add { padding-left: 34px; } }
 
-/* Negrito e itálico: fora da edição, uma cópia formatada cobre o campo, com as mesmas medidas. */
+/* Negrito e itálico à vista enquanto se escreve; o texto quebra a linha quando passa da largura. */
 .rich-field, .rich-line { position: relative; }
 .rich-line { flex: 1; min-width: 0; display: flex; }
-.rich-line > input { flex: 1; min-width: 0; width: 100%; }
-.rich-view { pointer-events: none; }
-:where(.rich-view) { font-size: 14px; }
-.rich-field > .rich-view {
-  position: absolute; top: 0; left: 0; right: 0; background: transparent; border-color: transparent;
-  white-space: pre-wrap; overflow-wrap: break-word;
+.rich-line > .rich-edit { flex: 1; min-width: 0; width: 100%; }
+.rich-edit { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.rich-edit.is-empty::before {
+  content: attr(data-placeholder); position: absolute; pointer-events: none; color: var(--text-muted);
+  white-space: pre-wrap;
 }
-.rich-line > .rich-view {
-  position: absolute; inset: 0; background: transparent; border-color: transparent; line-height: normal;
-  white-space: pre; overflow: hidden; text-overflow: ellipsis;
-}
-.rich-field:focus-within > .rich-view, .rich-line:focus-within > .rich-view { visibility: hidden; }
-.rich-field.has-rich:not(:focus-within) > textarea, .rich-line.has-rich:not(:focus-within) > input { color: transparent; }
-.rich-view strong { font-weight: 700; color: var(--text-primary); }
-.check-row.done .rich-view strong { color: inherit; }
+.rich-edit strong, .rich-edit b { font-weight: 700; color: var(--text-primary); }
+.check-row.done .rich-edit strong, .check-row.done .rich-edit b { color: inherit; }
 
 /* Botões B e I: aparecem enquanto se edita. Na caixa de texto, presos na borda de baixo. */
 .mark-bar { display: none; flex-shrink: 0; align-items: center; gap: 1px; }
