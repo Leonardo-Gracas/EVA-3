@@ -19,7 +19,7 @@ import {
 } from '../model/permissions';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../rules/attributes';
 import { CLASSES, MAX_LEVEL } from '../rules/classes';
-import { BENCAO, bencaoCost, bencaoDice, getAbility } from '../rules/abilities';
+import { BENCAO, bencaoCost, bencaoDice, bencaoExtrasFor, getAbility } from '../rules/abilities';
 import { deriveStats } from '../rules/derive';
 import { LIMITS, validateDraft, validateLevelPick } from '../rules/validate';
 import { cryptoRng, rollExpr, type Rng } from '../rules/dice';
@@ -850,21 +850,24 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       let roll: RollResult | undefined;
       if (ab!.id === 'cssml') pe = c.current.pe;
       if (ab!.id === 'bencao') {
-        // O custo sai do teste de FÉ, não do que veio no pedido.
+        // O PE do pedido é o teto que o jogador topa gastar; o custo sai do teste de FÉ.
         if (c.current.pe < BENCAO.baseCost) fail(`PE insuficiente (${c.current.pe} disponível, precisa de ${BENCAO.baseCost}).`);
+        const limit = Math.min(c.current.pe, Math.max(BENCAO.baseCost, pe));
         const levelBonus = Math.floor(c.levels.length / 2);
         roll = rollExpr('d20', c.attributes.FE + levelBonus, ctx.rng)!;
         roll.attr = 'FE';
         roll.levelBonus = levelBonus;
         roll.target = BENCAO.cd;
-        const { dice, earned } = bencaoDice(roll.total, c.current.pe);
+        const { dice, earned } = bencaoDice(roll.total, limit);
         pv = 0;
         pe = bencaoCost(dice);
         if (!dice) {
           extra = ` e falhou no teste de FÉ (${roll.total}, precisava superar ${BENCAO.cd}), sem cura`;
         } else {
           const heal = rollExpr(`${dice}d4`, 0, ctx.rng)!;
-          const capped = dice < earned ? `; o teste dava ${earned}d4, mas o PE só pagou ${dice}d4` : '';
+          const capped = dice < earned
+            ? `; o teste permitia ${earned}d4, ${limit < c.current.pe ? 'escolheu' : 'o PE só pagou'} ${dice}d4`
+            : '';
           extra = `: FÉ ${roll.total} → cura ${heal.total} PV (${dice}d4: ${heal.dice.map((x) => x.value).join(', ')}${capped})`;
         }
       }
@@ -1690,7 +1693,11 @@ export function describeAction(s: TableState, a: GameAction): string {
     }
     case 'ability/use': {
       const ab = getAbility(a.abilityId);
-      if (ab?.id === 'bencao') return `${n}: usar ${ab.name} (teste de FÉ(${BENCAO.cd}), PE conforme o resultado)${a.note ? ` — ${a.note}` : ''}`;
+      if (ab?.id === 'bencao') {
+        const extras = bencaoExtrasFor(a.pe);
+        const opt = extras ? `até ${extras} d4 extra${extras > 1 ? 's' : ''}, até ${bencaoCost(1 + extras)} PE` : `${BENCAO.baseCost} PE, sem d4 extras`;
+        return `${n}: usar ${ab.name} (teste de FÉ(${BENCAO.cd}); ${opt})${a.note ? ` — ${a.note}` : ''}`;
+      }
       const cost = [a.pe ? `${a.pe} PE` : '', a.pv ? `${a.pv} PV` : ''].filter(Boolean).join(' e ');
       return `${n}: usar ${ab?.name ?? a.abilityId}${cost ? ` (−${cost})` : ''}${a.note ? ` — ${a.note}` : ''}`;
     }

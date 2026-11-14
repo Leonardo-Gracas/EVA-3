@@ -119,8 +119,9 @@ describe('motor', () => {
     s = dispatch(s, gm, { type: 'level/up', characterId: cid, classId: 'acolito', abilityId: 'bencao' }, ctx).state;
     const pv = s.characters[cid].current.pv;
     const withPe = (pe: number) => dispatch(s, gm, { type: 'resource/set', characterId: cid, pv, pe }, ctx).state;
-    const use = (st: TableState, d20: number) =>
-      dispatch(st, p1, { type: 'ability/use', characterId: cid, abilityId: 'bencao', pe: 0, pv: 5 }, { ...ctx, rng: (sides) => (sides === 20 ? d20 : 2) });
+    // `cap` é o teto de PE que o jogador topa gastar (3 + 2 por d4 extra).
+    const use = (st: TableState, d20: number, cap = 99) =>
+      dispatch(st, p1, { type: 'ability/use', characterId: cid, abilityId: 'bencao', pe: cap, pv: 5 }, { ...ctx, rng: (sides) => (sides === 20 ? d20 : 2) });
     // FÉ 3 + nível 3 (bônus 1) = +4. d20 18 → 22: 3d4, custa 3 + 2 + 2 = 7.
     let r = use(withPe(10), 18);
     expect(r.ok && r.state.characters[cid].current.pe).toBe(3);
@@ -128,15 +129,22 @@ describe('motor', () => {
     let last = r.state.log[r.state.log.length - 1];
     expect(last.roll).toMatchObject({ total: 22, target: 10, attr: 'FE' });
     expect(last.text).toContain('cura 6 PV (3d4');
-    // Mesmo teste com 5 PE: o PE só paga 2d4.
+    // Os extras são opcionais: com teto de 5 PE, só 2d4.
+    r = use(withPe(10), 18, 5);
+    expect(r.ok && r.state.characters[cid].current.pe).toBe(5);
+    expect(r.state.log[r.state.log.length - 1].text).toContain('escolheu 2d4');
+    // Teto de 3 (ou menos): só o 1d4 básico.
+    r = use(withPe(10), 18, 0);
+    expect(r.ok && r.state.characters[cid].current.pe).toBe(7);
+    // Com 5 PE, o PE só paga 2d4.
     r = use(withPe(5), 18);
     expect(r.ok && r.state.characters[cid].current.pe).toBe(0);
-    expect(r.state.log[r.state.log.length - 1].text).toContain('mas o PE só pagou 2d4');
-    // d20 6 → 10: não supera a CD, sem cura e sem gasto.
+    expect(r.state.log[r.state.log.length - 1].text).toContain('o PE só pagou 2d4');
+    // d20 6 → 10: não supera a CD, sem cura, mas gasta os 3 PE.
     r = use(withPe(10), 6);
-    expect(r.ok && r.state.characters[cid].current.pe).toBe(10);
+    expect(r.ok && r.state.characters[cid].current.pe).toBe(7);
     last = r.state.log[r.state.log.length - 1];
-    expect(last.text).toContain('falhou no teste de FÉ');
+    expect(last.text).toContain('(−3 PE) e falhou no teste de FÉ');
     // Menos de 3 PE nem rola.
     expect(use(withPe(2), 18)).toMatchObject({ ok: false, error: /precisa de 3/ });
   });

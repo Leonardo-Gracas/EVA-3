@@ -4,7 +4,7 @@ import { deriveStats, deathThreshold, titleOf } from './derive';
 import {
   abilityOptions, validateDraft, validateLevelPick, classesAvailable, sanitizeLevels, resizeLevels, checkOptions, pruneChecks, levelsFromChecks,
 } from './validate';
-import { abilitiesOf, bencaoCost, bencaoDice } from './abilities';
+import { abilitiesOf, bencaoCost, bencaoDice, bencaoExtrasFor } from './abilities';
 import { parseExpr, rollExpr } from './dice';
 import type { LevelPick } from '../model/types';
 
@@ -26,15 +26,17 @@ describe('atributos', () => {
 });
 
 describe('Benção', () => {
-  it('1d4 ao superar 10 e mais 1d4 a cada 5 pontos, limitado pelo PE', () => {
+  it('1d4 ao superar 10 e mais 1d4 a cada 5 pontos, limitado pelo teto de PE', () => {
     expect(bencaoDice(10, 99)).toEqual({ dice: 0, earned: 0 });
     expect(bencaoDice(11, 99)).toEqual({ dice: 1, earned: 1 });
     expect(bencaoDice(14, 99)).toEqual({ dice: 1, earned: 1 });
     expect(bencaoDice(15, 99)).toEqual({ dice: 2, earned: 2 });
     expect(bencaoDice(20, 99)).toEqual({ dice: 3, earned: 3 });
     expect(bencaoDice(20, 6)).toEqual({ dice: 2, earned: 3 });
-    expect(bencaoDice(20, 2)).toEqual({ dice: 0, earned: 3 });
-    expect([0, 1, 2, 3].map(bencaoCost)).toEqual([0, 3, 5, 7]);
+    expect(bencaoDice(20, 3)).toEqual({ dice: 1, earned: 3 });
+    // Falhar custa o mesmo que 1d4.
+    expect([0, 1, 2, 3].map(bencaoCost)).toEqual([3, 3, 5, 7]);
+    expect([2, 3, 4, 5, 7].map(bencaoExtrasFor)).toEqual([0, 0, 0, 1, 2]);
   });
 });
 

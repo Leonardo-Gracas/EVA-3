@@ -3,7 +3,7 @@ import { Sparkles, TrendingUp } from 'lucide-react';
 import type { Character } from '../../model/types';
 import type { Derived } from '../../rules/derive';
 import { deriveStats } from '../../rules/derive';
-import { BENCAO, type Ability } from '../../rules/abilities';
+import { BENCAO, bencaoCost, bencaoExtrasFor, type Ability } from '../../rules/abilities';
 import { CLASSES, MAX_LEVEL, type ClassId } from '../../rules/classes';
 import { abilityOptions, classesAvailable } from '../../rules/validate';
 import { useAct } from '../act';
@@ -58,7 +58,11 @@ function UseAbilityModal({ ch, ability, onClose }: { ch: Character; ability: Abi
   const [pe, setPe] = useState(String(special === 'all' ? ch.current.pe : ability.peCost ?? 0));
   const [pv, setPv] = useState(String(ability.pvCost ?? 0));
   const [note, setNote] = useState('');
-  const peN = bencao ? BENCAO.baseCost : parseInt(pe, 10) || 0;
+  const maxExtras = bencaoExtrasFor(ch.current.pe);
+  const [extras, setExtras] = useState(String(maxExtras));
+  const extrasN = Math.min(maxExtras, parseInt(extras, 10) || 0);
+  // Na Benção o PE enviado é o teto: 3 do teste + 2 por d4 extra que o jogador topar.
+  const peN = bencao ? bencaoCost(1 + extrasN) : parseInt(pe, 10) || 0;
   const pvN = bencao ? 0 : parseInt(pv, 10) || 0;
 
   const go = async () => {
@@ -72,11 +76,19 @@ function UseAbilityModal({ ch, ability, onClose }: { ch: Character; ability: Abi
       <div className="col gap-lg">
         <p className="secondary pre small">{ability.text}</p>
         {bencao ? (
-          <p className="small gold">
-            Teste de FÉ (d20 + {testBonus}) rolado automaticamente: superando {BENCAO.cd}, cura 1d4 por {BENCAO.baseCost} PE;
-            a cada {BENCAO.step} pontos acima de {BENCAO.cd}, mais 1d4 por mais {BENCAO.extraCost} PE, até onde seu PE ({ch.current.pe}) pagar.
-            Se falhar, não gasta PE.
-          </p>
+          <div className="col">
+            <p className="small gold">
+              Gasta {BENCAO.baseCost} PE e rola o teste de FÉ (d20 + {testBonus}) automaticamente: superando {BENCAO.cd}, cura 1d4.
+              Se falhar, os {BENCAO.baseCost} PE são gastos mesmo assim. A cada {BENCAO.step} pontos acima de {BENCAO.cd},
+              pode curar mais 1d4 por mais {BENCAO.extraCost} PE.
+            </p>
+            <div className="field">
+              <label className="label">Usar até quantos d4 extras, se o teste der — máximo {maxExtras} com {ch.current.pe} PE</label>
+              <input className="input" value={extras} disabled={maxExtras === 0}
+                onChange={(e) => setExtras(e.target.value.replace(/[^\d]/g, ''))} />
+              <span className="tiny muted">Gasta no máximo {peN} PE. Ponha 0 para curar só 1d4.</span>
+            </div>
+          </div>
         ) : <div className="grid-2">
           <div className="field">
             <label className="label">{special === 'bravura' ? 'PE a converter (×2 PV)' : 'Gastar PE'} — disponível {ch.current.pe}</label>
