@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch, MAX_LIBRARY, newTable, type EngineCtx } from './engine';
 import type { Actor, ItemData, TableState } from '../model/types';
-import { ITEM_SETS, missingSetItems } from './itemSets';
+import { ITEM_SETS, installedSetItems, missingSetItems } from './itemSets';
 import { PLACEHOLDER_ITEMS, placeholderTable } from './placeholder';
 
 let n = 0;
@@ -60,5 +60,30 @@ describe('conjuntos de itens', () => {
     const both = ITEM_SETS.filter((x) => x.id === 'medieval' || x.id === 'iluminacao').flatMap((x) => x.items);
     const names = missingSetItems({}, both).add.map((i) => i.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('desimportar: marca o que é do conjunto e poupa o editado e o que é de outro conjunto em uso', () => {
+    const set = (id: string) => ITEM_SETS.find((x) => x.id === id)!;
+    let s = newTable('Mesa', 'Mestre', 'ABCDEF', ctx);
+    expect(installedSetItems(s.itemLibrary, 'medieval')).toEqual([]);
+    s = importInto(s, [...set('medieval').items, ...set('iluminacao').items]);
+
+    let list = installedSetItems(s.itemLibrary, 'medieval');
+    expect(list).toHaveLength(set('medieval').items.length);
+    expect(list.every((r) => !r.changed)).toBe(true);
+    expect(list.find((r) => r.name === 'Tocha')!.alsoIn).toEqual(['Iluminação']);
+    expect(list.find((r) => r.name === 'Adaga')!.alsoIn).toEqual([]);
+
+    // Editado pelo mestre: continua listado, mas como diferente do conjunto.
+    const adaga = list.find((r) => r.name === 'Adaga')!;
+    s = dispatch(s, gm, { type: 'library/upsert', item: { ...s.itemLibrary[adaga.id], value: 99 }, itemId: adaga.id }, ctx).state;
+    list = installedSetItems(s.itemLibrary, 'medieval');
+    expect(list.find((r) => r.name === 'Adaga')!.changed).toBe(true);
+
+    // Remove o que vem marcado: o Medieval sai, a Adaga editada e a iluminação ficam.
+    for (const r of list.filter((x) => !x.changed && !x.alsoIn.length)) s = dispatch(s, gm, { type: 'library/delete', itemId: r.id }, ctx).state;
+    expect(installedSetItems(s.itemLibrary, 'medieval').map((r) => r.name).sort())
+      .toEqual(['Adaga', ...set('medieval').items.filter((i) => set('iluminacao').items.some((l) => l.name === i.name)).map((i) => i.name)].sort());
+    expect(missingSetItems(s.itemLibrary, set('iluminacao').items)).toEqual({ add: [], update: [] });
   });
 });

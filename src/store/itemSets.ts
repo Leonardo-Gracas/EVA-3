@@ -168,3 +168,47 @@ export function missingSetItems(library: Record<string, LibraryItem>, items: Ite
   }
   return gap;
 }
+
+/** Mesmo item do conjunto, campo a campo (o motor guarda luz 0 como ausente). */
+function sameItem(a: ItemData, b: ItemData): boolean {
+  return a.name.trim() === b.name.trim() && a.type === b.type && a.slot === b.slot && a.description === b.description
+    && a.damage === b.damage && a.value === b.value && a.pack === b.pack
+    && a.effects.def === b.effects.def && a.effects.rdPhysical === b.effects.rdPhysical && a.effects.rdMagic === b.effects.rdMagic
+    && (a.effects.light ?? 0) === (b.effects.light ?? 0)
+    && a.durability.pv === b.durability.pv && a.durability.rd === b.durability.rd && a.durability.def === b.durability.def;
+}
+
+export interface SetRemoval {
+  /** Item da biblioteca. */
+  id: string;
+  name: string;
+  /** Diferente da versão do conjunto: editado pelo mestre ou um item próprio de mesmo nome. */
+  changed: boolean;
+  /** Outros conjuntos que também têm este item e estão (ao menos em parte) na biblioteca. */
+  alsoIn: string[];
+}
+
+/**
+ * Itens do conjunto que estão na biblioteca (pelo nome), para desimportar. Sair por padrão
+ * (`changed` falso e `alsoIn` vazio) só o que está igual ao conjunto e não é de outro conjunto em uso.
+ */
+export function installedSetItems(library: Record<string, LibraryItem>, setId: ItemSetId): SetRemoval[] {
+  const set = ITEM_SETS.find((s) => s.id === setId);
+  if (!set) return [];
+  const byName = new Map(Object.values(library).map((it) => [nameKey(it.name), it]));
+  const mine = new Set(set.items.map((i) => nameKey(i.name)));
+  // Conjunto em uso: tem na biblioteca algum item que não é deste.
+  const inUse = ITEM_SETS.filter((s) => s.id !== setId && s.items.some((i) => !mine.has(nameKey(i.name)) && byName.has(nameKey(i.name))));
+  const out: SetRemoval[] = [];
+  for (const it of set.items) {
+    const have = byName.get(nameKey(it.name));
+    if (!have || out.some((r) => r.id === have.id)) continue;
+    out.push({
+      id: have.id,
+      name: have.name,
+      changed: !sameItem(have, it),
+      alsoIn: inUse.filter((s) => s.items.some((i) => nameKey(i.name) === nameKey(it.name))).map((s) => s.name),
+    });
+  }
+  return out;
+}
