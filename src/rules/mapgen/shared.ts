@@ -13,7 +13,8 @@ export type RoomKind =
   | 'generic' | 'sala' | 'cozinha' | 'quarto' | 'banheiro' | 'despensa' | 'escritorio' | 'biblioteca'
   | 'jantar' | 'lavanderia' | 'entrada' | 'recepcao' | 'taverna'
   | 'nave' | 'santuario' | 'vestibulo' | 'capela' | 'sacristia' | 'cela' | 'torre'
-  | 'guarda' | 'deposito' | 'tesouro' | 'dormitorio' | 'ruina' | 'salao' | 'cabana' | 'vassouras';
+  | 'guarda' | 'deposito' | 'tesouro' | 'dormitorio' | 'ruina' | 'salao' | 'cabana' | 'vassouras'
+  | 'forja' | 'padaria' | 'forno' | 'loja' | 'enfermaria';
 
 export const ROOM_KINDS: Record<RoomKind, { one: string; many: string }> = {
   generic: { one: 'sala', many: 'salas' },
@@ -44,7 +45,25 @@ export const ROOM_KINDS: Record<RoomKind, { one: string; many: string }> = {
   salao: { one: 'salão', many: 'salões' },
   cabana: { one: 'cabana', many: 'cabanas' },
   vassouras: { one: 'sala de vassouras', many: 'salas de vassouras' },
+  forja: { one: 'forja', many: 'forjas' },
+  padaria: { one: 'padaria', many: 'padarias' },
+  forno: { one: 'sala do forno', many: 'salas do forno' },
+  loja: { one: 'loja', many: 'lojas' },
+  enfermaria: { one: 'enfermaria', many: 'enfermarias' },
 };
+
+/** Construções do vilarejo: os ofícios e as casas de morar. */
+export type BuildingKind = 'ferreiro' | 'padeiro' | 'mercador' | 'curandeiro' | 'moradia';
+
+export const BUILDING_KINDS: Record<BuildingKind, { one: string; many: string }> = {
+  ferreiro: { one: 'ferreiro', many: 'ferreiros' },
+  padeiro: { one: 'padeiro', many: 'padeiros' },
+  mercador: { one: 'mercador', many: 'mercadores' },
+  curandeiro: { one: 'curandeiro', many: 'curandeiros' },
+  moradia: { one: 'casa', many: 'casas' },
+};
+
+export interface GenBuilding extends Rect { kind: BuildingKind }
 
 export interface GenRoom extends Rect { kind: RoomKind; dir?: Dir }
 
@@ -65,6 +84,8 @@ export interface GenBase {
   front?: { edges: EdgeRef[]; dir: Dir };
   /** Exterior com rua: quadrados das calçadas (postes e caixotes). */
   sidewalk?: number[];
+  /** Vilarejo: construções, o poço da praça, o riacho e as hortas (para a mobília de fora). */
+  village?: { buildings: GenBuilding[]; well: number | null; water: number[]; gardens: Rect[] };
 }
 
 /** Lado do retângulo em que fica a linha `e` (para onde ela dá, saindo do retângulo). */

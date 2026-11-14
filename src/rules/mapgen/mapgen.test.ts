@@ -3,7 +3,7 @@ import type { EdgeRef, HouseModel, HouseShape, HouseSize, MapGenParams, MapPrese
 import { HOUSE_MODELS, HOUSE_SIZES, PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import { edgeKey, hasWall, isOpen, terrainAt } from '../../model/map';
 import { generateDungeon } from '../dungeon';
-import { cleanMapParams, describeRooms, generateFloors, generateMap, type GeneratedMap, newMapSize, PRESET_DEFAULTS } from './index';
+import { cleanMapParams, describeBuildings, describeRooms, generateFloors, generateMap, type GeneratedMap, newMapSize, PRESET_DEFAULTS } from './index';
 import { flood, ZONE } from './shared';
 
 const params = (preset: MapPreset, extra: Partial<MapGenParams> = {}): MapGenParams =>
@@ -128,7 +128,7 @@ function checkCommon(g: GeneratedMap) {
 
 describe('gerador de mapas', () => {
   it('é determinístico e a mobília não mexe na planta', () => {
-    for (const preset of ['dungeon', 'house', 'temple', 'outdoor'] as MapPreset[]) {
+    for (const preset of ['dungeon', 'house', 'temple', 'outdoor', 'village'] as MapPreset[]) {
       const a = generateMap(params(preset), 11);
       const b = generateMap(params(preset), 11);
       expect(b.layout).toEqual(a.layout);
@@ -143,7 +143,7 @@ describe('gerador de mapas', () => {
 
   it('janelas e luzes: coerentes com o ambiente, sem mexer na planta nem nos móveis', () => {
     let withWindows = 0;
-    for (const preset of ['dungeon', 'house', 'temple', 'outdoor'] as MapPreset[]) {
+    for (const preset of ['dungeon', 'house', 'temple', 'outdoor', 'village'] as MapPreset[]) {
       for (let seed = 1; seed <= 20; seed++) {
         const g = generateMap(params(preset, { lights: true, ...size(seed) }), seed);
         checkCommon(g);
@@ -311,6 +311,72 @@ describe('gerador de mapas', () => {
     }
   });
 
+  it('vilarejo: tudo ligado, construções sem se encostar, ofícios com o cômodo de trabalho', () => {
+    const MAIN = { ferreiro: 'forja', padeiro: 'padaria', mercador: 'loja', curandeiro: 'enfermaria' } as const;
+    let full = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      const big = seed % 2 === 0;
+      const p = params('village', big ? { ...newMapSize('village', 'casa'), lights: true } : { ...size(seed), lights: true });
+      const g = generateMap(p, seed);
+      checkCommon(g);
+      expect(components(g)).toBe(1);
+      const { w, h } = g.layout;
+      const bs = g.buildings ?? [];
+      expect(bs.length).toBeLessThanOrEqual(p.rooms);
+      // Construção dentro do mapa, com um quadrado de folga até a borda; nenhuma encosta em outra
+      // (nem na diagonal): cada uma é um bloco só de quadrados construídos.
+      for (const b of bs) expect(b.x >= 1 && b.y >= 1 && b.x + b.w <= w - 1 && b.y + b.h <= h - 1).toBe(true);
+      const isBuilt = (i: number) => g.zone[i] === ZONE.room || g.zone[i] === ZONE.corridor;
+      const seen = new Uint8Array(w * h);
+      let blocks = 0;
+      for (let s0 = 0; s0 < w * h; s0++) {
+        if (seen[s0] || !isBuilt(s0)) continue;
+        blocks++;
+        seen[s0] = 1;
+        const stack = [s0];
+        while (stack.length) {
+          const i = stack.pop()!;
+          const x = i % w;
+          const y = (i - x) / w;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              const j = ny * w + nx;
+              if (!seen[j] && isBuilt(j)) { seen[j] = 1; stack.push(j); }
+            }
+          }
+        }
+      }
+      expect(blocks).toBe(bs.length);
+      // Todo cômodo fica numa construção; cada ofício tem o seu cômodo de trabalho.
+      for (const rm of g.rooms) expect(isBuilt(rm.y * w + rm.x)).toBe(true);
+      for (const [trade, room] of Object.entries(MAIN)) {
+        expect(g.rooms.filter((rm) => rm.kind === room).length).toBe(bs.filter((b) => b.kind === trade).length);
+      }
+      // A estrada e as trilhas são calçamento.
+      for (let i = 0; i < w * h; i++) if (g.zone[i] === ZONE.path) expect(g.layout.cells[i]).toBe(TERRAIN_CHAR.road);
+      if (big) {
+        expect(g.props.some((pr) => pr.label === 'Poço')).toBe(true);
+        expect(g.lights.length).toBeGreaterThan(0);
+        if (bs.length === p.rooms && ['ferreiro', 'padeiro', 'mercador', 'curandeiro'].every((k) => bs.some((b) => b.kind === k))) full++;
+      }
+    }
+    // No tamanho sugerido, quase sempre cabem todas as construções pedidas.
+    expect(full).toBeGreaterThanOrEqual(17);
+  });
+
+  it('vilarejo: poucas construções e mapa mínimo não quebram', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const g = generateMap(params('village', { w: 12 + seed, h: 12 + (seed % 5), rooms: 3 }), seed);
+      checkCommon(g);
+      expect(components(g)).toBe(1);
+    }
+    expect(cleanMapParams({ preset: 'village', rooms: 99 }).rooms).toBe(24);
+    expect(cleanMapParams({ preset: 'village', rooms: 1 }).rooms).toBe(3);
+  });
+
   it('masmorra com mobília: não separa nada que estava ligado', () => {
     for (let seed = 0; seed < 80; seed++) {
       const p = params('dungeon', { ...size(seed), corridor: 1 + (seed % 3) });
@@ -325,6 +391,8 @@ describe('gerador de mapas', () => {
   it('descreve os cômodos', () => {
     const r = (kind: GeneratedMap['rooms'][number]['kind']) => ({ x: 0, y: 0, w: 1, h: 1, kind });
     expect(describeRooms([r('sala'), r('quarto'), r('quarto'), r('banheiro')])).toBe('sala de estar, 2 quartos e banheiro');
+    const b = (kind: NonNullable<GeneratedMap['buildings']>[number]['kind']) => ({ x: 0, y: 0, w: 1, h: 1, kind });
+    expect(describeBuildings([b('moradia'), b('mercador'), b('ferreiro'), b('moradia')])).toBe('ferreiro, mercador e 2 casas');
   });
 });
 
@@ -407,6 +475,7 @@ describe('andares', () => {
   it('templo, cenário aberto e casebre têm um andar só', () => {
     expect(cleanMapParams({ preset: 'temple', floors: 3 }).floors).toBe(1);
     expect(cleanMapParams({ preset: 'outdoor', floors: 3 }).floors).toBe(1);
+    expect(cleanMapParams({ preset: 'village', floors: 3 }).floors).toBe(1);
     expect(cleanMapParams({ preset: 'house', model: 'casebre', floors: 3 }).floors).toBe(1);
     expect(cleanMapParams({ preset: 'house', model: 'hotel', floors: 9 }).floors).toBe(4);
   });

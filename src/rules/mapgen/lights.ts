@@ -55,6 +55,7 @@ const WINDOWS: Partial<Record<RoomKind, [number, number]>> = {
   sala: [1, 3], cozinha: [1, 2], quarto: [1, 2], banheiro: [0, 1], despensa: [0, 1], escritorio: [1, 2], biblioteca: [1, 3],
   jantar: [1, 3], lavanderia: [0, 1], entrada: [1, 2], recepcao: [1, 3], taverna: [2, 4],
   nave: [2, 8], santuario: [1, 2], vestibulo: [0, 2], capela: [1, 1], sacristia: [0, 1], torre: [1, 1], cabana: [1, 2], generic: [1, 2],
+  forja: [0, 1], padaria: [1, 2], forno: [0, 1], loja: [1, 2], enfermaria: [1, 2],
 };
 
 /** Cômodos com lustre no teto (a partir desta área). */
@@ -64,6 +65,7 @@ const CEILING: Partial<Record<RoomKind, number>> = { taverna: 0, jantar: 20, rec
 const WALL_LAMP: Partial<Record<RoomKind, [number, number]>> = {
   quarto: [0.6, 1], banheiro: [0.4, 1], biblioteca: [0.9, 2], escritorio: [0.5, 1], lavanderia: [0.3, 1], despensa: [0.3, 1], vassouras: [0.2, 1],
   entrada: [0.8, 1], cozinha: [0.5, 1], vestibulo: [0.7, 2], sacristia: [0.6, 1], capela: [0.5, 1], taverna: [0.8, 2], sala: [0.4, 1],
+  forja: [0.4, 1], padaria: [0.7, 1], forno: [0.4, 1], loja: [0.8, 2], enfermaria: [0.8, 2],
 };
 
 /** Salas da masmorra: chance de ter tochas acesas. */
@@ -173,6 +175,7 @@ export function illuminate(base: GenBase, props: GenProp[], preset: MapPreset, r
       const cy = p.y + Math.floor((p.h - 1) / 2);
       if (p.prop === 'fogao') {
         if (p.label === 'Lareira') count += +add('lareira', p.x, p.y, 'chao', 'Lareira');
+        else if (p.label === 'Forja' || p.label === 'Forno de pão') count += +add('braseiro', p.x, p.y, 'chao', p.label);
         else if (r() < 0.8) count += +add('braseiro', p.x, p.y, 'chao', 'Fogo do fogão');
       } else if (p.prop === 'altar') {
         count += +add('candelabro', p.x, p.y, 'mesa');

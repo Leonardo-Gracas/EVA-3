@@ -1,12 +1,12 @@
 // Gerador de mapas: tipo, andares, prévia e opções avançadas. Usado ao criar um mapa (com nome,
 // em branco e andares) e no editor, para gerar de novo o mapa aberto.
 import { useMemo, useState } from 'react';
-import { BedDouble, Castle, ChevronDown, ChevronRight, Church, Dices, Home, Square, Trees, Wand2 } from 'lucide-react';
+import { BedDouble, Castle, ChevronDown, ChevronRight, Church, Dices, Fence, Home, Square, Trees, Wand2 } from 'lucide-react';
 import type { Exterior, HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
 import { EXTERIORS, HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_CELL_M, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
 import {
-  cleanMapParams, describeRooms, GEN_MIN_SIDE, generateFloors, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize,
-  PRESET_DEFAULTS,
+  cleanMapParams, describeBuildings, describeRooms, GEN_MIN_SIDE, generateFloors, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors,
+  newMapSize, PRESET_DEFAULTS,
 } from '../../rules/mapgen';
 import { newSeed } from '../../rules/random';
 import Modal from '../common/Modal';
@@ -16,15 +16,24 @@ type NumKey = 'w' | 'h' | 'rooms' | 'roomMin' | 'roomMax' | 'corridor' | 'doors'
 type Draft = Record<NumKey, string>;
 
 /** Tipo escolhido na tela: o mapa em branco ou um dos geradores (casa e hospedagem usam o mesmo, com modelos diferentes). */
-export type GenKind = 'blank' | 'dungeon' | 'house' | 'inn' | 'temple' | 'outdoor';
+export type GenKind = 'blank' | 'dungeon' | 'house' | 'inn' | 'temple' | 'outdoor' | 'village';
 
-const KINDS: Record<GenKind, { label: string; hint: string; icon: typeof Home; preset: MapPreset }> = {
-  blank: { label: 'Em branco', hint: 'Mapa vazio, para desenhar à mão. Dá para gerar depois, dentro do mapa.', icon: Square, preset: 'dungeon' },
-  dungeon: { label: 'Masmorra', hint: MAP_PRESETS.dungeon.hint, icon: Castle, preset: 'dungeon' },
-  house: { label: 'Casa', hint: 'Casebre, casa ou casarão, com quintal, rua ou floresta em volta.', icon: Home, preset: 'house' },
-  inn: { label: 'Hospedagem', hint: 'Estalagem ou hotel: taverna ou recepção na frente e corredores de quartos.', icon: BedDouble, preset: 'house' },
-  temple: { label: 'Templo', hint: MAP_PRESETS.temple.hint, icon: Church, preset: 'temple' },
-  outdoor: { label: 'Cenário aberto', hint: MAP_PRESETS.outdoor.hint, icon: Trees, preset: 'outdoor' },
+/** Cenário único (um lugar: casa, masmorra...) ou cidade (um povoado inteiro). */
+type GenGroup = 'cenario' | 'cidade';
+
+const GROUPS: Record<GenGroup, { label: string; hint: string; first: GenKind }> = {
+  cenario: { label: 'Cenário único', hint: 'Um lugar só: masmorra, casa, hospedagem, templo ou cenário aberto.', first: 'dungeon' },
+  cidade: { label: 'Cidade', hint: 'Um povoado inteiro: várias construções, com ruas, trilhas e praça.', first: 'village' },
+};
+
+const KINDS: Record<GenKind, { label: string; hint: string; icon: typeof Home; preset: MapPreset; group: GenGroup }> = {
+  blank: { label: 'Em branco', hint: 'Mapa vazio, para desenhar à mão. Dá para gerar depois, dentro do mapa.', icon: Square, preset: 'dungeon', group: 'cenario' },
+  dungeon: { label: 'Masmorra', hint: MAP_PRESETS.dungeon.hint, icon: Castle, preset: 'dungeon', group: 'cenario' },
+  house: { label: 'Casa', hint: 'Casebre, casa ou casarão, com quintal, rua ou floresta em volta.', icon: Home, preset: 'house', group: 'cenario' },
+  inn: { label: 'Hospedagem', hint: 'Estalagem ou hotel: taverna ou recepção na frente e corredores de quartos.', icon: BedDouble, preset: 'house', group: 'cenario' },
+  temple: { label: 'Templo', hint: MAP_PRESETS.temple.hint, icon: Church, preset: 'temple', group: 'cenario' },
+  outdoor: { label: 'Cenário aberto', hint: MAP_PRESETS.outdoor.hint, icon: Trees, preset: 'outdoor', group: 'cenario' },
+  village: { label: 'Vilarejo', hint: MAP_PRESETS.village.hint, icon: Fence, preset: 'village', group: 'cidade' },
 };
 
 /** Grupo de modelos de cada tipo de prédio e o modelo de partida. */
@@ -50,6 +59,10 @@ const FIELDS: Record<MapPreset, Array<[NumKey, string, string?]>> = {
   outdoor: [
     ['rooms', 'Construções', '0 a 12 cabanas e ruínas'], ['roomMin', 'Construção mín.'], ['roomMax', 'Construção máx.'],
     ['doors', 'Portas %', 'Chance de cada cabana ter porta'],
+  ],
+  village: [
+    ['rooms', 'Construções', '3 a 24. Primeiro os ofícios (ferreiro, padeiro, mercador, curandeiro); o resto são casas. Cabem menos em mapas pequenos'],
+    ['doors', 'Portas %', 'Chance dos cômodos de dentro terem porta (a porta da frente sempre tem)'],
   ],
 };
 
@@ -82,6 +95,8 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
   const [blank, setBlank] = useState<{ w: string; h: string; fill: Terrain; walls: boolean }>({ w: '30', h: '20', fill: 'floor', walls: true });
   /** Andar mostrado na prévia. */
   const [view, setView] = useState(0);
+  /** Último tipo escolhido em cada grupo (voltar ao grupo volta para ele). */
+  const [lastOf, setLastOf] = useState<Record<GenGroup, GenKind>>({ cenario: 'dungeon', cidade: 'village' });
 
   const preset: MapPreset = KINDS[kind].preset;
   const floorMax = fixed ? 1 : maxFloors(preset, model);
@@ -107,6 +122,7 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
     if (k === kind) return;
     setKind(k);
     setView(0);
+    setLastOf((x) => ({ ...x, [KINDS[k].group]: k }));
     if (k === 'blank') return;
     const b = BUILDING[k];
     if (b) {
@@ -128,9 +144,11 @@ export function useMapGen({ fixed, blank: allowBlank = false }: { fixed?: { w: n
   };
 
   const blankSize = { w: clampSide(blank.w), h: clampSide(blank.h) };
+  const group = KINDS[kind].group;
+  const chooseGroup = (gr: GenGroup) => { if (gr !== group) choose(lastOf[gr] ?? GROUPS[gr].first); };
 
   return {
-    allowBlank, fixed: !!fixed, kind, choose, preset, shape, setShape, model, chooseModel, size, setSize, extras, setExtras, exterior, setExterior,
+    allowBlank, fixed: !!fixed, kind, choose, group, chooseGroup, preset, shape, setShape, model, chooseModel, size, setSize, extras, setExtras, exterior, setExterior,
     floors, floorMax, setFloors, advanced, setAdvanced, d, setD, seed, reroll: () => setSeed(newSeed()),
     blank, setBlank, blankSize, params, result, view: Math.min(view, Math.max(0, result.length - 1)), setView,
   };
@@ -143,7 +161,7 @@ export function MapGenOptions({ g }: { g: MapGen }) {
   const { kind, preset, model, d, setD } = g;
   const info = HOUSE_MODELS[model];
   const building = BUILDING[kind];
-  const kinds = (Object.keys(KINDS) as GenKind[]).filter((k) => k !== 'blank' || g.allowBlank);
+  const kinds = (Object.keys(KINDS) as GenKind[]).filter((k) => KINDS[k].group === g.group && (k !== 'blank' || g.allowBlank));
   const hint = building ? `${info.label}: ${info.hint}` : KINDS[kind].hint;
   const up = (k: NumKey, v: string) => setD((x) => ({ ...x, [k]: v.replace(/\D/g, '') }));
   const hints: Partial<Record<NumKey, string>> = kind === 'inn'
@@ -175,13 +193,19 @@ export function MapGenOptions({ g }: { g: MapGen }) {
       `${p.w} × ${p.h} quadrados`,
       kind === 'dungeon' ? `${p.rooms} salas`
         : building ? `${p.rooms} quarto${p.rooms === 1 ? '' : 's'}${kind === 'inn' && g.floors > 1 ? ' por andar' : ''}`
-        : kind === 'outdoor' ? `${p.rooms} construç${p.rooms === 1 ? 'ão' : 'ões'}` : '',
+        : kind === 'outdoor' || kind === 'village' ? `${p.rooms} construç${p.rooms === 1 ? 'ão' : 'ões'}` : '',
       building ? `cômodos ${HOUSE_SIZES[p.size].toLowerCase()}` : '',
       `portas ${Math.round(p.doors * 100)}%`,
     ].filter(Boolean).join(' · ');
 
   return (
     <div className="col">
+      <div className="seg" role="group" aria-label="Cenário ou cidade" style={{ alignSelf: 'flex-start' }}>
+        {(Object.keys(GROUPS) as GenGroup[]).map((gr) => (
+          <button key={gr} type="button" className={g.group === gr ? 'on-inherit' : ''} title={GROUPS[gr].hint}
+            onClick={() => g.chooseGroup(gr)}>{GROUPS[gr].label}</button>
+        ))}
+      </div>
       <div className="row-wrap" style={{ gap: 6 }}>
         {kinds.map((k) => {
           const Icon = KINDS[k].icon;
@@ -311,14 +335,14 @@ export function MapGenPreview({ g, height = 'min(46vh, 460px)' }: { g: MapGen; h
   ] : []), [floor]);
   if (kind === 'blank' || !floor) return null;
 
-  const n = floor.rooms.length;
-  const unit = kind === 'outdoor' ? ['construção', 'construções'] : kind === 'dungeon' ? ['sala', 'salas'] : ['cômodo', 'cômodos'];
-  const kinds = kind !== 'dungeon' || params.furnish ? describeRooms(floor.rooms) : '';
+  const n = floor.buildings ? floor.buildings.length : floor.rooms.length;
+  const unit = kind === 'outdoor' || kind === 'village' ? ['construção', 'construções'] : kind === 'dungeon' ? ['sala', 'salas'] : ['cômodo', 'cômodos'];
+  const kinds = floor.buildings ? describeBuildings(floor.buildings) : kind !== 'dungeon' || params.furnish ? describeRooms(floor.rooms) : '';
   // Na casa de vários andares, os quartos da planta mudam de andar: vale o que coube na planta.
   const fitted = floor.fitted ?? floor.rooms.filter((rm) => rm.kind === 'quarto').length;
   const short = g.view > 0 ? ''
     : kind === 'dungeon' && n < params.rooms ? ` (cabem ${n} de ${params.rooms} neste tamanho)`
-    : kind === 'outdoor' && n < params.rooms ? ` (couberam ${n} de ${params.rooms})`
+    : (kind === 'outdoor' || kind === 'village') && n < params.rooms ? ` (couberam ${n} de ${params.rooms}${kind === 'village' ? ' neste tamanho' : ''})`
     : g.preset === 'house' && fitted < params.rooms ? ` (couberam ${fitted} de ${params.rooms} quartos neste mapa)` : '';
   const plural = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
 

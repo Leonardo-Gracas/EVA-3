@@ -553,13 +553,17 @@ export interface MapFloor {
 export const MAX_FLOORS = 4;
 
 /** Tipo de mapa do gerador. */
-export type MapPreset = 'dungeon' | 'house' | 'temple' | 'outdoor';
+export type MapPreset = 'dungeon' | 'house' | 'temple' | 'outdoor' | 'village';
 
 export const MAP_PRESETS: Record<MapPreset, { label: string; hint: string }> = {
   dungeon: { label: 'Masmorra', hint: 'Salas soltas na rocha, ligadas por corredores.' },
   house: { label: 'Casa ou hotel', hint: 'Planta de casa (casebre, casa, casarão) ou de hospedagem (estalagem, hotel), com quintal em volta.' },
   temple: { label: 'Templo', hint: 'Nave simétrica, santuário com degraus, capelas e sacristias.' },
   outdoor: { label: 'Cenário aberto', hint: 'Campo com mato, rochas, rio, trilha e construções.' },
+  village: {
+    label: 'Vilarejo',
+    hint: 'Povoado pequeno e irregular: casas, ferreiro, padeiro, mercador e curandeiro em volta de uma praça com poço, com trilhas e às vezes um riacho.',
+  },
 };
 
 /** Formato geral da casa. */
@@ -637,7 +641,7 @@ export interface MapGenParams {
   lights: boolean;
   w: number;
   h: number;
-  /** Masmorra: salas. Cenário aberto: construções. Casa: quartos. Templo não usa. */
+  /** Masmorra: salas. Cenário aberto e vilarejo: construções. Casa: quartos. Templo não usa. */
   rooms: number;
   roomMin: number;
   roomMax: number;

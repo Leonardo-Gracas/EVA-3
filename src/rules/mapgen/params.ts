@@ -10,6 +10,7 @@ export const PRESET_DEFAULTS: Record<MapPreset, Tunables> = {
   house: { rooms: HOUSE_MODELS.casa.rooms[2], roomMin: 3, roomMax: 6, corridor: HOUSE_MODELS.casa.corridor, doors: HOUSE_MODELS.casa.doors },
   temple: { rooms: 6, roomMin: 3, roomMax: 6, corridor: 1, doors: 0.7 },
   outdoor: { rooms: 3, roomMin: 3, roomMax: 6, corridor: 1, doors: 0.5 },
+  village: { rooms: 10, roomMin: 3, roomMax: 6, corridor: 1, doors: 0.8 },
 };
 
 /** Valores sugeridos ao trocar de modelo de casa. */
@@ -24,7 +25,7 @@ export const MAP_GEN_DEFAULTS: MapGenParams = {
 
 /** Tamanho de um mapa novo de cada tipo: cabe o número padrão de salas ou quartos, com quintal. */
 const NEW_SIZES: Record<Exclude<MapPreset, 'house'>, { w: number; h: number }> = {
-  dungeon: { w: 40, h: 30 }, temple: { w: 24, h: 34 }, outdoor: { w: 40, h: 30 },
+  dungeon: { w: 40, h: 30 }, temple: { w: 24, h: 34 }, outdoor: { w: 40, h: 30 }, village: { w: 64, h: 48 },
 };
 const HOUSE_NEW_SIZES: Record<HouseModel, { w: number; h: number }> = {
   casebre: { w: 16, h: 14 }, casa: { w: 38, h: 24 }, casarao: { w: 34, h: 30 }, estalagem: { w: 32, h: 24 }, hotel: { w: 46, h: 36 },
@@ -68,7 +69,7 @@ export function cleanMapParams(raw: Partial<MapGenParams> | null | undefined): M
   const w = Math.round(clampN(r.w, GEN_MIN_SIDE, MAP_LIMITS.max, MAP_GEN_DEFAULTS.w));
   const h = Math.round(clampN(r.h, GEN_MIN_SIDE, MAP_LIMITS.max, MAP_GEN_DEFAULTS.h));
   const roomMax = Math.round(clampN(r.roomMax, 3, Math.min(20, Math.min(w, h) - 4), d.roomMax));
-  const [rMin, rMax] = preset === 'house' ? [info.rooms[0], info.rooms[1]] : preset === 'outdoor' ? [0, 12] : [1, 40];
+  const [rMin, rMax] = preset === 'house' ? [info.rooms[0], info.rooms[1]] : preset === 'outdoor' ? [0, 12] : preset === 'village' ? [3, 24] : [1, 40];
   return {
     preset, shape, model, size, furnish: !!r.furnish, lights: !!r.lights,
     w, h,

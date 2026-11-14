@@ -5,7 +5,7 @@ import type { Exterior, MapPreset, PropEffect, PropKind } from '../../model/type
 import { PROP_KINDS, TERRAIN_CHAR } from '../../model/types';
 import { edgeKey } from '../../model/map';
 import { randInt, type SeededRng } from '../random';
-import { type Dir, type GenBase, type GenRoom, pick, type Rect, type RoomKind, ZONE } from './shared';
+import { type BuildingKind, type Dir, type GenBase, type GenRoom, pick, type Rect, type RoomKind, ZONE } from './shared';
 
 export interface GenProp { prop: PropKind; label: string; x: number; y: number; w: number; h: number; effect: PropEffect }
 
@@ -472,6 +472,38 @@ const RECIPES: Record<RoomKind, Recipe> = {
     if (R.w * R.h >= 12) f.center(R, 'mesa', 1, 1);
     f.corner(R, 'barril');
   },
+  forja: (f, R) => {
+    f.alongWall(R, 'fogao', 2, 1, 'Forja') || f.alongWall(R, 'fogao', 1, 1, 'Forja');
+    f.center(R, 'outro', 1, 1, 'Bigorna');
+    f.alongWall(R, 'barril', 1, 1, 'Tina de têmpera') || f.corner(R, 'barril', 'Tina de têmpera');
+    f.alongWall(R, 'estante', 2, 1, 'Ferramentas') || f.alongWall(R, 'estante', 1, 1, 'Ferramentas');
+    f.corner(R, 'caixa', 'Carvão');
+    if (R.w * R.h >= 24) f.alongWall(R, 'mesa', 2, 1, 'Bancada');
+  },
+  padaria: (f, R) => {
+    const len = Math.min(3, Math.max(R.w, R.h) - 2);
+    f.alongWall(R, 'mesa', len, 1, 'Balcão') || f.alongWall(R, 'mesa', 1, 1, 'Balcão');
+    f.alongWall(R, 'estante', 2, 1, 'Prateleira de pães') || f.alongWall(R, 'estante', 1, 1, 'Prateleira de pães');
+    f.corner(R, 'caixa', 'Cestos de pão');
+  },
+  forno: (f, R) => {
+    f.alongWall(R, 'fogao', 2, 1, 'Forno de pão') || f.alongWall(R, 'fogao', 1, 1, 'Forno de pão');
+    f.center(R, 'mesa', Math.min(2, R.w - 1), 1, 'Mesa de sovar');
+    f.some(2, () => f.corner(R, 'caixa', 'Sacos de farinha'));
+    f.corner(R, 'barril', 'Água');
+  },
+  loja: (f, R) => {
+    const len = Math.min(3, Math.max(R.w, R.h) - 2);
+    f.alongWall(R, 'mesa', len, 1, 'Balcão') || f.alongWall(R, 'mesa', 1, 1, 'Balcão');
+    f.some(randInt(f.r, 2, 3), () => f.alongWall(R, 'estante', 2, 1, 'Prateleira') || f.alongWall(R, 'estante', 1, 1, 'Prateleira'));
+    f.some(randInt(f.r, 1, 3), () => f.corner(R, f.r() < 0.5 ? 'barril' : 'caixa', 'Mercadorias'));
+  },
+  enfermaria: (f, R) => {
+    f.some(Math.max(1, Math.min(3, Math.floor((R.w * R.h) / 8))), () => f.alongWall(R, 'cama', 1, 2, 'Catre'));
+    f.alongWall(R, 'estante', 2, 1, 'Ervas e frascos') || f.alongWall(R, 'estante', 1, 1, 'Ervas e frascos');
+    f.alongWall(R, 'mesa', 1, 1, 'Mesa de preparo');
+    f.corner(R, 'bau', 'Bandagens');
+  },
 };
 
 const DUNGEON_KINDS: Array<[RoomKind, number]> = [
@@ -571,6 +603,84 @@ function forest(f: Furnisher) {
   }
 }
 
+/**
+ * Vilarejo: o poço da praça, hortaliças nas hortas, juncos na beira do riacho, coisas de ofício
+ * encostadas na fachada, e árvores mais raras no meio do povoado e mais densas nos arredores.
+ */
+function village(f: Furnisher, base: GenBase) {
+  const v = base.village;
+  if (!v) return;
+  const { w, h, zone, r } = f;
+  const N = w * h;
+  const water = new Uint8Array(N);
+  for (const i of v.water) water[i] = 1;
+  const garden = new Uint8Array(N);
+  for (const g of v.gardens) for (let y = g.y; y < g.y + g.h; y++) for (let x = g.x; x < g.x + g.w; x++) garden[y * w + x] = 1;
+  const inb = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h;
+  const built = (x: number, y: number) => inb(x, y) && (zone[y * w + x] === ZONE.room || zone[y * w + x] === ZONE.corridor);
+  const one = (x: number, y: number): Rect => ({ x, y, w: 1, h: 1 });
+
+  if (v.well !== null) f.place('outro', one(v.well % w, Math.floor(v.well / w)), 'Poço');
+
+  for (const g of v.gardens) {
+    for (let y = g.y; y < g.y + g.h; y++) for (let x = g.x; x < g.x + g.w; x++) if ((x + y) % 2 === 0 || r() < 0.3) f.place('arbusto', one(x, y), 'Hortaliças');
+  }
+
+  // Coisas de ofício encostadas na fachada (fora da calçada).
+  const OUTSIDE: Partial<Record<BuildingKind, Array<[PropKind, string]>>> = {
+    ferreiro: [['caixa', 'Lenha e carvão'], ['barril', "Tina d'água"]],
+    padeiro: [['caixa', 'Lenha'], ['caixa', 'Sacos de farinha']],
+    mercador: [['barril', 'Mercadorias'], ['caixa', 'Mercadorias'], ['caixa', 'Caixotes']],
+    curandeiro: [['arbusto', 'Canteiro de ervas'], ['arbusto', 'Canteiro de ervas']],
+  };
+  for (const b of v.buildings) {
+    const list = OUTSIDE[b.kind];
+    if (!list) continue;
+    const spots: Array<[number, number]> = [];
+    for (let y = b.y - 1; y <= b.y + b.h; y++) {
+      for (let x = b.x - 1; x <= b.x + b.w; x++) {
+        if (!inb(x, y) || zone[y * w + x] !== ZONE.outside || water[y * w + x] || garden[y * w + x]) continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => built(x + dx, y + dy))) spots.push([x, y]);
+      }
+    }
+    let n = 0;
+    for (const [x, y] of shuffle(r, spots)) {
+      if (n >= list.length || f.full) break;
+      const [prop, label] = list[n];
+      if (f.place(prop, one(x, y), label)) n++;
+    }
+  }
+
+  // Árvores, arbustos e juncos.
+  const center = v.well !== null ? [v.well % w, Math.floor(v.well / w)] : [w / 2, h / 2];
+  const reach = Math.hypot(w, h) / 2;
+  let trees = 0;
+  const cap = 140;
+  for (let y = 0; y < h && !f.full; y++) {
+    for (let x = 0; x < w && !f.full; x++) {
+      const i = y * w + x;
+      if (zone[i] !== ZONE.outside || water[i] || garden[i] || i === v.well) continue;
+      let near1 = false;
+      let near2 = false;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (!built(x + dx, y + dy)) continue;
+          near2 = true;
+          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) near1 = true;
+        }
+      }
+      const bank = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inb(x + dx, y + dy) && water[(y + dy) * w + x + dx]);
+      const roll = r();
+      if (bank) { if (roll < 0.14) f.place('arbusto', one(x, y), 'Juncos'); continue; }
+      if (near1) { if (roll < 0.05) f.place('arbusto', one(x, y)); continue; }
+      if (near2) continue;
+      const far = Math.min(1, Math.hypot(x - center[0], y - center[1]) / reach);
+      const chance = 0.01 + 0.13 * far * far;
+      if (roll < chance) { if (trees < cap && f.place('arvore', one(x, y))) trees++; } else if (roll < chance + 0.012) f.place('arbusto', one(x, y));
+    }
+  }
+}
+
 /** Rua: barris e caixotes soltos nas calçadas. */
 function sidewalk(f: Furnisher, cells: number[]) {
   const { w, r } = f;
@@ -643,6 +753,7 @@ export function furnish(base: GenBase, preset: MapPreset, r: SeededRng, opts: Fu
     if (base.sidewalk) sidewalk(f, base.sidewalk);
   }
   if (preset === 'outdoor') field(f);
+  if (preset === 'village') village(f, base);
 
   base.layout.cells = f.cells.join('');
   return f.props;

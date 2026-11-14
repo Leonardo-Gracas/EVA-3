@@ -11,13 +11,14 @@ import { generateHouse } from './house';
 import { type GenLight, illuminate } from './lights';
 import { generateOutdoor } from './outdoor';
 import { cleanMapParams } from './params';
-import { type GenBase, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
+import { BUILDING_KINDS, type BuildingKind, type GenBase, type GenBuilding, type GenRoom, ROOM_KINDS, type RoomKind, ZONE } from './shared';
 import { generateTemple } from './temple';
+import { generateVillage } from './village';
 
 export { cleanMapParams, GEN_MIN_SIDE, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors, newMapSize, PRESET_DEFAULTS } from './params';
 export type { GenProp } from './furnish';
 export type { GenLight } from './lights';
-export { ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
+export { BUILDING_KINDS, type BuildingKind, type GenBuilding, ROOM_KINDS, type GenRoom, type RoomKind } from './shared';
 
 export interface GeneratedMap extends GenBase {
   params: MapGenParams;
@@ -26,6 +27,8 @@ export interface GeneratedMap extends GenBase {
   lights: GenLight[];
   /** Quadrados a céu aberto ('1'), quando há janelas e luzes. */
   outside?: string;
+  /** Vilarejo: as construções (ofícios e casas). */
+  buildings?: GenBuilding[];
 }
 
 /** Teto de objetos do mapa (portas + móveis + janelas + luzes) é 500; sobra folga para o mestre. */
@@ -57,6 +60,7 @@ function dress(base: GenBase, p: MapGenParams, seed: number, opts: FurnishOption
     layout: base.layout, rooms: base.rooms, doors: base.doors, zone: base.zone, params: p, props, ...lit,
     ...(base.fitted !== undefined ? { fitted: base.fitted } : {}),
     ...(base.sidewalk ? { sidewalk: base.sidewalk } : {}),
+    ...(base.village ? { buildings: base.village.buildings } : {}),
   };
   if (opts.upper) {
     // As janelas foram postas com o quintal aberto; agora ele vira vazio (e segue céu aberto, para a luz entrar).
@@ -72,6 +76,7 @@ function baseFor(p: MapGenParams, seed: number): GenBase {
   return p.preset === 'house' ? generateHouse(p, seed)
     : p.preset === 'temple' ? generateTemple(p, seed)
     : p.preset === 'outdoor' ? generateOutdoor(p, seed)
+    : p.preset === 'village' ? generateVillage(p, seed)
     : dungeonBase(p, seed);
 }
 
@@ -153,11 +158,20 @@ export function generateFloors(raw: Partial<MapGenParams>, seed: number): Genera
   });
 }
 
+const listPt = (parts: string[]) => (parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`);
+
 /** "sala de estar, cozinha, 3 quartos e banheiro". */
 export function describeRooms(rooms: GenRoom[]): string {
   const count = new Map<RoomKind, number>();
   for (const rm of rooms) count.set(rm.kind, (count.get(rm.kind) ?? 0) + 1);
-  const parts = [...count].map(([k, n]) => (n === 1 ? ROOM_KINDS[k].one : `${n} ${ROOM_KINDS[k].many}`));
-  if (parts.length <= 1) return parts.join('');
-  return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+  return listPt([...count].map(([k, n]) => (n === 1 ? ROOM_KINDS[k].one : `${n} ${ROOM_KINDS[k].many}`)));
+}
+
+/** "ferreiro, padeiro, mercador e 6 casas" (ofícios na ordem da lista, casas no fim). */
+export function describeBuildings(buildings: GenBuilding[]): string {
+  const order = Object.keys(BUILDING_KINDS) as BuildingKind[];
+  return listPt(order.flatMap((k) => {
+    const n = buildings.filter((b) => b.kind === k).length;
+    return n === 0 ? [] : [n === 1 ? BUILDING_KINDS[k].one : `${n} ${BUILDING_KINDS[k].many}`];
+  }));
 }
