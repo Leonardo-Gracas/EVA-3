@@ -633,6 +633,40 @@ button.attr:hover { border-color: var(--gold); background: var(--bg-hover); }
 .lib-grid .item-dur { min-width: 120px; }
 .item-desc-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; cursor: pointer; }
 .item-desc-clamp.open { display: block; -webkit-line-clamp: unset; }
+/* Conjuntos de itens para importar (modal da biblioteca) */
+.set-list { display: flex; flex-direction: column; gap: 8px; }
+.set-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); transition: border-color var(--transition), background var(--transition); }
+.set-card.on { border-color: var(--border-gold); background: color-mix(in srgb, var(--gold) 6%, var(--bg-elevated)); }
+.set-top { display: flex; align-items: flex-start; min-width: 0; }
+.set-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 12px; padding: 12px 6px 12px 12px; text-align: left; color: inherit; border-radius: var(--radius); }
+.set-main:hover:not(:disabled) { background: var(--bg-hover); }
+.set-main:disabled { cursor: default; }
+.set-card.done .set-main { opacity: 0.6; }
+.set-check {
+  flex-shrink: 0; width: 18px; height: 18px; margin-top: 9px; display: grid; place-items: center; border-radius: 4px;
+  border: 1.5px solid var(--border-light); color: var(--bg-base);
+}
+.set-card.on .set-check { background: var(--gold); border-color: var(--gold); }
+.set-icon {
+  flex-shrink: 0; width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--radius-sm);
+  color: var(--gold-soft); background: var(--gold-dim); border: 1px solid var(--border-gold);
+}
+.set-main .grow { display: flex; flex-direction: column; gap: 2px; }
+.set-name { font-weight: 600; font-size: 14.5px; }
+.set-desc { font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.set-count { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.set-count strong { color: var(--success); font-weight: 600; }
+.set-more { flex-shrink: 0; margin: 10px 8px 0 0; color: var(--text-secondary); }
+.set-chev { transition: transform var(--transition); }
+.set-chev.open { transform: rotate(180deg); }
+.set-items {
+  list-style: none; margin: 0; padding: 10px 14px 12px 78px; border-top: 1px solid var(--border);
+  columns: 2 180px; column-gap: 18px; font-size: 12.5px; line-height: 1.7; animation: fadeIn 140ms ease;
+}
+.set-items li { break-inside: avoid; }
+.set-items li.have { color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--text-disabled); }
+@media (max-width: 560px) { .set-items { padding-left: 14px; } }
+
 .threat-detail { max-width: 900px; margin: 0 auto; }
 .threat-back { margin: -4px 0 10px -8px; }
 .item-actions .btn-icon { padding: 6px; }

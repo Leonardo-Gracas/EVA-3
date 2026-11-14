@@ -57,7 +57,8 @@ const MAX_CHARACTERS_PER_PLAYER = 10;
 const MAX_ITEMS = 200;
 /** Unidades de um item no inventário (e num pacote). */
 const MAX_QTY = 999;
-const MAX_LIBRARY = 500;
+/** Itens na biblioteca do mestre, no máximo. */
+export const MAX_LIBRARY = 500;
 const MAX_NPCS = 200;
 const MAX_THREATS = 300;
 const MAX_GOLD = 9_999_999;

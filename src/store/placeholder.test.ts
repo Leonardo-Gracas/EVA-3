@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch, newTable, type EngineCtx } from './engine';
 import type { Actor } from '../model/types';
-import { LIGHT_ITEMS, missingLightItems, PLACEHOLDER_ITEMS, PLACEHOLDER_THREATS, placeholderTable } from './placeholder';
+import { LIGHT_ITEMS, PLACEHOLDER_ITEMS, PLACEHOLDER_THREATS, placeholderTable } from './placeholder';
+import { missingSetItems } from './itemSets';
+
+const missingLightItems = (lib: Parameters<typeof missingSetItems>[0]) => missingSetItems(lib, LIGHT_ITEMS);
 
 let n = 0;
 const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 };

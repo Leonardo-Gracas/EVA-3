@@ -3,7 +3,7 @@
 // Tudo entra pelo motor (library/upsert, threat/upsert), então passa pelas
 // mesmas validações de uma mesa jogada de verdade.
 import type {
-  Actor, ItemData, ItemEffects, ItemSlot, ItemType, LibraryItem, TableState, ThreatAbility, ThreatAttack, ThreatData,
+  Actor, ItemData, ItemEffects, ItemSlot, ItemType, TableState, ThreatAbility, ThreatAttack, ThreatData,
 } from '../model/types';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, NO_EFFECTS } from '../model/types';
 import type { Attributes } from '../rules/attributes';
@@ -11,7 +11,7 @@ import { defaultCtx, dispatch, newTable, type EngineCtx } from './engine';
 
 // ── Itens ────────────────────────────────────────────────────────────────────
 
-function item(
+export function item(
   type: ItemType, name: string, damage: string, value: number, description: string,
   opts: { slot?: ItemSlot; effects?: Partial<ItemEffects>; durability?: Partial<ItemData['durability']>; pack?: number } = {},
 ): ItemData {
@@ -143,27 +143,6 @@ export const LIGHT_ITEMS: ItemData[] = [
 export const PLACEHOLDER_ITEMS: ItemData[] = [
   ...LAMINAS, ...IMPACTO, ...DISTANCIA, ...MUNICAO, ...PROTECAO, ...ESCUDOS, ...CATALISADORES, ...CONSUMIVEIS, ...EQUIPAMENTOS, ...LIGHT_ITEMS,
 ];
-
-const nameKey = (s: string) => s.trim().toLocaleLowerCase('pt-BR');
-
-/**
- * O que falta na biblioteca para ter os itens de iluminação: os que não existem (pelo nome)
- * e os que existem com o mesmo nome mas ainda sem luz (bibliotecas de antes da iluminação).
- */
-export function missingLightItems(library: Record<string, LibraryItem>): { add: ItemData[]; update: Array<{ id: string; item: ItemData }> } {
-  const byName = new Map(Object.values(library).map((it) => [nameKey(it.name), it]));
-  const add: ItemData[] = [];
-  const update: Array<{ id: string; item: ItemData }> = [];
-  for (const it of LIGHT_ITEMS) {
-    const have = byName.get(nameKey(it.name));
-    if (!have) add.push(it);
-    else if (!have.effects?.light) {
-      const { id, createdAt: _c, updatedAt: _u, ...data } = have;
-      update.push({ id, item: { ...data, effects: { ...data.effects, light: it.effects.light } } });
-    }
-  }
-  return { add, update };
-}
 
 // ── Ameaças ──────────────────────────────────────────────────────────────────
 // Inimigos humanos por força, pensados para um grupo de 3–4 personagens de nível 1:

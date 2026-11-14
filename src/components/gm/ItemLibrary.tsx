@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Flame, Gift, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Flame, Gift, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { ITEM_TYPES, isStackable, type Character, type ItemData, type ItemType, type LibraryItem, type TableState } from '../../model/types';
 import { useAct } from '../act';
 import Avatar from '../common/Avatar';
@@ -9,8 +9,8 @@ import { Chip, FilterBar, FilterGroup, QuickFilter, SearchInput, SortSelect, mat
 import ItemCard, { TYPE_ICON } from '../common/ItemCard';
 import Modal from '../common/Modal';
 import ItemFormModal from '../sheet/ItemForm';
-import { missingLightItems } from '../../store/placeholder';
-import { toast } from '../common/toast';
+import type { ItemSetId } from '../../store/itemSets';
+import ItemSetsModal from './ItemSetsModal';
 
 type Prop = 'dano' | 'bonus' | 'valor';
 type Sort = 'nome' | 'tipo' | 'valor-desc' | 'valor-asc' | 'recentes';
@@ -76,37 +76,18 @@ export default function ItemLibrary({ table }: { table: TableState }) {
     }
   }, [all, q, quickOn, props, sort]);
 
-  // Itens de iluminação que ainda não estão na biblioteca (mesas de antes da iluminação).
-  const lightGap = useMemo(() => missingLightItems(table.itemLibrary), [table.itemLibrary]);
-  const lightCount = lightGap.add.length + lightGap.update.length;
-  const [addingLights, setAddingLights] = useState(false);
-  const addLights = async () => {
-    setAddingLights(true);
-    const actions = [
-      ...lightGap.update.map((u) => ({ type: 'library/upsert' as const, item: u.item, itemId: u.id })),
-      ...lightGap.add.map((item) => ({ type: 'library/upsert' as const, item })),
-    ];
-    let done = 0;
-    for (const a of actions) {
-      if (!(await act(a)).ok) break;
-      done++;
-    }
-    setAddingLights(false);
-    if (done) {
-      toast(`Itens de iluminação na biblioteca: ${done}.`, 'ok');
-      // Mostra os novos pela pílula "Iluminação", à vista: "Todos" volta à lista inteira.
-      setQuick('luz');
-      setProps([]);
-      setQ('');
-    }
+  // Depois de importar, os novos ficam à vista: só iluminação pela pílula "Iluminação";
+  // outros conjuntos no topo da lista, pelos mais recentes.
+  const [importing, setImporting] = useState(false);
+  const onImported = (sets: ItemSetId[]) => {
+    setProps([]);
+    setQ('');
+    if (sets.length === 1 && sets[0] === 'iluminacao') setQuick('luz');
+    else { setQuick(null); setSort('recentes'); }
   };
-  const lightBtn = lightCount > 0 && (
-    <button className="btn btn-sm" disabled={addingLights} onClick={() => void addLights()}
-      title={[
-        lightGap.add.length ? `Adiciona: ${lightGap.add.map((i) => i.name).join(', ')}.` : '',
-        lightGap.update.length ? `Passa a iluminar: ${lightGap.update.map((u) => u.item.name).join(', ')}.` : '',
-      ].filter(Boolean).join(' ')}>
-      <Flame size={14} /><span className="hide-xs">Itens de iluminação</span> ({lightCount})
+  const setsBtn = (
+    <button className="btn btn-sm" onClick={() => setImporting(true)} title="Importar conjuntos prontos: iluminação, medieval, old school, contemporâneo">
+      <PackagePlus size={14} /><span className="hide-xs">Conjuntos de itens</span>
     </button>
   );
 
@@ -124,7 +105,7 @@ export default function ItemLibrary({ table }: { table: TableState }) {
         <h2>Biblioteca de itens</h2>
         {all.length > 0 && <span className="page-head-count">{all.length}</span>}
         <span className="spacer" />
-        {lightBtn}
+        {setsBtn}
         {all.length === 0 && createBtn}
       </div>
       {all.length > 0 && (
@@ -143,7 +124,7 @@ export default function ItemLibrary({ table }: { table: TableState }) {
           </FilterGroup>
         </FilterBar>
       )}
-      {all.length === 0 && <div className="empty">Crie itens aqui e entregue aos personagens.</div>}
+      {all.length === 0 && <div className="empty">Crie itens aqui, ou importe um conjunto pronto, e entregue aos personagens.</div>}
       {all.length > 0 && items.length === 0 && <div className="empty">Nenhum item com esses filtros.</div>}
       {items.length > 0 && (
         <div className="lib-grid">
@@ -173,6 +154,7 @@ export default function ItemLibrary({ table }: { table: TableState }) {
         <ItemFormModal title={`Editar ${editing.name}`} withQty={false} initial={editing} onClose={() => setEditing(null)}
           onSubmit={async (item) => (await act({ type: 'library/upsert', item, itemId: editing.id }, 'Item atualizado.')).ok} />
       )}
+      {importing && <ItemSetsModal table={table} onClose={() => setImporting(false)} onImported={onImported} />}
       {giving && <GiveModal table={table} item={giving} onClose={() => setGiving(null)} />}
     </div>
   );
