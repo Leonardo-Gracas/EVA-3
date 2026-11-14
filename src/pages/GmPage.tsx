@@ -254,7 +254,7 @@ function Characters({ table, online, onInvite, selected, setSelected, sheetOpen,
       <div className="split-detail">
         <button className="btn btn-sm btn-ghost split-back" onClick={back}><ArrowLeft size={14} /> Todas as fichas</button>
         {current
-          ? <CharacterSheet ch={current} ownerName={table.players[current.ownerId]?.name} />
+          ? <CharacterSheet ch={current} ownerName={table.players[current.ownerId]?.name} table={table} />
           : <div className="empty">{players.length ? 'Nenhuma ficha enviada ainda.' : 'Selecione uma ficha.'}</div>}
       </div>
     </div>

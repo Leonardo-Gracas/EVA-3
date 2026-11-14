@@ -159,7 +159,7 @@ export default function NpcsPanel({ table, detailOpen, setDetailOpen }: {
             />
           </>
         ) : npc ? (
-          <CharacterSheet ch={npc} />
+          <CharacterSheet ch={npc} table={table} />
         ) : <div className="empty">Crie um NPC para começar.</div>}
       </div>
     </div>

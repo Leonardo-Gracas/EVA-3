@@ -807,6 +807,27 @@ export interface Campaign extends CampaignInfo {
   sessions: Record<string, CampaignSession>;
 }
 
+// ── Relações ──────────────────────────────────────────────────────────────────
+// Quem conhece quem: o mestre apresenta um NPC a um personagem de jogador. A relação
+// é de mão dupla: o jogador marca o quanto o personagem dele gosta do NPC, e o mestre
+// marca o quanto o NPC gosta do personagem.
+
+/** Cinco níveis sem nome, de −2 (vermelho) a 2 (verde); 0 é neutro (branco). */
+export type Affinity = -2 | -1 | 0 | 1 | 2;
+
+export const AFFINITY_LEVELS: Affinity[] = [-2, -1, 0, 1, 2];
+
+export interface Relation {
+  /** Personagem de jogador. */
+  pcId: string;
+  npcId: string;
+  /** O quanto o personagem do jogador gosta do NPC (o jogador marca). */
+  pc: Affinity;
+  /** O quanto o NPC gosta do personagem (o mestre marca). */
+  npc: Affinity;
+  createdAt: number;
+}
+
 // ── Mesa ─────────────────────────────────────────────────────────────────────
 
 export interface PlayerRecord {
@@ -905,6 +926,8 @@ export interface TableState {
   threats: Record<string, Threat>;
   itemLibrary: Record<string, LibraryItem>;
   cases: Record<string, InvestigationCase>;
+  /** Quem conhece quem (personagem de jogador ↔ NPC), na ordem em que foram apresentados. */
+  relations: Relation[];
   campaign: Campaign;
   permissions: PermissionState;
   requests: PendingRequest[];
@@ -1012,6 +1035,15 @@ export type GameAction =
   /** Sem sessionId: cria (com `number` 0, vira a próxima da campanha). */
   | { type: 'campaign/sessionUpsert'; sessionId?: string; data: CampaignSessionData }
   | { type: 'campaign/sessionDelete'; sessionId: string }
+  /** Mestre: apresenta cada NPC a cada personagem de jogador (os que já se conhecem ficam como estão). */
+  | { type: 'relation/introduce'; pcIds: string[]; npcIds: string[] }
+  /** Mestre: desfaz a apresentação. */
+  | { type: 'relation/forget'; pcId: string; npcId: string }
+  /**
+   * O lado de quem age: o jogador marca o quanto o personagem dele (`characterId`) gosta do NPC;
+   * o mestre, o quanto o NPC gosta do personagem.
+   */
+  | { type: 'relation/feel'; characterId: string; npcId: string; level: Affinity }
   | { type: 'table/rename'; name: string }
   | { type: 'table/startLevel'; level: number }
   | { type: 'log/clear' }
@@ -1188,4 +1220,17 @@ export interface PlayerView {
   cases: InvestigationCase[];
   /** Mapa que o mestre está mostrando. */
   map: PlayerMap | null;
+  /** Quem os personagens do jogador conhecem (mesmo NPCs ocultos: a apresentação os revela). */
+  relations: PlayerRelation[];
+}
+
+export interface PlayerRelation {
+  /** Personagem do jogador. */
+  characterId: string;
+  npc: { id: string; name: string; concept: string; avatar?: AvatarConfig };
+  /** O quanto o personagem do jogador gosta do NPC. */
+  mine: Affinity;
+  /** O quanto o NPC gosta do personagem. */
+  theirs: Affinity;
+  createdAt: number;
 }

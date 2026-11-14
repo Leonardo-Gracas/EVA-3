@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, Inbox, LogOut, Map as MapIcon, Plus, Search, Swords, Upload, UserX, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, HeartHandshake, Inbox, LogOut, Map as MapIcon, Plus, Search, Swords, Upload, UserX, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { setRoom } from '../net/identity';
 import { ActProvider, type ActApi, useAct } from '../components/act';
@@ -18,8 +18,9 @@ import { PlayerNotifications, useRollToasts } from '../components/Notifications'
 import { CombatStrip, myTurnIn, useCombatAlerts } from '../components/combat/playerCombat';
 import CasesView from '../components/investigation/CasesView';
 import PlayerMapView from '../components/map/PlayerMapView';
+import PlayerRelations from '../components/relations/PlayerRelations';
 
-type Tab = 'ficha' | 'mapa' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
+type Tab = 'ficha' | 'mapa' | 'relacoes' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
 
 export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
@@ -84,9 +85,10 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
               id: 'mapa', label: myTurn && hasMap ? 'Mapa · sua vez' : 'Mapa', short: myTurn && hasMap ? 'Sua vez' : 'Mapa',
               icon: inCombat ? <Swords size={14} /> : <MapIcon size={14} />,
             },
-            // No celular, o lugar dos dados na barra é do mapa: eles ficam em "Mais".
+            // No celular, o lugar dos dados e dos pedidos na barra é do mapa e das relações: eles ficam em "Mais".
             { id: 'registro', label: 'Dados e registro', short: 'Dados', icon: <Dices size={14} />, mobileMore: true },
-            { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending },
+            { id: 'pedidos', label: 'Pedidos', icon: <Inbox size={14} />, count: pending, mobileMore: true },
+            { id: 'relacoes', label: 'Relações', icon: <HeartHandshake size={14} /> },
             { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
             { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
@@ -108,7 +110,8 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
             </div>
           )}
         />
-        <PlayerNotifications requests={view.myRequests} characters={view.myCharacters} />
+        <PlayerNotifications requests={view.myRequests} characters={view.myCharacters} relations={view.relations}
+          onOpenRelations={() => { window.scrollTo({ top: 0 }); setTab('relacoes'); }} />
         <main className="page">
           {/* No mapa, a fila vai dentro dele; nas outras abas, no topo. */}
           {view.combat && !onMap && <div className="page-strip"><CombatStrip combat={view.combat} endTurn /></div>}
@@ -122,6 +125,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           ))}
           {tab === 'investigacao' && <CasesView view={view} />}
           {tab === 'mesa' && <TableInfo view={view} />}
+          {tab === 'relacoes' && <PlayerRelations view={view} />}
           {tab === 'pedidos' && <MyRequests view={view} />}
           {tab === 'registro' && <LogPanel log={view.log} characters={view.myCharacters} />}
           {tab === 'regras' && <Reference />}

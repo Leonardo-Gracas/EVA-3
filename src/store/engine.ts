@@ -4,14 +4,14 @@
 import type {
   ActionPermission, Actor, Character, MapAction, RequestKind, CharacterDraft, CharacterKind, ClueCard, ClueKind, Combat, Combatant, GameAction, InventoryItem,
   InvestigationCase, ItemData, ItemSlot, ItemType, PendingRequest, TableState, Threat, ThreatCategory, ThreatData,
-  ArcStatus, CampaignArc, CampaignCheck, CampaignSession, CampaignSessionData, SessionCastRef, SessionReport,
+  ArcStatus, CampaignArc, CampaignCheck, CampaignSession, CampaignSessionData, SessionCastRef, SessionReport, Affinity,
 } from '../model/types';
 import { caseChanges, snapshotOf } from '../model/cases';
 import { emptyCampaign } from '../model/campaign';
 import { sanitizeAvatar } from '../model/avatar';
 import {
   BOARD_SIZE, CLUE_KINDS, CLUE_SIZE, DEFAULT_DURABILITY, DEFAULT_MOVEMENT, DEFAULT_SLOT, GM_OWNER, ITEM_SLOTS, ITEM_TYPES, isStackable,
-  THREAT_CATEGORIES, ARC_STATUS, MAX_ITEM_LIGHT,
+  THREAT_CATEGORIES, ARC_STATUS, MAX_ITEM_LIGHT, AFFINITY_LEVELS,
 } from '../model/types';
 import { equipBlock } from '../rules/equipment';
 import {
@@ -67,6 +67,7 @@ const MAX_CASES = 30;
 const MAX_CLUES = 150;
 const MAX_LINKS = 400;
 const MAX_REMOVED_KEPT = 100;
+const MAX_RELATIONS = 5000;
 const { w: CLUE_W, h: CLUE_H } = CLUE_SIZE;
 
 // ── Criação ──────────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export function newTable(name: string, gmName: string, roomCode: string, ctx: En
     threats: {},
     itemLibrary: {},
     cases: {},
+    relations: [],
     campaign: emptyCampaign(),
     permissions: { global: { ...DEFAULT_PERMISSIONS }, perPlayer: {} },
     requests: [],
@@ -542,11 +544,30 @@ function removeCombatants(s: TableState, ctx: EngineCtx, drop: (cb: Combatant) =
   }
 }
 
-/** Ficha excluída sai da fila e dos mapas. (Ameaças não: a instância independe do molde.) */
+/** Ficha excluída sai da fila, dos mapas e das relações. (Ameaças não: a instância independe do molde.) */
 function dropCharacterFromCombat(s: TableState, ctx: EngineCtx, characterId: string) {
   removeCombatants(s, ctx, (x) => x.ref.kind === 'character' && x.ref.id === characterId);
   dropTokens(s, (t) => t.ref.kind === 'character' && t.ref.id === characterId);
+  s.relations = s.relations.filter((r) => r.pcId !== characterId && r.npcId !== characterId);
 }
+
+/** Lista de ids de fichas aprovadas do tipo pedido, sem repetição. */
+function relationIds(s: TableState, v: unknown, kind: CharacterKind): Character[] {
+  if (!Array.isArray(v) || !v.length) return fail(kind === 'pc' ? 'Escolha ao menos um personagem.' : 'Escolha ao menos um NPC.');
+  if (v.length > MAX_NPCS) fail('Fichas demais de uma vez.');
+  return [...new Set(v)].map((id) => {
+    const c = getChar(s, id);
+    if (c.kind !== kind) fail(kind === 'pc' ? 'Só personagens de jogador são apresentados.' : 'Só NPCs são apresentados.');
+    if (c.status !== 'approved') fail(`A ficha de ${c.name} ainda não foi aprovada.`);
+    return c;
+  });
+}
+
+function findRelation(s: TableState, pcId: string, npcId: string) {
+  return s.relations.find((r) => r.pcId === pcId && r.npcId === npcId);
+}
+
+const isAffinity = (v: unknown): v is Affinity => AFFINITY_LEVELS.includes(v as Affinity);
 
 /** "A", "A e B", "A, B e C". */
 function joinNames(names: string[]): string {
@@ -609,6 +630,7 @@ const GM_ONLY = new Set<GameAction['type']>([
   'case/upsert', 'case/delete', 'case/publish', 'case/unpublish', 'case/archive',
   'clue/upsert', 'clue/move', 'clue/hidden', 'clue/delete', 'clue/restore', 'clue/link', 'clue/unlink',
   'campaign/update', 'campaign/arcUpsert', 'campaign/arcDelete', 'campaign/arcMove', 'campaign/sessionUpsert', 'campaign/sessionDelete',
+  'relation/introduce', 'relation/forget',
 ]);
 
 const isMapAction = (a: GameAction): a is MapAction => typeof a.type === 'string' && a.type.startsWith('map/');
@@ -1039,6 +1061,42 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const inv = receiveItem(c, data, qty, lib.id, ctx);
       c.updatedAt = now;
       log(s, ctx, { kind: 'item', actorName: who, characterName: c.name, text: `${c.name} recebeu ${receivedLabel(lib, qty, inv)} do mestre.` });
+      return;
+    }
+
+    case 'relation/introduce': {
+      const pcs = relationIds(s, a.pcIds, 'pc');
+      const npcs = relationIds(s, a.npcIds, 'npc');
+      // Por personagem, os NPCs que ele ainda não conhecia.
+      const fresh = pcs.map((pc) => ({ pc, npcs: npcs.filter((npc) => !findRelation(s, pc.id, npc.id)) })).filter((x) => x.npcs.length);
+      const total = fresh.reduce((n, x) => n + x.npcs.length, 0);
+      if (!total) fail(pcs.length * npcs.length > 1 ? 'Todos já se conhecem.' : `${pcs[0].name} já conhece ${npcs[0].name}.`);
+      if (s.relations.length + total > MAX_RELATIONS) fail('Limite de relações atingido.');
+      for (const { pc, npcs: met } of fresh) {
+        for (const npc of met) s.relations.push({ pcId: pc.id, npcId: npc.id, pc: 0, npc: 0, createdAt: now });
+        // Só o mestre e o dono veem: o NPC pode estar oculto para os outros.
+        log(s, ctx, {
+          kind: 'system', actorName: who, characterName: pc.name, hidden: true, playerId: pc.ownerId,
+          text: `apresentou ${joinNames(met.map((n) => n.name))} a ${pc.name}.`,
+        });
+      }
+      return;
+    }
+
+    case 'relation/forget': {
+      const r = findRelation(s, String(a.pcId), String(a.npcId)) ?? fail('Eles não se conhecem.');
+      s.relations = s.relations.filter((x) => x !== r);
+      return;
+    }
+
+    case 'relation/feel': {
+      const pc = getChar(s, a.characterId);
+      const npc = getChar(s, a.npcId);
+      if (pc.kind !== 'pc' || npc.kind !== 'npc') fail('Relação inválida.');
+      const r = findRelation(s, pc.id, npc.id) ?? fail(`${pc.name} ainda não conhece ${npc.name}.`);
+      if (!isAffinity(a.level)) fail('Nível inválido.');
+      if (actor.role === 'gm') r.npc = a.level;
+      else r.pc = a.level;
       return;
     }
 

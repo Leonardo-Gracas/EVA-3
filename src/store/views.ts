@@ -1,6 +1,6 @@
 // O que cada jogador recebe: só a própria ficha completa e dados públicos.
 import type {
-  BattleMap, LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerView, TableState,
+  BattleMap, LogEntry, PlayerCombat, PlayerCombatant, PlayerMap, PlayerMapMove, PlayerMapToken, PlayerRelation, PlayerView, TableState,
 } from '../model/types';
 import { TERRAIN_CHAR } from '../model/types';
 import { ambientOf, visionOf } from '../model/map';
@@ -53,7 +53,26 @@ export function buildPlayerView(s: TableState, playerId: string, online: Set<str
       .sort((a, b) => a.createdAt - b.createdAt)
       .map(publishedCase),
     map: buildPlayerMap(s, playerId),
+    relations: buildPlayerRelations(s, playerId),
   };
+}
+
+/** Quem os personagens do jogador conhecem. Do NPC, só o que se vê ao conhecê-lo: nome, conceito e aparência. */
+function buildPlayerRelations(s: TableState, playerId: string): PlayerRelation[] {
+  const out: PlayerRelation[] = [];
+  for (const r of s.relations ?? []) {
+    const pc = s.characters[r.pcId];
+    const npc = s.characters[r.npcId];
+    if (!pc || !npc || pc.ownerId !== playerId) continue;
+    out.push({
+      characterId: pc.id,
+      npc: { id: npc.id, name: npc.name, concept: npc.concept, ...(npc.avatar ? { avatar: npc.avatar } : {}) },
+      mine: r.pc,
+      theirs: r.npc,
+      createdAt: r.createdAt,
+    });
+  }
+  return out;
 }
 
 /** O mapa aberto, como o jogador vê: sem o que está oculto, com quanto cada ficha dele anda. */

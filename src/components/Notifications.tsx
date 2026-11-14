@@ -1,8 +1,8 @@
 // Avisos da mesa: resultado de rolagens, pedidos chegando para o mestre (com
 // aprovar/negar no próprio aviso) e respostas do mestre para o jogador.
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Check, CheckCheck, ClipboardList, Dices, Eye, X } from 'lucide-react';
-import type { Character, LogEntry, PendingRequest, TableState } from '../model/types';
+import { Bell, Check, CheckCheck, ClipboardList, Dices, Eye, HeartHandshake, X } from 'lucide-react';
+import type { Character, LogEntry, PendingRequest, PlayerRelation, TableState } from '../model/types';
 import { REQUEST_LABELS } from '../model/permissions';
 import { useAct } from './act';
 import { dismissTag, notify } from './common/toast';
@@ -213,7 +213,9 @@ export function GmInbox({ table, onOpenSheet, onOpenRequests }: { table: TableSt
 
 // ── Jogador: respostas do mestre ────────────────────────────────────────────
 
-export function PlayerNotifications({ requests, characters }: { requests: PendingRequest[]; characters: Character[] }) {
+export function PlayerNotifications({ requests, characters, relations, onOpenRelations }: {
+  requests: PendingRequest[]; characters: Character[]; relations: PlayerRelation[]; onOpenRelations: () => void;
+}) {
   useStatusChanges(requests, (r) => {
     if (r.status === 'approved') notify({ kind: 'ok', title: 'Pedido aprovado', text: r.summary, duration: 5000 });
     else if (r.status === 'denied') notify({ kind: 'error', title: r.error ? 'Pedido não aplicado' : 'Pedido negado', text: r.error ? `${r.summary} — ${r.error}` : r.summary, duration: 6000 });
@@ -221,6 +223,17 @@ export function PlayerNotifications({ requests, characters }: { requests: Pendin
   useStatusChanges(characters, (c) => {
     if (c.status === 'approved') notify({ kind: 'ok', title: 'Ficha aprovada', text: `${c.name} está pronta para jogar.`, duration: 6000 });
     else if (c.status === 'rejected') notify({ kind: 'error', title: 'Ficha devolvida', text: c.rejectReason ? `${c.name}: ${c.rejectReason}` : `${c.name} precisa de ajustes.`, duration: 8000 });
+  });
+  // O mestre apresentou alguém.
+  useNewItems(relations, (r) => `${r.characterId}:${r.npc.id}`, (r) => {
+    const pc = characters.find((c) => c.id === r.characterId)?.name;
+    notify({
+      kind: 'ok',
+      title: <><HeartHandshake size={13} /> Nova relação</>,
+      text: <><strong>{pc ?? 'Seu personagem'}</strong> conheceu <strong>{r.npc.name}</strong>.</>,
+      duration: 7000,
+      actions: [{ label: 'Ver relações', run: onOpenRelations }],
+    });
   });
   return null;
 }

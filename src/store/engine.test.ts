@@ -201,6 +201,61 @@ describe('motor', () => {
     expect(dispatch(s, gm, { type: 'level/up', characterId: npc.id, classId: 'acolito', abilityId: 'devocao' }, ctx).ok).toBe(true);
   });
 
+  it('Relações: o mestre apresenta, cada lado marca o seu e o jogador vê só as dele', () => {
+    const { s: s0, cid } = setup();
+    let s = dispatch(s0, gm, { type: 'npc/create', draft: { ...draft, name: 'Padre Otávio', concept: 'Pároco' } }, ctx).state;
+    const npc = Object.values(s.characters).find((c) => c.kind === 'npc')!;
+    // Ficha pendente não é apresentada.
+    expect(dispatch(s, gm, { type: 'relation/introduce', pcIds: [cid], npcIds: [npc.id] }, ctx)).toMatchObject({ ok: false, error: /aprovada/ });
+    s = dispatch(s, gm, { type: 'character/approve', characterId: cid }, ctx).state;
+    expect(dispatch(s, p1, { type: 'relation/introduce', pcIds: [cid], npcIds: [npc.id] }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s, gm, { type: 'relation/introduce', pcIds: [npc.id], npcIds: [cid] }, ctx)).toMatchObject({ ok: false });
+    expect(dispatch(s, p1, { type: 'relation/feel', characterId: cid, npcId: npc.id, level: 2 }, ctx)).toMatchObject({ ok: false, error: /não conhece/ });
+
+    s = dispatch(s, gm, { type: 'relation/introduce', pcIds: [cid], npcIds: [npc.id] }, ctx).state;
+    expect(s.relations).toEqual([{ pcId: cid, npcId: npc.id, pc: 0, npc: 0, createdAt: 1000 }]);
+    expect(dispatch(s, gm, { type: 'relation/introduce', pcIds: [cid], npcIds: [npc.id] }, ctx)).toMatchObject({ ok: false, error: /já conhece/ });
+    // O registro só vai para o dono (o NPC está oculto para a mesa).
+    expect(s.log[s.log.length - 1]).toMatchObject({ text: 'apresentou Padre Otávio a Mizael.', hidden: true, playerId: 'p1' });
+    expect(buildPlayerView(s, 'p2', new Set()).log.some((e) => e.text.includes('Otávio'))).toBe(false);
+
+    // O jogador marca o lado do personagem; o mestre, o do NPC.
+    s = dispatch(s, p1, { type: 'relation/feel', characterId: cid, npcId: npc.id, level: -2 }, ctx).state;
+    s = dispatch(s, gm, { type: 'relation/feel', characterId: cid, npcId: npc.id, level: 1 }, ctx).state;
+    expect(s.relations[0]).toMatchObject({ pc: -2, npc: 1 });
+    expect(dispatch(s, p2, { type: 'relation/feel', characterId: cid, npcId: npc.id, level: 2 }, ctx)).toMatchObject({ ok: false, error: /não é sua/ });
+    expect(dispatch(s, p1, { type: 'relation/feel', characterId: cid, npcId: npc.id, level: 3 as never }, ctx)).toMatchObject({ ok: false });
+
+    // Mesmo oculto, quem foi apresentado vê o NPC.
+    expect(buildPlayerView(s, 'p1', new Set()).relations).toEqual([
+      { characterId: cid, npc: { id: npc.id, name: 'Padre Otávio', concept: 'Pároco' }, mine: -2, theirs: 1, createdAt: 1000 },
+    ]);
+    expect(buildPlayerView(s, 'p2', new Set()).relations).toEqual([]);
+
+    expect(dispatch(s, p1, { type: 'relation/forget', pcId: cid, npcId: npc.id }, ctx)).toMatchObject({ ok: false });
+    const forgot = dispatch(s, gm, { type: 'relation/forget', pcId: cid, npcId: npc.id }, ctx).state;
+    expect(forgot.relations).toEqual([]);
+    // Excluir uma das fichas leva a relação junto.
+    expect(dispatch(s, gm, { type: 'character/delete', characterId: npc.id }, ctx).state.relations).toEqual([]);
+    // Mesa antiga, sem relações.
+    const old = structuredClone(s0) as Partial<TableState>;
+    delete old.relations;
+    expect(migrate(old as TableState).relations).toEqual([]);
+  });
+
+  it('Relações: vários de uma vez, pulando quem já se conhece', () => {
+    let { s } = setup();
+    s = dispatch(s, p2, { type: 'character/create', draft: { ...draft, name: 'Lia' } }, ctx).state;
+    for (const c of Object.values(s.characters)) s = dispatch(s, gm, { type: 'character/approve', characterId: c.id }, ctx).state;
+    s = dispatch(s, gm, { type: 'npc/create', draft: { ...draft, name: 'Otávio' } }, ctx).state;
+    const pcs = Object.values(s.characters).filter((c) => c.kind === 'pc').map((c) => c.id);
+    const npc = Object.values(s.characters).find((c) => c.kind === 'npc')!.id;
+    s = dispatch(s, gm, { type: 'relation/introduce', pcIds: [pcs[0]], npcIds: [npc] }, ctx).state;
+    s = dispatch(s, gm, { type: 'relation/introduce', pcIds: pcs, npcIds: [npc] }, ctx).state;
+    expect(s.relations.map((r) => r.pcId)).toEqual(pcs);
+    expect(dispatch(s, gm, { type: 'relation/introduce', pcIds: pcs, npcIds: [npc] }, ctx)).toMatchObject({ ok: false, error: /Todos já se conhecem/ });
+  });
+
   it('Ameaça: valores livres, duplicar, rolar e PV', () => {
     const { s: s0 } = setup();
     const data = {

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Check, Dices, Eye, EyeOff, Footprints, NotebookPen, Skull, Undo2, X } from 'lucide-react';
-import { DEFAULT_MOVEMENT, type Character } from '../../model/types';
+import { DEFAULT_MOVEMENT, type Character, type TableState } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { CLASSES } from '../../rules/classes';
 import { deriveStats, testModifier, type Derived } from '../../rules/derive';
@@ -14,6 +14,7 @@ import { ExportCharactersButton } from '../common/CharacterFile';
 import Vitals from './Vitals';
 import AbilitiesPanel from './AbilitiesPanel';
 import Inventory from './Inventory';
+import RelationsCard, { IntroduceButton } from '../relations/RelationsCard';
 
 export function StatusBadge({ status }: { status: Character['status'] }) {
   if (status === 'approved') return null;
@@ -52,7 +53,8 @@ export function DeleteCharacterButton({ ch, className = 'btn btn-danger btn-sm',
   );
 }
 
-export default function CharacterSheet({ ch, ownerName }: { ch: Character; ownerName?: string }) {
+/** `table`: só na tela do mestre, para as relações (quem o personagem conhece). */
+export default function CharacterSheet({ ch, ownerName, table }: { ch: Character; ownerName?: string; table?: TableState }) {
   const { role, act } = useAct();
   const d = deriveStats(ch);
   const isGm = role === 'gm';
@@ -76,7 +78,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
               {ownerName && <span className="tiny muted">Jogador: {ownerName}</span>}
             </div>
           </div>
-          {isGm ? <GmControls ch={ch} /> : <ExportCharactersButton chars={[ch]} className="btn btn-sm btn-ghost btn-icon" />}
+          {isGm ? <GmControls ch={ch} table={table} /> : <ExportCharactersButton chars={[ch]} className="btn btn-sm btn-ghost btn-icon" />}
         </div>
         {ch.status === 'rejected' && ch.rejectReason && (
           <p className="small mt" style={{ color: '#f2a3a8' }}>Motivo: {ch.rejectReason}</p>
@@ -99,6 +101,7 @@ export default function CharacterSheet({ ch, ownerName }: { ch: Character; owner
       <AttributesCard ch={ch} d={d} readOnly={readOnly} />
       <AbilitiesPanel ch={ch} d={d} readOnly={readOnly} />
       <Inventory ch={ch} readOnly={readOnly} />
+      {isGm && table && <RelationsCard table={table} ch={ch} />}
       <Notes ch={ch} readOnly={readOnly && !isGm} />
     </div>
   );
@@ -166,7 +169,7 @@ function Notes({ ch, readOnly }: { ch: Character; readOnly?: boolean }) {
   );
 }
 
-function GmControls({ ch }: { ch: Character }) {
+function GmControls({ ch, table }: { ch: Character; table?: TableState }) {
   const { act } = useAct();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
@@ -210,6 +213,7 @@ function GmControls({ ch }: { ch: Character }) {
             {ch.visible ? <Eye size={14} /> : <EyeOff size={14} />} {ch.visible ? 'Visível' : 'Oculto'}
           </button>
         )}
+        {table && <IntroduceButton table={table} ch={ch} />}
         <button className="btn btn-sm btn-ghost" onClick={() => setLossOpen(!lossOpen)} title="Perda permanente de PV/PE, RD extra e deslocamento"><Skull size={14} /> Ajustes</button>
         <ExportCharactersButton chars={[ch]} className="btn btn-sm btn-ghost btn-icon" />
         <DeleteCharacterButton ch={ch} />
