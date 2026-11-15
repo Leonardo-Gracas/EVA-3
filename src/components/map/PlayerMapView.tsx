@@ -3,7 +3,7 @@
 // pelo trajeto exato. O cálculo é o mesmo do motor (grid sem os ocultos).
 // Em combate, a fila fica numa faixa sobre o mapa e os controles do turno, perto do polegar.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Clock, Footprints, Hourglass, LocateFixed, Map as MapIcon, Moon, Undo2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Clock, Footprints, Hourglass, Layers, LocateFixed, Map as MapIcon, Moon, Undo2, X } from 'lucide-react';
 import type { MoveGateKind, PlayerCombatant, PlayerMapMove, PlayerMapToken, PlayerView } from '../../model/types';
 import { AMBIENTS, MOVE_MODES, VISION_MODES } from '../../model/types';
 import { cellLabel } from '../../model/map';
@@ -112,6 +112,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   }), [m.tokens, m.moves]);
 
   const pending = view.myRequests.filter((r) => r.status === 'pending' && r.action.type === 'map/move' && r.action.mapId === m.id);
+  const pendingStairs = view.myRequests.filter((r) => r.status === 'pending' && r.action.type === 'map/stairs' && r.action.mapId === m.id);
   const ghosts = pending.map((r) => (r.action.type === 'map/move' ? { x: r.action.x, y: r.action.y } : { x: -1, y: -1 }));
 
   // Caminho mostrado: o rascunho (quadrado a quadrado) ou o mais curto até o destino escolhido / sob o mouse.
@@ -144,6 +145,18 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
   };
 
   const confirm = () => { if (plan) void send(plan.to, plan.cells); };
+
+  /** Escada: gasta um deslocamento inteiro. Na vez, quem já andou pede ao mestre. */
+  const stairsRequest = !!current && (current.gate === 'request'
+    || (current.gate === 'free' && !!current.extra && (current.remaining < current.squares || current.squares === 0)));
+  const climb = async (toMapId: string) => {
+    if (!current || sending) return;
+    if (current.gate === 'blocked') { toast(current.reason ?? 'Você não pode se mover agora.', 'error'); return; }
+    setSending(true);
+    const r = await act({ type: 'map/stairs', mapId: m.id, characterId: current.characterId, toMapId });
+    setSending(false);
+    if (r.ok) clearPlan();
+  };
 
   const sendDraft = () => {
     const d = draftRef.current;
@@ -289,6 +302,7 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
       <div className="pmap-head">
         <MapIcon size={14} className="gold" />
         <strong className="pmap-name">{m.name}</strong>
+        {m.floor && <span className="badge" title="Andar do prédio. Na escada, dá para subir ou descer (gasta um deslocamento)."><Layers size={11} /> {m.floor}</span>}
         <span className="badge" title={MOVE_MODES[m.mode].hint}>{MOVE_MODES[m.mode].label}</span>
         {m.vision !== 'open' && (
           <span className="badge pmap-dark" title={VISION_MODES[m.vision].hint}><Moon size={11} /> Visão {VISION_MODES[m.vision].label.toLowerCase()}</span>
@@ -304,6 +318,11 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
           <Clock size={14} /> Pedido de movimento para {pending.map((r) => (r.action.type === 'map/move' ? cellLabel(r.action.x, r.action.y) : '')).join(', ')} aguardando o mestre.
         </div>
       )}
+      {pendingStairs.map((r) => (
+        <div key={r.id} className="small secondary row pmap-pending">
+          <Clock size={14} /> Pedido aguardando o mestre: {r.summary}.
+        </div>
+      ))}
 
       <MapCanvas
         grid={m} objects={m.objects} tokens={tokens} fitKey={m.id}
@@ -367,6 +386,12 @@ export default function PlayerMapView({ view }: { view: PlayerView }) {
             ) : (
               <>
                 {current && current.gate !== 'blocked' && <PathModeToggle mode={pathMode} onChange={setPathMode} />}
+                {current && current.gate !== 'blocked' && current.stairs?.map((st) => (
+                  <button key={st.mapId} className={`btn pmap-btn${stairsRequest ? '' : ' btn-primary'}`} disabled={sending} onClick={() => void climb(st.mapId)}
+                    title={`${st.up ? 'Subir' : 'Descer'} a escada para ${st.label}: gasta um deslocamento${stairsRequest ? ' (o mestre aprova)' : ''}`}>
+                    {st.up ? <ArrowUp size={16} /> : <ArrowDown size={16} />} {stairsRequest ? 'Pedir: ' : ''}{st.up ? 'Subir' : 'Descer'}<span className="hide-xs">: {st.label}</span>
+                  </button>
+                ))}
                 <span className="pmap-hint tiny muted">
                   {current?.gate === 'blocked' && <Hourglass size={12} />} {hint}
                 </span>

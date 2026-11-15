@@ -949,6 +949,7 @@ function FloorMove({ map, floors, tokenId, onMoved }: { map: BattleMap; floors: 
       </div>
       <div className="tiny muted">
         {onStairs ? 'Na escada: o token aparece no mesmo quadrado do outro andar.' : 'O token vai para o mesmo quadrado do outro andar (ou o livre mais perto). As escadas ficam nos mesmos quadrados nos dois andares.'}
+        {' '}Na vez dele, no modo por turnos, gasta o deslocamento do turno. Os jogadores também sobem e descem sozinhos, parados na escada.
       </div>
     </div>
   );

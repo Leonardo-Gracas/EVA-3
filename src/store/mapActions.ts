@@ -1,6 +1,6 @@
-// Ações dos mapas. Todas do mestre, menos `map/move`, que o jogador usa
+// Ações dos mapas. Todas do mestre, menos `map/move` e `map/stairs`, que o jogador usa
 // conforme o modo de locomoção (o portão fica no dispatch; aqui só a regra do movimento).
-import { MAX_COMBATANTS, nameInstances, numberInstances, threatInstance } from './combat';
+import { currentCombatant, MAX_COMBATANTS, nameInstances, numberInstances, threatInstance } from './combat';
 import type {
   Actor, Ambient, BattleMap, Combat, Combatant, CombatThreat, DoorState, EdgeRef, LightKind, LightMount, MapAction, MapDoor, MapLayout, MapObject, MapRoof,
   MapToken, MoveMode, PropEffect, PropKind, TableState, Terrain, TokenRef, VisionMode,
@@ -16,7 +16,9 @@ import { generateFloors, generateMap, type GeneratedMap } from '../rules/mapgen'
 import { followPath, pathTo, reachFrom, type Point } from '../rules/grid';
 import type { EngineCtx } from './engine';
 import { fail, int, log, record, str } from './guard';
-import { cleanPath, fullGrid, moveText, planPlayerMove, tokenCombatant } from './maps';
+import {
+  cleanPath, combatOn, fullGrid, moveBudget, moveText, openToPlayers, planPlayerMove, planStairs, tokenCombatant,
+} from './maps';
 
 export const MAX_MAPS = 40;
 const MAX_OBJECTS = 500;
@@ -123,6 +125,35 @@ function freeCellNear(m: BattleMap, x: number, y: number, skipTokenId?: string):
     }
   }
   return best ?? { x: cx, y: cy };
+}
+
+/**
+ * Leva o token para o mesmo quadrado do outro andar (ou o livre mais perto). Se a ficha já
+ * tinha token lá, é ele que vai para a escada. Devolve o token no outro andar.
+ */
+function carryToFloor(m: BattleMap, to: BattleMap, id: string): MapToken {
+  const t = m.tokens[id];
+  const ex = t.ref.kind === 'creature' ? undefined : Object.values(to.tokens).find((o) => refKey(o.ref) === refKey(t.ref));
+  if (!ex && Object.keys(to.tokens).length >= MAX_TOKENS) fail(`Máximo de ${MAX_TOKENS} tokens no mapa.`);
+  delete m.tokens[id];
+  if (ex) {
+    Object.assign(ex, freeCellNear(to, t.x, t.y, ex.id));
+    delete ex.trail;
+    return ex;
+  }
+  const moved: MapToken = { ...t, ...freeCellNear(to, t.x, t.y) };
+  delete moved.trail;
+  to.tokens[moved.id] = moved;
+  return moved;
+}
+
+/** Subir ou descer a escada na vez do token (modo por turnos) gasta um deslocamento inteiro. */
+function spendStairs(s: TableState, m: BattleMap, t: MapToken) {
+  const c = s.combat;
+  const cb = tokenCombatant(s, t);
+  if (!c || !c.round || !cb || m.mode !== 'turno' || !combatOn(s, m) || currentCombatant(c)?.id !== cb.id) return;
+  const b = moveBudget(s, t, true);
+  c.moved = { combatantId: cb.id, round: c.round, squares: b.spent + b.squares, parity: 0 };
 }
 
 /** Depois de trocar o desenho: token fora do mapa ou em quadrado bloqueado vai para o livre mais perto. */
@@ -335,7 +366,9 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       delete s.maps[m.id];
       if (s.activeMapId === m.id) s.activeMapId = null;
       if (s.combat?.mapId === m.id) s.combat.mapId = null;
-      s.requests = s.requests.filter((r) => !(r.status === 'pending' && r.action.type === 'map/move' && r.action.mapId === m.id));
+      s.requests = s.requests.filter((r) => !(r.status === 'pending' && (
+        (r.action.type === 'map/move' && r.action.mapId === m.id)
+        || (r.action.type === 'map/stairs' && (r.action.mapId === m.id || r.action.toMapId === m.id)))));
       return;
     }
 
@@ -604,7 +637,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         : null;
       const have = new Map(Object.values(m.tokens).map((t) => [refKey(t.ref), t]));
       // Com o combate neste mapa, quem chega ao mapa entra no fim da fila.
-      const c = s.combat && s.combat.mapId === m.id ? s.combat : null;
+      const c = s.combat && combatOn(s, m) ? s.combat : null;
       const joined: string[] = [];
       let last: string | undefined;
       for (const raw of a.refs) {
@@ -682,30 +715,28 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       const m = getMap(s, a.mapId);
       const to = getMap(s, a.toMapId);
       if (to.id === m.id || !m.floor || to.floor?.group !== m.floor.group) fail('Escolha outro andar do mesmo mapa.');
-      const ids = tokenIds(m, a.tokenIds);
-      const have = new Map(Object.values(to.tokens).map((t) => [refKey(t.ref), t]));
       let last: string | undefined;
-      for (const id of ids) {
-        const t = m.tokens[id];
-        delete m.tokens[id];
-        const ex = t.ref.kind === 'creature' ? undefined : have.get(refKey(t.ref));
-        if (ex) {
-          // A ficha já tinha token no outro andar: ele vai para a escada.
-          Object.assign(ex, freeCellNear(to, t.x, t.y, ex.id));
-          delete ex.trail;
-          last = ex.id;
-          continue;
-        }
-        if (Object.keys(to.tokens).length >= MAX_TOKENS) fail(`Máximo de ${MAX_TOKENS} tokens no mapa.`);
-        const moved: MapToken = { ...t, ...freeCellNear(to, t.x, t.y) };
-        delete moved.trail;
-        to.tokens[moved.id] = moved;
-        have.set(refKey(moved.ref), moved);
-        last = moved.id;
+      for (const id of tokenIds(m, a.tokenIds)) {
+        spendStairs(s, m, m.tokens[id]);
+        last = carryToFloor(m, to, id).id;
       }
       m.updatedAt = now;
       to.updatedAt = now;
       return last;
+    }
+
+    case 'map/stairs': {
+      const m = getMap(s, a.mapId);
+      if (typeof a.characterId !== 'string') return fail('Escolha a ficha.');
+      const plan = planStairs(s, m, a.characterId, a.toMapId);
+      if ('error' in plan) return fail(plan.error);
+      spendStairs(s, m, plan.token);
+      const tok = carryToFloor(m, plan.to, plan.token.id);
+      m.updatedAt = now;
+      plan.to.updatedAt = now;
+      const ch = s.characters[a.characterId];
+      log(s, ctx, { kind: 'system', actorName: who, text: `${ch?.name ?? 'Personagem'} ${plan.up ? 'subiu' : 'desceu'} a escada: ${plan.to.floor!.label} de ${plan.to.name}.`, hidden: true });
+      return tok.id;
     }
 
     case 'map/move': {
@@ -719,7 +750,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         if (tok.x === x && tok.y === y) return;
         const c = s.combat;
         const cb = tokenCombatant(s, tok);
-        const turn = !!(c && c.round && c.mapId === m.id && m.mode === 'turno' && cb && c.order[c.turn]?.id === cb.id);
+        const turn = !!(c && c.round && combatOn(s, m) && m.mode === 'turno' && cb && c.order[c.turn]?.id === cb.id);
         const before = turn && c!.moved?.combatantId === cb!.id && c!.moved.round === c!.round ? c!.moved : null;
         const g = fullGrid(m);
         // Caminho traçado pelo mestre (exato) ou o mais curto; sem caminho possível, teletransporta.
@@ -744,7 +775,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       }
 
       if (typeof a.characterId !== 'string') return fail('Escolha a ficha.');
-      if (s.activeMapId !== m.id) fail('Este mapa não está aberto.');
+      if (!openToPlayers(s, m)) fail('Este mapa não está aberto.');
       const plan = planPlayerMove(s, m, a.characterId, x, y, a.path);
       if ('error' in plan) return fail(plan.error);
       const { token, path, budget, accumulate } = plan;
@@ -774,5 +805,15 @@ export function describeMapMove(s: TableState, a: Extract<MapAction, { type: 'ma
   const plan = a.characterId ? planPlayerMove(s, m, a.characterId, a.x, a.y, a.path) : null;
   const exact = a.path !== undefined ? ', caminho traçado' : '';
   return `${n}: mover para ${moveText(m, a.x, a.y, plan && !('error' in plan) ? plan.path.cost : undefined)}${exact}`;
+}
+
+/** Resumo do pedido de escada. */
+export function describeStairs(s: TableState, a: Extract<MapAction, { type: 'map/stairs' }>): string {
+  const n = s.characters[a.characterId]?.name ?? 'ficha';
+  const m = s.maps[a.mapId];
+  const to = s.maps[a.toMapId];
+  const plan = m ? planStairs(s, m, a.characterId, a.toMapId) : null;
+  const verb = plan && !('error' in plan) ? (plan.up ? 'subir' : 'descer') : 'usar';
+  return `${n}: ${verb} a escada para ${to?.floor?.label ?? 'outro andar'}${to ? ` de ${to.name}` : ''} (um deslocamento)`;
 }
 

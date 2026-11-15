@@ -5,7 +5,7 @@ import type {
 } from '../model/types';
 import type { AvatarConfig } from '../model/avatar';
 import { avatarFor } from '../model/avatar';
-import { ambientOf, cellLabel, visionOf } from '../model/map';
+import { ambientOf, cellLabel, terrainAt, visionOf } from '../model/map';
 import { carriedLight } from '../rules/derive';
 import {
   buildGrid, canEnd, costTo, followPath, MAX_PATH, metersFor, pathTo, reachFrom, squaresFor, type Grid, type GridPath, type Point, type Reach,
@@ -126,8 +126,42 @@ export function tokenOfCharacter(m: BattleMap, characterId: string): MapToken | 
   return Object.values(m.tokens).find((t) => t.ref.kind === 'character' && t.ref.id === characterId);
 }
 
-/** O combate aberto está neste mapa. */
-export const combatOn = (s: TableState, m: BattleMap) => !!s.combat && s.combat.mapId === m.id;
+/** Os andares do prédio do mapa, de baixo do térreo para cima (só ele, se não tem andares). */
+export function floorsOf(s: TableState, m: BattleMap): BattleMap[] {
+  const g = m.floor?.group;
+  if (!g) return [m];
+  return Object.values(s.maps).filter((f) => f.floor?.group === g).sort((a, b) => a.floor!.level - b.floor!.level);
+}
+
+/** O mapa `id` é `m` ou outro andar do mesmo prédio. */
+export function sameBuilding(s: TableState, id: string | null | undefined, m: BattleMap): boolean {
+  if (!id) return false;
+  if (id === m.id) return true;
+  const g = m.floor?.group;
+  return !!g && s.maps[id]?.floor?.group === g;
+}
+
+/** Os jogadores podem estar neste mapa: é o aberto ou um andar do mesmo prédio. */
+export const openToPlayers = (s: TableState, m: BattleMap) => sameBuilding(s, s.activeMapId, m);
+
+/**
+ * O mapa que o jogador vê: o aberto ou, num prédio de vários andares, o andar onde estão
+ * os personagens dele (o aberto, se há algum lá).
+ */
+export function shownMap(s: TableState, playerId: string): BattleMap | undefined {
+  const m = s.activeMapId ? s.maps?.[s.activeMapId] : undefined;
+  if (!m?.floor) return m;
+  const mine = (f: BattleMap) => Object.values(f.tokens).some((t) => {
+    if (t.ref.kind !== 'character') return false;
+    const ch = s.characters[t.ref.id];
+    return !!ch && ch.ownerId === playerId && ch.status === 'approved' && tokenInfo(s, t)?.hidden === false;
+  });
+  if (mine(m)) return m;
+  return floorsOf(s, m).find(mine) ?? m;
+}
+
+/** O combate aberto está neste mapa (ou em outro andar do mesmo prédio). */
+export const combatOn = (s: TableState, m: BattleMap) => !!s.combat && sameBuilding(s, s.combat.mapId, m);
 
 /** É a vez do token no combate deste mapa. */
 export function isTokenTurn(s: TableState, m: BattleMap, tok: MapToken): boolean {
@@ -154,11 +188,11 @@ export interface MoveGate {
  */
 export function moveGate(s: TableState, m: BattleMap, characterId: string): MoveGate {
   const open = { accumulate: false, unlimited: true, extra: false };
-  if (s.activeMapId !== m.id) return { ...open, gate: 'blocked', reason: 'Este mapa não está aberto para os jogadores.' };
+  if (!openToPlayers(s, m)) return { ...open, gate: 'blocked', reason: 'Este mapa não está aberto para os jogadores.' };
   if (m.mode === 'livre') return { ...open, gate: 'free' };
   if (m.mode === 'permissao') return { ...open, gate: 'request', reason: 'O mestre aprova cada movimento.' };
   const c = s.combat;
-  if (!c || c.mapId !== m.id || !c.round) return { ...open, gate: 'request', reason: 'Fora de combate: peça ao mestre.' };
+  if (!c || !combatOn(s, m) || !c.round) return { ...open, gate: 'request', reason: 'Fora de combate: peça ao mestre.' };
   const tok = tokenOfCharacter(m, characterId);
   const cb = tok ? tokenCombatant(s, tok) : undefined;
   if (!cb) return { ...open, gate: 'request', reason: 'Fora da fila do combate: peça ao mestre.' };
@@ -259,6 +293,39 @@ export function planPlayerMove(s: TableState, m: BattleMap, characterId: string,
   if (!canEnd(reach, x, y)) return { error: 'Já tem alguém nesse quadrado.' };
   const p = pathTo(reach, x, y)!;
   return { token, path: p, budget, accumulate, over: p.cost > budget.remaining };
+}
+
+/** Os andares vizinhos aonde a escada sob o token leva (nenhum, fora da escada). */
+export function stairsFrom(s: TableState, m: BattleMap, tok: Pick<MapToken, 'x' | 'y'>): Array<{ map: BattleMap; up: boolean }> {
+  const f = m.floor;
+  if (!f || terrainAt(m, tok.x, tok.y) !== 'stairs') return [];
+  return floorsOf(s, m)
+    .filter((o) => Math.abs(o.floor!.level - f.level) === 1)
+    .map((o) => ({ map: o, up: f.down ? o.floor!.level < f.level : o.floor!.level > f.level }));
+}
+
+export interface PlannedStairs {
+  token: MapToken;
+  to: BattleMap;
+  up: boolean;
+  budget: MoveBudget;
+  accumulate: boolean;
+  /** Já andou neste turno (ou não anda): não sobra um deslocamento inteiro, vira pedido. */
+  over: boolean;
+}
+
+/** Confere a subida ou descida do jogador pela escada. Erro em texto, sem lançar. */
+export function planStairs(s: TableState, m: BattleMap, characterId: string, toMapId: unknown): PlannedStairs | { error: string } {
+  const token = tokenOfCharacter(m, characterId);
+  const info = token ? tokenInfo(s, token) : null;
+  if (!token || !info || info.hidden) return { error: 'Essa ficha não está no mapa.' };
+  if (!openToPlayers(s, m)) return { error: 'Este mapa não está aberto.' };
+  if (terrainAt(m, token.x, token.y) !== 'stairs') return { error: 'O personagem não está numa escada.' };
+  const way = stairsFrom(s, m, token).find((o) => o.map.id === toMapId);
+  if (!way) return { error: 'Essa escada não leva a esse andar.' };
+  const { accumulate } = moveGate(s, m, characterId);
+  const budget = moveBudget(s, token, accumulate);
+  return { token, to: way.map, up: way.up, budget, accumulate, over: budget.spent > 0 || budget.squares === 0 };
 }
 
 /** "C7 em Cripta (4 quadrados, 6 m)". */

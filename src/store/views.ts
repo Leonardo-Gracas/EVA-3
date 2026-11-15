@@ -6,7 +6,9 @@ import type {
 import { TERRAIN_CHAR } from '../model/types';
 import { ambientOf, objectCells, visionOf } from '../model/map';
 import type { Vision } from '../rules/vision';
-import { combatOn, eyesOf, isTokenTurn, moveBudget, moveGate, playerGrid, playerSight, tokenCombatant, tokenInfo, visibleObjects } from './maps';
+import {
+  combatOn, eyesOf, isTokenTurn, moveBudget, moveGate, playerGrid, playerSight, shownMap, stairsFrom, tokenCombatant, tokenInfo, visibleObjects,
+} from './maps';
 import { followPath } from '../rules/grid';
 import { effectivePermissions } from '../model/permissions';
 import { caseShown, publishedCase } from '../model/cases';
@@ -80,7 +82,8 @@ function buildPlayerRelations(s: TableState, playerId: string): PlayerRelation[]
 
 /** O mapa aberto, como o jogador vê: sem o que está oculto, com quanto cada ficha dele anda. */
 function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
-  const m = s.activeMapId ? s.maps?.[s.activeMapId] : undefined;
+  // Num prédio de vários andares, o andar onde estão os personagens dele.
+  const m = shownMap(s, playerId);
   if (!m) return null;
   const tokens: PlayerMapToken[] = [];
   const moves: PlayerMapMove[] = [];
@@ -117,15 +120,17 @@ function buildPlayerMap(s: TableState, playerId: string): PlayerMap | null {
     if (mine && ch!.status === 'approved') {
       const g = moveGate(s, m, ch!.id);
       const b = moveBudget(s, t, g.accumulate);
+      const stairs = stairsFrom(s, m, t).map((o) => ({ mapId: o.map.id, label: o.map.floor!.label, up: o.up }));
       moves.push({
         characterId: ch!.id, tokenId: t.id, squares: b.squares, remaining: b.remaining, parity: b.parity, gate: g.gate,
         ...(g.unlimited ? { unlimited: true } : {}),
         ...(g.extra ? { extra: true } : {}),
         ...(g.reason ? { reason: g.reason } : {}),
+        ...(stairs.length ? { stairs } : {}),
       });
     }
   }
-  const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, vision, tokens, moves };
+  const base = { id: m.id, name: m.name, w: m.w, h: m.h, mode: m.mode, vision, tokens, moves, ...(m.floor ? { floor: m.floor.label } : {}) };
   const roofsFor = (keep: (i: number) => boolean): { roofs?: PlayerRoof[] } => {
     const out = roofs.flatMap((rf) => {
       const cells = rf.cells.filter(keep);

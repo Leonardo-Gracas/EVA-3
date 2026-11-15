@@ -676,6 +676,111 @@ describe('mapas: criar gerado e andares', () => {
     expect(dup.state.maps[dup.id!].floor).toBeUndefined();
   });
 
+  /** Solar de 2 andares, com o térreo aberto e a ficha de Ana na escada do térreo. */
+  function building() {
+    let { s, ana } = setup();
+    const params = { ...DUNGEON_DEFAULTS, preset: 'house' as const, model: 'casarao' as const, w: 34, h: 30, furnish: true, lights: true, floors: 2 };
+    const r = dispatch(s, gm, { type: 'map/build', name: 'Solar', params, seed: 4 }, ctx);
+    if (!r.ok) throw new Error(r.error);
+    s = r.state;
+    const ground = r.id!;
+    const upper = Object.values(s.maps).find((m) => m.floor?.group === s.maps[ground].floor?.group && m.id !== ground)!.id;
+    const stair = s.maps[ground].cells.indexOf('>');
+    const x = stair % s.maps[ground].w;
+    const y = Math.floor(stair / s.maps[ground].w);
+    s = ok(s, gm, { type: 'map/activate', mapId: ground });
+    s = ok(s, gm, { type: 'map/tokenPlace', mapId: ground, refs: [{ kind: 'character', id: ana }], x, y });
+    return { s, ana, ground, upper, x, y };
+  }
+
+  /** Leva a ficha para um piso comum (fora da escada) vizinho do quadrado onde está. */
+  function stepAside(s: TableState, mapId: string, characterId: string, from: { x: number; y: number }): TableState {
+    const m = s.maps[mapId];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = from.x + dx;
+      const y = from.y + dy;
+      if (m.cells[y * m.w + x] !== '.') continue;
+      const r = run(s, p1, { type: 'map/move', mapId, characterId, x, y });
+      if (r.ok && !r.requested) {
+        expect(pos(r.state, mapId, characterId)).toEqual({ x, y });
+        return r.state;
+      }
+    }
+    throw new Error('Sem vizinho livre.');
+  }
+
+  it('o jogador sobe e desce pela escada e passa a ver o andar onde está', () => {
+    let { s, ana, ground, upper, x, y } = building();
+    s = ok(s, gm, { type: 'map/update', mapId: ground, mode: 'livre' });
+    s = ok(s, gm, { type: 'map/update', mapId: upper, mode: 'livre' });
+
+    let view = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(view).toMatchObject({ id: ground, floor: 'Térreo' });
+    expect(view.moves[0].stairs).toEqual([{ mapId: upper, label: '1º andar', up: true }]);
+
+    // Só a própria ficha, só para o andar vizinho do mesmo prédio.
+    expect(run(s, p2, { type: 'map/stairs', mapId: ground, characterId: ana, toMapId: upper })).toMatchObject({ ok: false, error: /não é sua/ });
+    const cripta = Object.keys(s.maps).find((id) => !s.maps[id].floor)!;
+    expect(run(s, p1, { type: 'map/stairs', mapId: ground, characterId: ana, toMapId: cripta })).toMatchObject({ ok: false, error: /não leva/ });
+
+    s = ok(s, p1, { type: 'map/stairs', mapId: ground, characterId: ana, toMapId: upper });
+    expect(Object.values(s.maps[ground].tokens).some((t) => t.ref.id === ana)).toBe(false);
+    expect(pos(s, upper, ana)).toEqual({ x, y });
+    view = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(view).toMatchObject({ id: upper, floor: '1º andar' });
+    expect(view.moves[0].stairs).toEqual([{ mapId: ground, label: 'Térreo', up: false }]);
+    // Quem não tem ninguém no prédio vê o andar aberto.
+    expect(buildPlayerView(s, 'p2', new Set()).map!.id).toBe(ground);
+
+    // No andar de cima ela anda normalmente; fora da escada, não sobe nem desce.
+    s = stepAside(s, upper, ana, { x, y });
+    expect(buildPlayerView(s, 'p1', new Set()).map!.moves[0].stairs).toBeUndefined();
+    expect(run(s, p1, { type: 'map/stairs', mapId: upper, characterId: ana, toMapId: ground })).toMatchObject({ ok: false, error: /escada/ });
+  });
+
+  it('por turno: a escada gasta um deslocamento inteiro; quem já andou pede ao mestre', () => {
+    let { s, ana, ground, upper, x, y } = building();
+    s = ok(s, gm, { type: 'map/update', mapId: ground, mode: 'turno' });
+    s = ok(s, gm, { type: 'map/update', mapId: upper, mode: 'turno' });
+    s = ok(s, gm, { type: 'threat/upsert', data: goblin });
+    s = ok(s, gm, { type: 'combat/create' });
+    s = ok(s, gm, { type: 'combat/add', refs: [{ kind: 'character', id: ana }] });
+    s = ok(s, gm, { type: 'combat/add', refs: [{ kind: 'threat', id: Object.keys(s.threats)[0] }] });
+    s = ok(s, gm, { type: 'map/link', mapId: ground });
+    s = ok(s, gm, { type: 'combat/start' });
+
+    // Andou um pouco e voltou à escada: não sobra um deslocamento inteiro, vira pedido.
+    s = stepAside(s, ground, ana, { x, y });
+    s = ok(s, p1, { type: 'map/move', mapId: ground, characterId: ana, x, y });
+    expect(pos(s, ground, ana)).toEqual({ x, y });
+    const r = run(s, p1, { type: 'map/stairs', mapId: ground, characterId: ana, toMapId: upper });
+    expect(r).toMatchObject({ ok: true, requested: true });
+    s = r.state;
+    const req = s.requests[s.requests.length - 1];
+    expect(req.summary).toMatch(/subir a escada para 1º andar/);
+    s = ok(s, gm, { type: 'request/resolve', requestId: req.id, approve: true });
+    expect(pos(s, upper, ana)).toEqual({ x, y });
+
+    // No outro andar o combate continua: é a vez dela, sem deslocamento sobrando.
+    let view = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(view.id).toBe(upper);
+    expect(view.tokens.find((t) => t.mine)!.turn).toBe(true);
+    expect(view.moves[0]).toMatchObject({ remaining: 0, gate: 'free', extra: true });
+
+    // Próxima rodada: deslocamento inteiro, desce sem pedir e gasta tudo.
+    s = ok(s, gm, { type: 'combat/next' });
+    s = ok(s, gm, { type: 'combat/next' });
+    const down = run(s, p1, { type: 'map/stairs', mapId: upper, characterId: ana, toMapId: ground });
+    expect(down).toMatchObject({ ok: true });
+    expect(down.ok && down.requested).toBeFalsy();
+    s = down.state;
+    expect(pos(s, ground, ana)).toEqual({ x, y });
+    expect(s.combat!.moved).toMatchObject({ combatantId: s.combat!.order[0].id, squares: 6 });
+    view = buildPlayerView(s, 'p1', new Set()).map!;
+    expect(view).toMatchObject({ id: ground });
+    expect(view.moves[0]).toMatchObject({ remaining: 0 });
+  });
+
   it('um andar só: mapa com o nome dado, sem andar', () => {
     let { s } = setup();
     const r = dispatch(s, gm, { type: 'map/build', name: 'Cripta', params: { ...DUNGEON_DEFAULTS, furnish: true }, seed: 3 }, ctx);

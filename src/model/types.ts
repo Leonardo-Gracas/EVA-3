@@ -316,7 +316,7 @@ export const MAP_CELL_M = 1.5;
 /** Lados do mapa, em quadrados. */
 export const MAP_LIMITS = { min: 4, max: 80 };
 
-/** Escada é marcação visual e custa como terreno difícil. Calçamento é piso com desenho de pedras (rua, trilha). */
+/** Escada custa como terreno difícil e, num prédio de vários andares, leva ao andar vizinho. Calçamento é piso com desenho de pedras (rua, trilha). */
 export type Terrain = 'floor' | 'void' | 'difficult' | 'stairs' | 'road';
 
 /** Caractere de cada terreno em `BattleMap.cells`. */
@@ -326,7 +326,7 @@ export const TERRAINS: Record<Terrain, { label: string; hint: string }> = {
   floor: { label: 'Piso', hint: 'Movimento normal.' },
   void: { label: 'Vazio', hint: 'Rocha ou fora do mapa: ninguém entra.' },
   difficult: { label: 'Terreno difícil', hint: 'Custa o dobro.' },
-  stairs: { label: 'Escada', hint: 'Custa como terreno difícil.' },
+  stairs: { label: 'Escada', hint: 'Custa como terreno difícil. Nos mapas de vários andares, sobe ou desce um andar (gasta um deslocamento).' },
   road: { label: 'Calçamento', hint: 'Rua, calçada ou trilha batida: movimento normal.' },
 };
 
@@ -1132,6 +1132,8 @@ export type MapAction =
   | { type: 'map/tokenHidden'; mapId: string; tokenIds: string[]; hidden: boolean }
   /** Leva tokens para outro andar do mesmo prédio, no mesmo quadrado (ou no livre mais perto). */
   | { type: 'map/tokenFloor'; mapId: string; tokenIds: string[]; toMapId: string }
+  /** Jogador: a ficha, parada numa escada, sobe ou desce um andar. Gasta um deslocamento inteiro. */
+  | { type: 'map/stairs'; mapId: string; characterId: string; toMapId: string }
   /** Mestre: tokenId, sem limite. Jogador: characterId, dentro do deslocamento e do modo de locomoção. */
   | {
     type: 'map/move'; mapId: string; x: number; y: number; tokenId?: string; characterId?: string;
@@ -1216,6 +1218,15 @@ export interface PlayerMapMove {
   /** Na própria vez: passar de `remaining` vira pedido ao mestre. */
   extra?: boolean;
   reason?: string;
+  /** Parado numa escada: os andares vizinhos aonde ela leva. */
+  stairs?: PlayerStairs[];
+}
+
+/** Andar aonde a escada leva. */
+export interface PlayerStairs {
+  mapId: string;
+  label: string;
+  up: boolean;
 }
 
 export interface PlayerMap {
@@ -1228,6 +1239,8 @@ export interface PlayerMap {
   wallsV: string;
   mode: MoveMode;
   vision: VisionMode;
+  /** Andar do prédio ("Térreo", "1º andar"...), num mapa de vários andares. */
+  floor?: string;
   /** Sem os ocultos: porta secreta some e fica a parede. */
   objects: MapObject[];
   tokens: PlayerMapToken[];

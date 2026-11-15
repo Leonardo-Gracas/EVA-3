@@ -27,8 +27,8 @@ import {
   combatantInfo, conditionExpired, GROUP_OPS, groupDamageResult, MAX_COMBATANTS, nameInstances, rdFor, threatInstance,
 } from './combat';
 import { Fail, fail, int, log, record, str } from './guard';
-import { applyMapAction, describeMapMove, dropTokens, getMap, releaseTokens } from './mapActions';
-import { moveGate, planPlayerMove } from './maps';
+import { applyMapAction, describeMapMove, describeStairs, dropTokens, getMap, releaseTokens } from './mapActions';
+import { moveGate, planPlayerMove, planStairs } from './maps';
 
 export interface EngineCtx {
   now: () => number;
@@ -642,9 +642,9 @@ const isMapAction = (a: GameAction): a is MapAction => typeof a.type === 'string
 function authorize(s: TableState, actor: Actor, a: GameAction) {
   if (actor.role === 'gm') return;
   if (GM_ONLY.has(a.type)) fail('Apenas o mestre pode fazer isso.');
-  // Do mapa, o jogador só move a própria ficha.
-  if (isMapAction(a) && a.type !== 'map/move') fail('Apenas o mestre pode fazer isso.');
-  if (a.type === 'map/move' && typeof a.characterId !== 'string') fail('Escolha a ficha que vai se mover.');
+  // Do mapa, o jogador só move a própria ficha (andando ou pela escada).
+  if (isMapAction(a) && a.type !== 'map/move' && a.type !== 'map/stairs') fail('Apenas o mestre pode fazer isso.');
+  if ((a.type === 'map/move' || a.type === 'map/stairs') && typeof a.characterId !== 'string') fail('Escolha a ficha que vai se mover.');
   if (a.type === 'roll' && (a.threatId || a.combatantId)) fail('Apenas o mestre rola pelas ameaças.');
   // Ações antigas (ou montadas à mão) podem trazer `null` no lugar de `undefined`: os dois significam "sem ficha".
   if ('characterId' in a && a.characterId != null) {
@@ -1750,6 +1750,7 @@ export function describeAction(s: TableState, a: GameAction): string {
     case 'notes/update': return `${n}: editar anotações`;
     case 'character/avatar': return `${n}: mudar aparência`;
     case 'map/move': return describeMapMove(s, a);
+    case 'map/stairs': return describeStairs(s, a);
     default: return a.type;
   }
 }
@@ -1777,6 +1778,17 @@ function playerGate(s: TableState, actor: Extract<Actor, { role: 'player' }>, a:
     }
     return { kind: 'map_move', perm, blocked: g.reason ?? 'Você não pode se mover agora.' };
   }
+  if (a.type === 'map/stairs') {
+    const m = getMap(s, a.mapId);
+    const g = moveGate(s, m, a.characterId);
+    let perm: ActionPermission = g.gate;
+    // Na própria vez, a escada pede um deslocamento inteiro: quem já andou pede ao mestre.
+    if (perm === 'free' && g.extra) {
+      const plan = planStairs(s, m, a.characterId, a.toMapId);
+      if (!('error' in plan) && plan.over) perm = 'request';
+    }
+    return { kind: 'map_move', perm, blocked: g.reason ?? 'Você não pode se mover agora.' };
+  }
   const key = permissionFor(a);
   if (!key) return null;
   return {
@@ -1790,9 +1802,9 @@ function playerGate(s: TableState, actor: Extract<Actor, { role: 'player' }>, a:
 function enqueueRequest(s: TableState, actor: Extract<Actor, { role: 'player' }>, action: GameAction, kind: RequestKind, ctx: EngineCtx) {
   apply(structuredClone(s), actor, action, ctx);
   // Um movimento pedido de novo substitui o anterior da mesma ficha (o jogador mudou de ideia).
-  if (action.type === 'map/move') {
+  if (action.type === 'map/move' || action.type === 'map/stairs') {
     s.requests = s.requests.filter((r) => !(r.status === 'pending' && r.playerId === actor.playerId
-      && r.action.type === 'map/move' && r.characterId === action.characterId));
+      && (r.action.type === 'map/move' || r.action.type === 'map/stairs') && r.characterId === action.characterId));
   }
   const pending = s.requests.filter((r) => r.playerId === actor.playerId && r.status === 'pending');
   if (pending.length >= MAX_PENDING_PER_PLAYER) fail('Muitos pedidos pendentes. Aguarde o mestre.');
