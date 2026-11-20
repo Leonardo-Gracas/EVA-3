@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  ArrowDown, ArrowUp, Blend, ChevronLeft, Info, ListMusic, ListPlus, ListVideo, Loader2, Music,
+  useEffect, useRef, useState, useSyncExternalStore,
+  type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode,
+} from 'react';
+import {
+  Blend, ChevronLeft, GripVertical, Info, ListMusic, ListPlus, ListVideo, Loader2, Music,
   Pause, Pencil, Play, Plus, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
 } from 'lucide-react';
 import { SubTabs } from '../room/TopBar';
@@ -236,6 +239,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
         <li><strong>Só você ouve.</strong> A música toca só neste navegador; os jogadores não ouvem nada.</li>
         <li><strong>Tocar um link:</strong> cole o endereço de um vídeo ou de uma playlist do YouTube. A playlist colada pode virar playlist do sistema pelo botão <em>Salvar</em>, na aba Tocando.</li>
         <li><strong>Playlists do sistema</strong> ficam salvas neste navegador e vão junto no backup (.json) da mesa. Crie uma e cole links de vídeos.</li>
+        <li><strong>Reordenar:</strong> numa playlist do sistema, arraste a faixa pela alça (<GripVertical size={12} />) à esquerda.</li>
         <li><strong>Apelidos:</strong> dentro de uma playlist do sistema, o lápis (<Pencil size={12} />) de cada faixa dá a ela um nome seu, que aparece no lugar do título do YouTube. Apague o apelido para voltar ao título.</li>
         <li><strong>Recomeçar faixa</strong> (<Repeat1 size={12} /> na barra) repete a música atual. <strong>Repetir playlist</strong> volta ao começo depois da última faixa.</li>
         <li><strong>Transição:</strong> perto do fim, a próxima música entra enquanto a atual some. Clique no botão para trocar a duração. No iPhone e no iPad a troca é seca.</li>
@@ -304,13 +308,15 @@ function Library() {
   );
 }
 
-function TrackRow({ t, active, failed, onPlay, actions }: {
+function TrackRow({ t, active, failed, onPlay, actions, grip, dragging, style }: {
   t: Track; active: boolean; failed?: boolean; onPlay: () => void; actions?: ReactNode;
+  grip?: ReactNode; dragging?: boolean; style?: CSSProperties;
 }) {
   // Com apelido, embaixo vai o título original do YouTube (e o canal, se couber).
   const sub = t.alias ? [t.title, t.channel].filter(Boolean).join(' · ') : t.channel;
   return (
-    <div className={`music-row${active ? ' on' : ''}${failed ? ' failed' : ''}`}>
+    <div className={`music-row${active ? ' on' : ''}${failed ? ' failed' : ''}${dragging ? ' dragging' : ''}`} style={style}>
+      {grip}
       <button className="music-row-main" onClick={onPlay} title={failed ? 'O YouTube recusou este vídeo' : 'Tocar a partir daqui'}>
         <span className="music-thumb">
           <img src={thumbUrl(t.id)} alt="" loading="lazy" />
@@ -419,6 +425,7 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
     const fresh = libraryStore.get().find((p) => p.id === list.id)?.tracks[i];
     applyAlias(list.id, t.id, fresh?.alias);
   };
+  const sort = useDragSort(list.tracks.length, (from, to) => moveTrack(list.id, from, to));
   const mine = s.source?.kind === 'local' && s.source.id === list.id;
   const commitName = () => {
     const n = name.trim();
@@ -446,16 +453,21 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
       {list.tracks.length === 0 ? (
         <div className="music-empty">Playlist vazia.</div>
       ) : (
-        <div className="music-rows">
+        <div ref={sort.listRef} className={`music-rows music-sortable${sort.dragging ? ' is-dragging' : ''}`}>
           {list.tracks.map((t, i) => editing === t.id ? (
             <AliasEditor key={t.id} t={t} onDone={(alias) => saveAlias(i, alias)} onCancel={() => setEditing(null)} />
           ) : (
             <TrackRow key={t.id} t={t} active={mine && s.current?.id === t.id} failed={mine && s.failed.includes(t.id)} onPlay={() => playLocal(list, i)}
+              dragging={sort.from === i} style={sort.style(i)}
+              grip={(
+                <button type="button" className="music-grip" title="Arraste para reordenar"
+                  aria-label={`Mover “${trackName(t) || 'faixa'}” (setas para cima e para baixo)`} {...sort.grip(i)}>
+                  <GripVertical size={14} />
+                </button>
+              )}
               actions={(
                 <span className="music-row-actions">
                   <button className="music-btn music-btn-sm" onClick={() => setEditing(t.id)} aria-label="Dar apelido" title={t.alias ? 'Trocar o apelido' : 'Dar apelido'}><Pencil size={14} /></button>
-                  <button className="music-btn music-btn-sm" disabled={i === 0} onClick={() => moveTrack(list.id, i, i - 1)} aria-label="Subir" title="Subir"><ArrowUp size={14} /></button>
-                  <button className="music-btn music-btn-sm" disabled={i === list.tracks.length - 1} onClick={() => moveTrack(list.id, i, i + 1)} aria-label="Descer" title="Descer"><ArrowDown size={14} /></button>
                   <button className="music-btn music-btn-sm" onClick={() => removeTrack(list.id, i)} aria-label="Tirar da playlist" title="Tirar da playlist"><X size={14} /></button>
                 </span>
               )} />
@@ -466,12 +478,102 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
   );
 }
 
+/**
+ * Reordenar arrastando a alça da linha (mouse ou dedo). A linha segue o ponteiro e as do caminho
+ * abrem espaço; perto da borda do painel, a lista rola sozinha. Pelo teclado, setas na alça.
+ */
+function useDragSort(count: number, onMove: (from: number, to: number) => void) {
+  const listRef = useRef<HTMLDivElement>(null);
+  // `geo` guarda as medidas do início (posições relativas ao conteúdo rolável); `drag` só desenha.
+  const geo = useRef<{
+    from: number; to: number; startY: number; lastY: number; mids: number[];
+    scroller: HTMLElement | null; startScroll: number; raf: number;
+  } | null>(null);
+  const [drag, setDrag] = useState<{ from: number; to: number; dy: number; h: number } | null>(null);
+
+  const update = () => {
+    const g = geo.current;
+    if (!g) return;
+    const { mids, from } = g;
+    const scrolled = (g.scroller?.scrollTop ?? 0) - g.startScroll;
+    // Não sai da lista: no máximo até a primeira ou a última linha.
+    const dy = Math.max(mids[0] - mids[from], Math.min(mids[mids.length - 1] - mids[from], g.lastY - g.startY + scrolled));
+    const center = mids[from] + dy;
+    g.to = mids.filter((m, i) => i !== from && m < center).length;
+    setDrag((d) => d && { ...d, dy, to: g.to });
+  };
+  // Rolagem automática enquanto o ponteiro estiver na beirada de cima ou de baixo do painel.
+  const autoScroll = () => {
+    const g = geo.current;
+    if (!g?.scroller) return;
+    const r = g.scroller.getBoundingClientRect();
+    const edge = 40;
+    const step = g.lastY < r.top + edge ? (g.lastY - r.top - edge) / 4 : g.lastY > r.bottom - edge ? (g.lastY - r.bottom + edge) / 4 : 0;
+    if (step) {
+      const before = g.scroller.scrollTop;
+      g.scroller.scrollTop += Math.max(-12, Math.min(12, step));
+      if (g.scroller.scrollTop !== before) update();
+    }
+    g.raf = requestAnimationFrame(autoScroll);
+  };
+  const end = (commit: boolean) => {
+    const g = geo.current;
+    geo.current = null;
+    setDrag(null);
+    if (!g) return;
+    cancelAnimationFrame(g.raf);
+    if (commit && g.to !== g.from) onMove(g.from, g.to);
+  };
+  useEffect(() => () => { if (geo.current) cancelAnimationFrame(geo.current.raf); }, []);
+
+  const grip = (idx: number) => ({
+    onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
+      if (e.button !== 0 || count < 2) return;
+      e.preventDefault();
+      const rows = [...(listRef.current?.querySelectorAll<HTMLElement>(':scope > .music-row') ?? [])];
+      const rects = rows.map((r) => r.getBoundingClientRect());
+      if (!rects[idx]) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const scroller = listRef.current?.closest<HTMLElement>('.music-body') ?? null;
+      geo.current = {
+        from: idx, to: idx, startY: e.clientY, lastY: e.clientY, mids: rects.map((r) => r.top + r.height / 2),
+        scroller, startScroll: scroller?.scrollTop ?? 0, raf: 0,
+      };
+      geo.current.raf = requestAnimationFrame(autoScroll);
+      // A linha mais o vão entre as linhas.
+      setDrag({ from: idx, to: idx, dy: 0, h: rects[idx].height + 2 });
+    },
+    onPointerMove: (e: ReactPointerEvent) => {
+      if (!geo.current) return;
+      geo.current.lastY = e.clientY;
+      update();
+    },
+    onPointerUp: () => end(true),
+    onPointerCancel: () => end(false),
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp' && idx > 0) { e.preventDefault(); onMove(idx, idx - 1); }
+      else if (e.key === 'ArrowDown' && idx < count - 1) { e.preventDefault(); onMove(idx, idx + 1); }
+    },
+  });
+  // Enquanto arrasta, a linha segue o ponteiro e as do caminho abrem espaço.
+  const style = (idx: number): CSSProperties | undefined => {
+    if (!drag) return undefined;
+    if (idx === drag.from) return { transform: `translateY(${drag.dy}px)` };
+    if (drag.from < drag.to && idx > drag.from && idx <= drag.to) return { transform: `translateY(${-drag.h}px)` };
+    if (drag.to < drag.from && idx >= drag.to && idx < drag.from) return { transform: `translateY(${drag.h}px)` };
+    return undefined;
+  };
+
+  return { listRef, dragging: Boolean(drag), from: drag?.from ?? null, grip, style };
+}
+
 /** Campo de apelido no lugar da linha: Enter ou sair do campo salva, Esc desiste. Vazio volta ao título do YouTube. */
 function AliasEditor({ t, onDone, onCancel }: { t: Track; onDone: (alias: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(t.alias ?? '');
   const cancelled = useRef(false);
   return (
     <div className="music-row on">
+      <span className="music-grip" aria-hidden />
       <span className="music-row-main">
         <span className="music-thumb"><img src={thumbUrl(t.id)} alt="" loading="lazy" /></span>
         <span className="music-text">
