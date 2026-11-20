@@ -1,9 +1,10 @@
 // Aba Mapas do mestre: a lista de mapas e, ao abrir um, o editor.
 import { useState } from 'react';
 import { Copy, Eye, EyeOff, Flag, Layers, Map as MapIcon, Moon, Pencil, Plus, Swords, Trash2, Wand2 } from 'lucide-react';
-import type { TableState } from '../../model/types';
+import type { BattleMap, TableState } from '../../model/types';
 import { AMBIENTS, MAP_CELL_M, MOVE_MODES, VISION_MODES } from '../../model/types';
 import { ambientOf, visionOf } from '../../model/map';
+import { buildingName } from '../../store/maps';
 import { useAct } from '../act';
 import ConfirmButton from '../common/ConfirmButton';
 import Modal from '../common/Modal';
@@ -21,6 +22,16 @@ export default function MapsPanel({ table, openId, setOpenId }: {
   const [free, setFree] = useState(false);
   const [ending, setEnding] = useState(false);
   const maps = Object.values(table.maps).sort((a, b) => a.createdAt - b.createdAt);
+  // Um cartão por prédio: os andares de um mapa de vários andares ficam juntos, do térreo para cima.
+  const buildings: BattleMap[][] = [];
+  const byGroup = new Map<string, BattleMap[]>();
+  for (const m of maps) {
+    const g = m.floor?.group;
+    if (!g) { buildings.push([m]); continue; }
+    if (!byGroup.has(g)) { byGroup.set(g, []); buildings.push(byGroup.get(g)!); }
+    byGroup.get(g)!.push(m);
+  }
+  for (const fs of byGroup.values()) fs.sort((a, b) => a.floor!.level - b.floor!.level);
   const open = openId ? table.maps[openId] : undefined;
   const combat = table.combat;
 
@@ -68,17 +79,26 @@ export default function MapsPanel({ table, openId, setOpenId }: {
         </div>
       )}
       <div className="map-list">
-        {maps.map((m) => {
-          const active = table.activeMapId === m.id;
-          const linked = table.combat?.mapId === m.id;
-          const tokens = Object.keys(m.tokens).length;
+        {buildings.map((floors) => {
+          const m = floors[0];
+          const shownFloor = floors.find((f) => f.id === table.activeMapId);
+          const active = !!shownFloor;
+          const linked = floors.some((f) => table.combat?.mapId === f.id);
+          const tokens = floors.reduce((n, f) => n + Object.keys(f.tokens).length, 0);
+          const name = buildingName(m);
+          /** Abre o andar aberto aos jogadores (ou o do combate, ou o térreo). */
+          const first = shownFloor ?? floors.find((f) => table.combat?.mapId === f.id) ?? m;
           return (
             <div key={m.id} className={`card map-card${active ? ' card-gold' : ''}`}>
-              <button className="map-card-main" onClick={() => setOpenId(m.id)} title="Abrir o mapa">
-                <strong>{m.name}</strong>
+              <button className="map-card-main" onClick={() => setOpenId(first.id)} title="Abrir o mapa">
+                <strong>{name}</strong>
                 <span className="tiny muted">{m.w} × {m.h} quadrados · {tokens} token{tokens === 1 ? '' : 's'}</span>
                 <span className="row-wrap" style={{ gap: 6 }}>
-                  {m.floor && <span className="badge" title="Andar de um mapa com vários andares, ligados por escadas"><Layers size={11} /> {m.floor.label}</span>}
+                  {floors.length > 1 && (
+                    <span className="badge" title="Um mapa com vários andares, ligados por escadas. Dentro do mapa, troque de andar no topo.">
+                      <Layers size={11} /> {floors.length} {m.floor?.down ? 'níveis' : 'andares'}
+                    </span>
+                  )}
                   <span className="badge">{MOVE_MODES[m.mode].label}</span>
                   {visionOf(m) !== 'open' && <span className="badge pmap-dark"><Moon size={11} /> Visão {VISION_MODES[visionOf(m)].label.toLowerCase()}</span>}
                   {visionOf(m) !== 'open' && ambientOf(m) !== 'geral' && <span className="badge">Luz de fora: {AMBIENTS[ambientOf(m)].label.toLowerCase()}</span>}
@@ -86,8 +106,18 @@ export default function MapsPanel({ table, openId, setOpenId }: {
                   {linked && <span className="badge badge-err"><Swords size={11} /> Combate</span>}
                 </span>
               </button>
+              {floors.length > 1 && (
+                <div className="seg" role="group" aria-label={`Andares de ${name}`} style={{ alignSelf: 'flex-start' }}>
+                  {floors.map((f) => (
+                    <button key={f.id} type="button" onClick={() => setOpenId(f.id)} title={`Abrir ${f.floor!.label}`}
+                      className={f.id === table.activeMapId ? 'on-inherit' : ''}>
+                      {f.floor!.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="row" style={{ gap: 4 }}>
-                <button className="btn btn-sm" onClick={() => setOpenId(m.id)}><Pencil size={13} /> Abrir</button>
+                <button className="btn btn-sm" onClick={() => setOpenId(first.id)}><Pencil size={13} /> Abrir</button>
                 <button className={`btn btn-sm${active ? '' : ' btn-ghost'}`} onClick={() => act({ type: 'map/activate', mapId: active ? null : m.id }, active ? 'Mapa escondido dos jogadores.' : 'Mapa aberto aos jogadores.')}
                   title={active ? 'Esconder dos jogadores' : 'Mostrar aos jogadores'}>
                   {active ? <EyeOff size={13} /> : <Eye size={13} />}{active ? 'Esconder' : 'Mostrar'}
@@ -96,7 +126,7 @@ export default function MapsPanel({ table, openId, setOpenId }: {
                 <button className="btn btn-sm btn-ghost btn-icon" title="Duplicar" aria-label="Duplicar"
                   onClick={() => act({ type: 'map/duplicate', mapId: m.id }, 'Mapa duplicado.')}><Copy size={14} /></button>
                 <ConfirmButton className="btn btn-sm btn-ghost btn-icon" title="Excluir mapa" modalTitle="Excluir mapa"
-                  confirmLabel="Excluir" message={<p>Excluir o mapa <strong>{m.name}</strong>? Não dá para desfazer.</p>}
+                  confirmLabel="Excluir" message={<p>Excluir o mapa <strong>{name}</strong>{floors.length > 1 ? ` e os ${floors.length} andares dele` : ''}? Não dá para desfazer.</p>}
                   onConfirm={() => act({ type: 'map/delete', mapId: m.id }, 'Mapa excluído.')}>
                   <Trash2 size={14} />
                 </ConfirmButton>
@@ -126,7 +156,7 @@ function CreateMapModal({ onClose, onCreated }: { onClose: () => void; onCreated
         type: 'map/create', name: name.trim(), ...g.blankSize, fill: g.blank.fill, walls: g.blank.fill === 'floor' && g.blank.walls,
       })
       : await act({ type: 'map/build', name: name.trim(), params: g.params, seed: g.seed },
-        g.params.floors && g.params.floors > 1 ? `${g.params.floors} ${g.kind === 'dungeon' ? 'níveis criados' : 'andares criados'}, ligados por escadas.` : undefined);
+        g.result.length > 1 ? `Mapa criado com ${g.result.length} ${g.kind === 'dungeon' ? 'níveis' : 'andares'}, ligados por escadas. Troque de andar no topo do mapa.` : undefined);
     setBusy(false);
     if (r.ok && r.id) onCreated(r.id);
   };

@@ -133,6 +133,17 @@ export function floorsOf(s: TableState, m: BattleMap): BattleMap[] {
   return Object.values(s.maps).filter((f) => f.floor?.group === g).sort((a, b) => a.floor!.level - b.floor!.level);
 }
 
+/** Nome do prédio: o do mapa sem o " · Térreo" (ou o andar dele) do fim. */
+export function buildingName(m: Pick<BattleMap, 'name' | 'floor'>): string {
+  const tail = m.floor ? ` · ${m.floor.label}` : '';
+  return tail && m.name.endsWith(tail) && m.name.length > tail.length ? m.name.slice(0, -tail.length) : m.name;
+}
+
+/** Nome de um andar do prédio `name` ("Solar · Térreo"), cabendo em `max` letras. */
+export function floorName(name: string, label: string, max: number): string {
+  return label ? `${name.slice(0, Math.max(1, max - label.length - 3))} · ${label}` : name.slice(0, max);
+}
+
 /** O mapa `id` é `m` ou outro andar do mesmo prédio. */
 export function sameBuilding(s: TableState, id: string | null | undefined, m: BattleMap): boolean {
   if (!id) return false;

@@ -16,7 +16,9 @@ import {
 } from '../../model/types';
 import { ambientOf, cellLabel, edgeKey, hasWall, MAX_ROOF_LABEL, objectCells, sameEdge, terrainAt, visionOf } from '../../model/map';
 import { costTo, extendPath, followPath, metersFor, pathTo, reachableCells, reachFrom, type Point } from '../../rules/grid';
-import { fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, sightOptions, tokenCombatant, visibleObjects } from '../../store/maps';
+import {
+  buildingName, floorsOf, fullGrid, isTokenTurn, moveBudget, occupiedCells, playerGrid, sameBuilding, sightOptions, tokenCombatant, visibleObjects,
+} from '../../store/maps';
 import { fullLight, sightArea } from '../../rules/vision';
 import { currentCombatant } from '../../store/combat';
 import { hostStore } from '../../net/host';
@@ -83,13 +85,6 @@ const toLightString = (lm: Uint8Array) => { let s = ''; for (const v of lm) s +=
 
 const metersLabel = (sq: number) => `${sq} quadrado${sq === 1 ? '' : 's'} · ${metersFor(sq).toLocaleString('pt-BR')} m`;
 
-/** Andares do mesmo prédio, em ordem (o mapa sozinho, se não tiver andares). */
-function floorsOf(table: TableState, map: BattleMap): BattleMap[] {
-  const g = map.floor?.group;
-  if (!g) return [map];
-  return Object.values(table.maps).filter((m) => m.floor?.group === g).sort((a, b) => a.floor!.level - b.floor!.level);
-}
-
 export default function MapEditor({ table, map, onBack, onOpenMap }: {
   table: TableState; map: BattleMap; onBack: () => void;
   /** Abre outro mapa (outro andar). */
@@ -97,7 +92,8 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
 }) {
   const { act } = useAct();
   const linked = table.combat?.mapId === map.id;
-  const active = table.activeMapId === map.id;
+  // Num prédio de vários andares, abrir um andar abre o prédio (os jogadores veem o andar onde estão).
+  const active = sameBuilding(table, table.activeMapId, map);
   const floors = floorsOf(table, map);
   const [mode, setMode] = useState<Mode>(() => (linked || Object.keys(map.tokens).length ? 'play' : 'edit'));
   const [tool, setTool] = useState<Tool>('terrain');
@@ -130,8 +126,10 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
   const setDraft = (d: Point[] | null) => { draftRef.current = d; setDraftState(d); };
   /** Token sendo arrastado no quadrado a quadrado (o trajeto se desenha por onde o ponteiro passa). */
   const dragTok = useRef<string | null>(null);
-  const [name, setName] = useState(map.name);
-  useEffect(() => setName(map.name), [map.name]);
+  // O nome é o do prédio (sem o andar): renomear muda todos os andares.
+  const bname = buildingName(map);
+  const [name, setName] = useState(bname);
+  useEffect(() => setName(bname), [bname]);
   // Trocou de andar: nada do mapa anterior fica escolhido.
   useEffect(() => {
     setSelObj(null);
@@ -696,8 +694,8 @@ export default function MapEditor({ table, map, onBack, onOpenMap }: {
 
   const saveName = () => {
     const n = name.trim();
-    if (n && n !== map.name) void act({ type: 'map/update', mapId: map.id, name: n });
-    else setName(map.name);
+    if (n && n !== buildingName(map)) void act({ type: 'map/update', mapId: map.id, name: n });
+    else setName(buildingName(map));
   };
 
   return (

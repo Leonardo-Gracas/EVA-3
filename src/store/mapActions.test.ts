@@ -668,12 +668,50 @@ describe('mapas: criar gerado e andares', () => {
     expect(Object.keys(s.maps[ground.id].tokens)).toHaveLength(0);
     expect(pos(s, upper.id, ana)).toEqual({ x, y });
 
-    // Só entre andares do mesmo prédio; a cópia sai do prédio.
+    // Só entre andares do mesmo prédio.
     const other = Object.keys(s.maps).find((id) => !s.maps[id].floor)!;
     expect(run(s, gm, { type: 'map/tokenFloor', mapId: upper.id, tokenIds: [tok.id], toMapId: other })).toMatchObject({ ok: false });
-    const dup = dispatch(s, gm, { type: 'map/duplicate', mapId: upper.id }, ctx);
+  });
+
+  it('o prédio é um mapa só: nome, configuração, cópia e exclusão valem para todos os andares', () => {
+    let { s } = setup();
+    const params = { ...DUNGEON_DEFAULTS, preset: 'house' as const, model: 'casarao' as const, w: 34, h: 30, floors: 2 };
+    const r = dispatch(s, gm, { type: 'map/build', name: 'Solar', params, seed: 4 }, ctx);
+    if (!r.ok) throw new Error(r.error);
+    s = r.state;
+    const ground = r.id!;
+    const group = s.maps[ground].floor!.group;
+    const upper = Object.values(s.maps).find((m) => m.floor?.group === group && m.id !== ground)!.id;
+    const count = Object.keys(s.maps).length;
+
+    // Renomear e configurar num andar muda os dois.
+    s = ok(s, gm, { type: 'map/update', mapId: upper, name: 'Mansão', mode: 'turno', vision: 'individual', ambient: 'luar' });
+    expect(s.maps[ground]).toMatchObject({ name: 'Mansão · Térreo', mode: 'turno', vision: 'individual', ambient: 'luar' });
+    expect(s.maps[upper]).toMatchObject({ name: 'Mansão · 1º andar', mode: 'turno', vision: 'individual', ambient: 'luar' });
+
+    // Trocar o andar aberto não registra "abriu o mapa" de novo.
+    s = ok(s, gm, { type: 'map/activate', mapId: ground });
+    const logs = s.log.length;
+    s = ok(s, gm, { type: 'map/activate', mapId: upper });
+    expect(s.log.length).toBe(logs);
+
+    // Duplicar: outro prédio com os mesmos andares.
+    const dup = dispatch(s, gm, { type: 'map/duplicate', mapId: upper }, ctx);
     if (!dup.ok) throw new Error(dup.error);
-    expect(dup.state.maps[dup.id!].floor).toBeUndefined();
+    s = dup.state;
+    expect(Object.keys(s.maps)).toHaveLength(count + 2);
+    const copy = s.maps[dup.id!];
+    expect(copy).toMatchObject({ name: 'Mansão (cópia) · 1º andar', floor: { level: 1 } });
+    expect(copy.floor!.group).not.toBe(group);
+    expect(Object.values(s.maps).filter((m) => m.floor?.group === copy.floor!.group).map((m) => m.name).sort())
+      .toEqual(['Mansão (cópia) · 1º andar', 'Mansão (cópia) · Térreo']);
+
+    // Excluir um andar exclui o prédio (o aberto deixa de estar aberto); a cópia fica.
+    s = ok(s, gm, { type: 'map/delete', mapId: ground });
+    expect(s.maps[ground]).toBeUndefined();
+    expect(s.maps[upper]).toBeUndefined();
+    expect(s.activeMapId).toBeNull();
+    expect(Object.keys(s.maps)).toHaveLength(count);
   });
 
   /** Solar de 2 andares, com o térreo aberto e a ficha de Ana na escada do térreo. */

@@ -17,7 +17,8 @@ import { followPath, pathTo, reachFrom, type Point } from '../rules/grid';
 import type { EngineCtx } from './engine';
 import { fail, int, log, record, str } from './guard';
 import {
-  cleanPath, combatOn, fullGrid, moveBudget, moveText, openToPlayers, planPlayerMove, planStairs, tokenCombatant,
+  buildingName, cleanPath, combatOn, floorName, floorsOf, fullGrid, moveBudget, moveText, openToPlayers, planPlayerMove, planStairs, sameBuilding,
+  tokenCombatant,
 } from './maps';
 
 export const MAX_MAPS = 40;
@@ -314,7 +315,7 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
         const label = d.label;
         const m: BattleMap = {
           id: ctx.newId(),
-          name: label ? `${name.slice(0, MAX_NAME - label.length - 3)} · ${label}` : name,
+          name: floorName(name, label, MAX_NAME),
           ...layout,
           tokens: {}, mode: 'livre', vision: 'open',
           // Com janelas e luzes, a luz de fora passa a valer (o mestre muda no modo Mesa).
@@ -330,64 +331,82 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
     }
 
     case 'map/update': {
+      // Um prédio de vários andares é um mapa só para o mestre: nome, visão, luz de fora e
+      // locomoção valem para todos os andares.
       const m = getMap(s, a.mapId);
-      if (a.name !== undefined) m.name = str(a.name, MAX_NAME, 'Nome do mapa', true);
+      const all = floorsOf(s, m);
+      const shown = sameBuilding(s, s.activeMapId, m);
+      const where = buildingName(m);
+      if (a.name !== undefined) {
+        const name = str(a.name, MAX_NAME, 'Nome do mapa', true);
+        for (const f of all) f.name = f.floor ? floorName(name, f.floor.label, MAX_NAME) : name;
+      }
       if (a.vision !== undefined) {
         if (!(typeof a.vision === 'string' && a.vision in VISION_MODES)) fail('Modo de visão inválido.');
         const changed = visionOf(m) !== a.vision;
-        m.vision = a.vision as VisionMode;
-        delete m.dark;
-        if (changed && s.activeMapId === m.id) {
-          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a visão em ${m.name} para ${VISION_MODES[m.vision].label.toLowerCase()}.` });
+        for (const f of all) {
+          f.vision = a.vision as VisionMode;
+          delete f.dark;
+        }
+        if (changed && shown) {
+          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a visão em ${where} para ${VISION_MODES[a.vision as VisionMode].label.toLowerCase()}.` });
         }
       }
       if (a.ambient !== undefined) {
         if (!(typeof a.ambient === 'string' && a.ambient in AMBIENTS)) fail('Luz externa inválida.');
         const changed = ambientOf(m) !== a.ambient;
-        m.ambient = a.ambient as Ambient;
-        if (changed && s.activeMapId === m.id) {
-          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a luz externa em ${m.name} para ${AMBIENTS[m.ambient].label.toLowerCase()}.` });
+        for (const f of all) f.ambient = a.ambient as Ambient;
+        if (changed && shown) {
+          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a luz externa em ${where} para ${AMBIENTS[a.ambient as Ambient].label.toLowerCase()}.` });
         }
       }
       if (a.mode !== undefined) {
         if (!(typeof a.mode === 'string' && a.mode in MOVE_MODES)) fail('Modo de locomoção inválido.');
         const changed = m.mode !== a.mode;
-        m.mode = a.mode as MoveMode;
-        if (changed && s.activeMapId === m.id) {
-          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a locomoção em ${m.name} para ${MOVE_MODES[m.mode].label.toLowerCase()}.` });
+        for (const f of all) f.mode = a.mode as MoveMode;
+        if (changed && shown) {
+          log(s, ctx, { kind: 'system', actorName: who, text: `mudou a locomoção em ${where} para ${MOVE_MODES[a.mode as MoveMode].label.toLowerCase()}.` });
         }
       }
-      m.updatedAt = now;
+      for (const f of all) f.updatedAt = now;
       return m.id;
     }
 
     case 'map/delete': {
-      const m = getMap(s, a.mapId);
-      delete s.maps[m.id];
-      if (s.activeMapId === m.id) s.activeMapId = null;
-      if (s.combat?.mapId === m.id) s.combat.mapId = null;
+      // Excluir um andar exclui o prédio inteiro.
+      const gone = new Set(floorsOf(s, getMap(s, a.mapId)).map((f) => f.id));
+      for (const id of gone) delete s.maps[id];
+      if (s.activeMapId && gone.has(s.activeMapId)) s.activeMapId = null;
+      if (s.combat?.mapId && gone.has(s.combat.mapId)) s.combat.mapId = null;
       s.requests = s.requests.filter((r) => !(r.status === 'pending' && (
-        (r.action.type === 'map/move' && r.action.mapId === m.id)
-        || (r.action.type === 'map/stairs' && (r.action.mapId === m.id || r.action.toMapId === m.id)))));
+        (r.action.type === 'map/move' && gone.has(r.action.mapId))
+        || (r.action.type === 'map/stairs' && (gone.has(r.action.mapId) || gone.has(r.action.toMapId))))));
       return;
     }
 
     case 'map/duplicate': {
+      // Duplicar um andar duplica o prédio inteiro (outro prédio, com os mesmos andares).
       const src = getMap(s, a.mapId);
-      if (Object.keys(s.maps).length >= MAX_MAPS) fail('Limite de mapas atingido.');
-      const copy: BattleMap = {
-        ...structuredClone(src),
-        id: ctx.newId(),
-        name: `${src.name} (cópia)`.slice(0, MAX_NAME),
-        createdAt: now,
-        updatedAt: now,
-      };
-      // A cópia é um mapa solto, fora do prédio.
-      delete copy.floor;
-      // Instâncias de ameaça pertencem ao combate, não ao desenho.
-      for (const t of Object.values(copy.tokens)) if (t.ref.kind === 'combatant') delete copy.tokens[t.id];
-      s.maps[copy.id] = copy;
-      return copy.id;
+      const all = floorsOf(s, src);
+      if (Object.keys(s.maps).length + all.length > MAX_MAPS) fail('Limite de mapas atingido.');
+      const group = src.floor ? ctx.newId() : '';
+      const name = `${buildingName(src)} (cópia)`.slice(0, MAX_NAME);
+      let out: string | undefined;
+      for (const f of all) {
+        const copy: BattleMap = {
+          ...structuredClone(f),
+          id: ctx.newId(),
+          name: f.floor ? floorName(name, f.floor.label, MAX_NAME) : name,
+          createdAt: now + (f.floor?.level ?? 0),
+          updatedAt: now,
+        };
+        if (copy.floor) copy.floor.group = group;
+        // Instâncias de ameaça pertencem ao combate, não ao desenho.
+        for (const t of Object.values(copy.tokens)) if (t.ref.kind === 'combatant') delete copy.tokens[t.id];
+        s.maps[copy.id] = copy;
+        if (f.id === src.id) out = copy.id;
+      }
+      return out;
     }
 
     case 'map/resize': {
@@ -623,8 +642,10 @@ export function applyMapAction(s: TableState, actor: Actor, a: MapAction, ctx: E
       }
       const m = getMap(s, a.mapId);
       if (s.activeMapId === m.id) return;
+      // Trocar de andar no mesmo prédio não é abrir outro mapa.
+      const same = sameBuilding(s, s.activeMapId, m);
       s.activeMapId = m.id;
-      log(s, ctx, { kind: 'system', actorName: who, text: `abriu o mapa ${m.name}.` });
+      if (!same) log(s, ctx, { kind: 'system', actorName: who, text: `abriu o mapa ${buildingName(m)}.` });
       return;
     }
 
