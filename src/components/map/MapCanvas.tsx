@@ -417,12 +417,20 @@ export default function MapCanvas(props: Props) {
             {objects.map((o) => (o.kind === 'light' && (showLights || props.selectedObjectId === o.id) && (!o.hidden || props.showHidden) ? (
               <LightView key={o.id} o={o} selected={props.selectedObjectId === o.id} />
             ) : null))}
-            {roofs?.shapes.map((rf) => (rf.label && rf.fill ? (
-              <div key={rf.id} className={`map-roof-label${props.roofCover ? '' : ' gm'}${rf.open ? ' open' : ''}`}
-                style={{ left: rf.at.x * CELL, top: rf.at.y * CELL, maxWidth: Math.max(CELL, rf.at.width * CELL - 6) }}>
-                {rf.label}
-              </div>
-            ) : null))}
+            {roofs?.shapes.map((rf) => {
+              if (!rf.label || !rf.fill) return null;
+              // Visão de longe: a legenda não encolhe com o zoom (fica legível na tela). No telhado fechado,
+              // cresce até encher a largura do telhado, sem passar de um tamanho confortável na tela.
+              const fit = (rf.at.width * CELL - 8) / (0.62 * Math.max(3, rf.label.length));
+              const covered = props.roofCover && !rf.open;
+              const font = Math.max(12, (covered ? 13 : 12) / zoom, covered ? Math.min(fit, 22 / zoom) : 0);
+              return (
+                <div key={rf.id} className={`map-roof-label${props.roofCover ? '' : ' gm'}${rf.open ? ' open' : ''}`}
+                  style={{ left: rf.at.x * CELL, top: rf.at.y * CELL, fontSize: font, maxWidth: Math.max(CELL, (rf.at.width + 2) * CELL) }}>
+                  {rf.label}
+                </div>
+              );
+            })}
             {tokens.map((t) => {
               const at = walk.pos.get(t.id);
               return (

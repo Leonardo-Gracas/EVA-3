@@ -2228,7 +2228,8 @@ button.camp-pill { min-height: 36px; }
 .map-roof-gm.open .map-roof-outline { stroke: rgba(214, 150, 108, 0.4); }
 .map-roof-label {
   position: absolute; transform: translate(-50%, -50%); pointer-events: none; z-index: 2;
-  padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1.25; text-align: center;
+  /* O tamanho da letra vem do mapa (acompanha o zoom); o resto acompanha a letra. */
+  padding: 0.15em 0.65em; border-radius: 0.5em; font-size: 12px; font-weight: 600; line-height: 1.25; text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   background: rgba(30, 20, 14, 0.82); color: #f0dcc0; border: 1px solid rgba(214, 150, 108, 0.45);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
