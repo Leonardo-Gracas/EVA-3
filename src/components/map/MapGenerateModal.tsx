@@ -1,8 +1,8 @@
 // Gerador de mapas: tipo, andares, prévia e opções avançadas. Usado ao criar um mapa (com nome,
 // em branco e andares) e no editor, para gerar de novo o mapa aberto.
 import { useMemo, useState } from 'react';
-import { BedDouble, Castle, ChevronDown, ChevronRight, Church, Dices, Fence, Home, Square, Trees, Wand2 } from 'lucide-react';
-import type { Exterior, HouseModel, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
+import { BedDouble, Castle, ChevronDown, ChevronRight, Church, Dices, Fence, Home, Square, Store, Trees, Wand2 } from 'lucide-react';
+import type { Exterior, HouseModel, HouseModelInfo, HouseShape, HouseSize, MapGenParams, MapObject, MapPreset, Terrain } from '../../model/types';
 import { EXTERIORS, HOUSE_MODELS, HOUSE_SHAPES, HOUSE_SIZES, MAP_CELL_M, MAP_LIMITS, MAP_PRESETS } from '../../model/types';
 import {
   cleanMapParams, describeBuildings, describeRooms, GEN_MIN_SIDE, generateFloors, hasExterior, houseModelDefaults, MAP_GEN_DEFAULTS, maxFloors,
@@ -15,14 +15,17 @@ import MapCanvas from './MapCanvas';
 type NumKey = 'w' | 'h' | 'rooms' | 'roomMin' | 'roomMax' | 'corridor' | 'doors';
 type Draft = Record<NumKey, string>;
 
-/** Tipo escolhido na tela: o mapa em branco ou um dos geradores (casa e hospedagem usam o mesmo, com modelos diferentes). */
-export type GenKind = 'blank' | 'dungeon' | 'house' | 'inn' | 'temple' | 'outdoor' | 'village';
+/**
+ * Tipo escolhido na tela: o mapa em branco ou um dos geradores (casa, hospedagem e estabelecimento
+ * usam o mesmo, com modelos diferentes).
+ */
+export type GenKind = 'blank' | 'dungeon' | 'house' | 'inn' | 'shop' | 'temple' | 'outdoor' | 'village';
 
 /** Cenário único (um lugar: casa, masmorra...) ou cidade (um povoado inteiro). */
 type GenGroup = 'cenario' | 'cidade';
 
 const GROUPS: Record<GenGroup, { label: string; hint: string; first: GenKind }> = {
-  cenario: { label: 'Cenário único', hint: 'Um lugar só: masmorra, casa, hospedagem, templo ou cenário aberto.', first: 'dungeon' },
+  cenario: { label: 'Cenário único', hint: 'Um lugar só: masmorra, casa, hospedagem, estabelecimento, templo ou cenário aberto.', first: 'dungeon' },
   cidade: { label: 'Cidade', hint: 'Um povoado inteiro: várias construções, com ruas, trilhas e praça.', first: 'village' },
 };
 
@@ -31,15 +34,17 @@ const KINDS: Record<GenKind, { label: string; hint: string; icon: typeof Home; p
   dungeon: { label: 'Masmorra', hint: MAP_PRESETS.dungeon.hint, icon: Castle, preset: 'dungeon', group: 'cenario' },
   house: { label: 'Casa', hint: 'Casebre, casa ou casarão, com quintal, rua ou floresta em volta.', icon: Home, preset: 'house', group: 'cenario' },
   inn: { label: 'Hospedagem', hint: 'Estalagem ou hotel: taverna ou recepção na frente e corredores de quartos.', icon: BedDouble, preset: 'house', group: 'cenario' },
+  shop: { label: 'Estabelecimento', hint: 'Comércios com salão para o público. Por enquanto, a taverna.', icon: Store, preset: 'house', group: 'cenario' },
   temple: { label: 'Templo', hint: MAP_PRESETS.temple.hint, icon: Church, preset: 'temple', group: 'cenario' },
   outdoor: { label: 'Cenário aberto', hint: MAP_PRESETS.outdoor.hint, icon: Trees, preset: 'outdoor', group: 'cenario' },
   village: { label: 'Vilarejo', hint: MAP_PRESETS.village.hint, icon: Fence, preset: 'village', group: 'cidade' },
 };
 
 /** Grupo de modelos de cada tipo de prédio e o modelo de partida. */
-const BUILDING: Partial<Record<GenKind, { group: 'Casas' | 'Hospedagem'; model: HouseModel }>> = {
+const BUILDING: Partial<Record<GenKind, { group: HouseModelInfo['group']; model: HouseModel }>> = {
   house: { group: 'Casas', model: 'casa' },
   inn: { group: 'Hospedagem', model: 'estalagem' },
+  shop: { group: 'Estabelecimentos', model: 'taverna' },
 };
 
 /** Campos avançados de cada tipo (rótulo e dica). */
@@ -61,7 +66,7 @@ const FIELDS: Record<MapPreset, Array<[NumKey, string, string?]>> = {
     ['doors', 'Portas %', 'Chance de cada cabana ter porta'],
   ],
   village: [
-    ['rooms', 'Construções', '3 a 24. Primeiro os ofícios (ferreiro, padeiro, mercador, curandeiro); o resto são casas. Cabem menos em mapas pequenos'],
+    ['rooms', 'Construções', '3 a 24. Primeiro os ofícios (ferreiro, padeiro, mercador, curandeiro, taverna); o resto são casas. Cabem menos em mapas pequenos'],
     ['doors', 'Portas %', 'Chance dos cômodos de dentro terem porta (a porta da frente sempre tem)'],
   ],
 };
@@ -170,8 +175,9 @@ export function MapGenOptions({ g }: { g: MapGen }) {
     : kind === 'house'
       ? { rooms: `${info.rooms[0]} a ${info.rooms[1]}${g.floors > 1 ? '. Com mais de um andar, a maioria dos quartos fica em cima' : ''}` }
       : {};
-  // Casebre não tem corredor.
-  const fields = kind === 'blank' ? [] : FIELDS[preset].filter(([k]) => !(model === 'casebre' && preset === 'house' && k === 'corridor'));
+  // Casebre não tem corredor; a taverna não tem quartos para pedir (os de cima enchem o andar).
+  const noRooms = preset === 'house' && info.rooms[1] === 0;
+  const fields = kind === 'blank' ? [] : FIELDS[preset].filter(([k]) => !(model === 'casebre' && preset === 'house' && k === 'corridor') && !(noRooms && k === 'rooms'));
   const shapes: HouseShape[] = info.shapes.length > 1 ? ['random', ...info.shapes] : [...info.shapes];
   const shapeOn = (s: HouseShape) => (info.shapes.length > 1 ? g.shape === s : true);
   const numField = (k: NumKey, label: string, tip?: string) => (
@@ -193,6 +199,7 @@ export function MapGenOptions({ g }: { g: MapGen }) {
     : [
       `${p.w} × ${p.h} quadrados`,
       kind === 'dungeon' ? `${p.rooms} salas`
+        : building && noRooms ? ''
         : building ? `${p.rooms} quarto${p.rooms === 1 ? '' : 's'}${kind === 'inn' && g.floors > 1 ? ' por andar' : ''}`
         : kind === 'outdoor' || kind === 'village' ? `${p.rooms} construç${p.rooms === 1 ? 'ão' : 'ões'}` : '',
       building ? `cômodos ${HOUSE_SIZES[p.size].toLowerCase()}` : '',
@@ -259,6 +266,7 @@ export function MapGenOptions({ g }: { g: MapGen }) {
             <div className="field small secondary">
               <span title={kind === 'dungeon' ? 'Níveis da masmorra, um embaixo do outro, ligados por escadas'
                 : kind === 'inn' ? 'Andares da hospedagem, com quartos em todos, ligados por uma escada no cômodo da entrada'
+                : kind === 'shop' ? 'O salão no térreo e, em cima, quartos de aluguel; a escada sai do salão'
                   : 'Andares da casa, ligados por uma escada no cômodo da entrada. A maioria dos quartos fica em cima.'}>
                 {kind === 'dungeon' ? 'Níveis' : 'Andares'}
               </span>

@@ -5,7 +5,7 @@ import { TERRAIN_CHAR } from '../../model/types';
 import { generateDungeon } from '../dungeon';
 import { mulberry32 } from '../random';
 import { applyExterior } from './exterior';
-import { putStairs, stairSpot, voidOutside } from './floors';
+import { entryOverlap, putStairs, stairSpot, voidOutside } from './floors';
 import { furnish, type FurnishOptions, type GenProp } from './furnish';
 import { generateHouse } from './house';
 import { type GenLight, illuminate } from './lights';
@@ -127,10 +127,11 @@ export function generateFloors(raw: Partial<MapGenParams>, seed: number): Genera
   const stairs: number[][] = [];
 
   if (p.preset === 'house') {
-    // Mesma semente, mesma planta: uma escada só, no cômodo da entrada, atravessa todos os andares.
+    // Mesma semente, mesma planta: uma escada só, no cômodo da entrada, atravessa todos os andares
+    // (a taverna muda de planta em cima: a escada fica onde o salão e a sala de cima coincidem).
     const houses = Array.from({ length: n }, (_, k) => generateHouse(p, seed, k));
     bases.push(...houses);
-    const entry = houses[0].rooms[houses[0].entry];
+    const entry = entryOverlap(houses.map((hs) => hs.rooms[hs.entry]));
     const spot = stairSpot(bases, r, entry) ?? [];
     putStairs(bases, spot);
     for (let k = 0; k < n; k++) stairs.push(spot);

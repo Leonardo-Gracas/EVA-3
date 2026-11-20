@@ -95,6 +95,22 @@ export function stairSpot(bases: GenBase[], r: SeededRng, prefer?: Rect, avoid: 
   return [singles.reduce((a, b) => (b.score > a.score ? b : a)).i];
 }
 
+/**
+ * Onde a escada deve ficar num prédio com o cômodo de entrada de cada andar: o pedaço comum a
+ * todos (na taverna, o canto do salão embaixo da sala de cima). Sem pedaço comum, o do térreo.
+ */
+export function entryOverlap(entries: Rect[]): Rect {
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  let x2 = Infinity;
+  let y2 = Infinity;
+  for (const e of entries) {
+    x1 = Math.max(x1, e.x); y1 = Math.max(y1, e.y);
+    x2 = Math.min(x2, e.x + e.w); y2 = Math.min(y2, e.y + e.h);
+  }
+  return x1 < x2 && y1 < y2 ? { x: x1, y: y1, w: x2 - x1, h: y2 - y1 } : entries[0];
+}
+
 /** Pinta a escada nos andares. */
 export function putStairs(bases: GenBase[], cells: number[]) {
   for (const b of bases) {

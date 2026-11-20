@@ -29,6 +29,7 @@ const NEW_SIZES: Record<Exclude<MapPreset, 'house'>, { w: number; h: number }> =
 };
 const HOUSE_NEW_SIZES: Record<HouseModel, { w: number; h: number }> = {
   casebre: { w: 16, h: 14 }, casa: { w: 38, h: 24 }, casarao: { w: 34, h: 30 }, estalagem: { w: 32, h: 24 }, hotel: { w: 46, h: 36 },
+  taverna: { w: 24, h: 20 },
 };
 
 /** Rua e floresta pedem mais espaço em volta (a rua na frente, a mata em volta). */
@@ -42,12 +43,13 @@ export function newMapSize(preset: MapPreset, model: HouseModel, exterior: Exter
 export const hasExterior = (preset: MapPreset) => preset === 'house' || preset === 'temple';
 
 /**
- * Quantos andares o tipo aceita: masmorra (níveis) e casas com mais de um cômodo. No vilarejo,
- * 2 quer dizer "aceita sobrados": o andar de cima só sai se algum couber.
+ * Quantos andares o tipo aceita: masmorra (níveis) e casas com mais de um cômodo; a taverna, o
+ * térreo e o andar dos quartos. No vilarejo, 2 quer dizer "aceita sobrados": o andar de cima só
+ * sai se algum couber.
  */
 export function maxFloors(preset: MapPreset, model: HouseModel): number {
   if (preset === 'dungeon') return MAX_FLOORS;
-  if (preset === 'house') return model === 'casebre' ? 1 : MAX_FLOORS;
+  if (preset === 'house') return model === 'casebre' ? 1 : model === 'taverna' ? 2 : MAX_FLOORS;
   if (preset === 'village') return 2;
   return 1;
 }

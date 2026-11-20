@@ -1,5 +1,5 @@
-// Casa ou hotel: planta montada pelo modelo escolhido, no tamanho do programa (não do mapa),
-// com quintal em volta.
+// Casa, hotel ou taverna: planta montada pelo modelo escolhido, no tamanho do programa (não do
+// mapa), com quintal em volta.
 // Casas têm a parte social sem corredor (sala, jantar e cozinha se abrem uma para a outra) e,
 // no máximo, um corredor curto para quartos e banheiros. Hospedagens têm corredores compridos
 // com quartos dos dois lados. As portas seguem o tipo do cômodo: quarto abre para o corredor
@@ -14,8 +14,11 @@ import {
 
 type Shape = Exclude<HouseShape, 'random'>;
 
-/** Cômodo da planta. `owner`: quarto da suíte (banheiro só abre para ele). `bath`: banheiro nos fundos, a cortar. */
-interface Room extends Rect { kind: RoomKind; owner?: Room; bath?: number }
+/**
+ * Cômodo da planta. `owner`: quarto da suíte (banheiro só abre para ele). `bath`: banheiro nos fundos, a cortar.
+ * `dir`: parede do fundo (o salão da taverna põe o balcão nela), no quadro canônico.
+ */
+interface Room extends Rect { kind: RoomKind; owner?: Room; bath?: number; dir?: Dir }
 
 /** Cômodo pedido numa faixa ao longo do corredor. `suite`: banheiro do cômodo anterior (vão juntos). */
 interface Spec { kind: RoomKind; len: number; suite?: boolean; bath?: number }
@@ -275,7 +278,7 @@ function estalagem(k: number, shape: Shape, c: number, size: HouseSize, D: Dims,
   const tw = size === 'compacto' ? randInt(r, 6, 7) : size === 'amplo' ? randInt(r, 9, 11) : randInt(r, 7, 9);
   const ext = shape === 'L' ? randInt(r, 2, 4) : Math.max(0, dT + 5 - Dw);
   const Hh = Dw + ext;
-  const taverna: Room = { x: -tw, y: dT, w: tw, h: Hh - dT, kind: 'taverna' };
+  const taverna: Room = { x: -tw, y: dT, w: tw, h: Hh - dT, kind: 'taverna', dir: 'n' };
   const coz: Room = { x: -tw + 2, y: 0, w: tw - 2, h: dT, kind: 'cozinha' };
   const rooms: Room[] = [taverna, { x: -tw, y: 0, w: 2, h: dT, kind: 'despensa' }, coz];
   const two = shape === 'long' && k >= 4;
@@ -297,6 +300,63 @@ function estalagem(k: number, shape: Shape, c: number, size: HouseSize, D: Dims,
     );
   });
   return { rooms, halls, bands, entry: taverna, back: [coz] };
+}
+
+/**
+ * Taverna: salão na frente, com o balcão encostado no fundo (do lado da cozinha); no fundo, uma
+ * fileira com despensa, cozinha, depósito e banheiros. Andar de cima (`upper`): a mesma caixa,
+ * com uma sala comprida numa ponta (onde a escada chega) e um corredor de quartos de aluguel.
+ */
+function taverna(shape: Shape, c: number, size: HouseSize, D: Dims, r: SeededRng, upper: boolean): Blueprint {
+  const long = shape === 'long';
+  const W = (size === 'compacto' ? randInt(r, 7, 8) : size === 'amplo' ? randInt(r, 10, 12) : randInt(r, 8, 10)) + (long ? randInt(r, 3, 5) : 0);
+  const S = size === 'compacto' ? randInt(r, 5, 6) : (size === 'amplo' ? randInt(r, 7, 8) : randInt(r, 6, 7)) - (long ? 1 : 0);
+  const dB = D.coz();
+  // Sorteio à parte para o andar de cima: os dois andares gastam o mesmo do sorteio principal,
+  // porque o giro e o espelho da planta vêm depois e precisam sair iguais.
+  const ur = mulberry32((r() * 0x100000000) >>> 0);
+  if (upper) return tavernaUpper(W, dB + S, c, ur);
+
+  const salao: Room = { x: 0, y: dB, w: W, h: S, kind: 'taverna', dir: 'n' };
+  // Fundo: despensa e depósito abrem para a cozinha; os banheiros, para o salão.
+  const baths = W >= 12 ? 2 : 1;
+  let rest = W - 2 * baths;
+  const despensa = rest - 2 >= 3 ? 2 : 0;
+  rest -= despensa;
+  const deposito = rest >= 6 ? Math.min(3, rest - 4) : 0;
+  rest -= deposito;
+  const rooms: Room[] = [salao];
+  let x = 0;
+  const put = (kind: RoomKind, w: number) => {
+    const rm: Room = { x, y: 0, w, h: dB, kind };
+    if (w > 0) { rooms.push(rm); x += w; }
+    return rm;
+  };
+  put('despensa', despensa);
+  const cozinha = put('cozinha', rest);
+  put('deposito', deposito);
+  for (let i = 0; i < baths; i++) put('banheiro', 2);
+  return { rooms, halls: [], bands: [], entry: salao, back: [cozinha] };
+}
+
+/** Andar de cima da taverna: sala numa ponta e corredor com quartos dos dois lados (um banheiro). */
+function tavernaUpper(W: number, H: number, c: number, r: SeededRng): Blueprint {
+  const sw = W >= 10 ? randInt(r, 3, 4) : 3;
+  const cc = Math.min(c, 2);
+  const yc = Math.floor((H - cc) / 2);
+  const q = randInt(r, 3, 4);
+  const sala: Room = { x: 0, y: 0, w: sw, h: H, kind: 'sala' };
+  const L = W - sw;
+  return {
+    rooms: [sala],
+    halls: [{ x: sw, y: yc, w: L, h: cc }],
+    bands: [
+      { x: sw, y: 0, w: L, h: yc, along: 'x', items: [{ kind: 'banheiro', len: 2 }], fill: guestQuota(99, q, false), spare: 'quarto' },
+      { x: sw, y: yc + cc, w: L, h: H - yc - cc, along: 'x', items: [], fill: guestQuota(99, q, false), spare: 'quarto' },
+    ],
+    entry: sala,
+    back: [],
+  };
 }
 
 /** Quartos de hóspede, todos do mesmo tamanho (com banheiro nos fundos, se privativo). */
@@ -400,11 +460,13 @@ function hotel(k: number, shape: Shape, c: number, size: HouseSize, D: Dims, r: 
   return bp;
 }
 
-function blueprint(model: HouseModel, k: number, shape: Shape, p: MapGenParams, size: HouseSize, r: SeededRng, box: Rect): Blueprint {
+/** `upper`: andar de cima (só a taverna muda de planta; as outras trocam o tipo dos cômodos depois). */
+function blueprint(model: HouseModel, k: number, shape: Shape, p: MapGenParams, size: HouseSize, r: SeededRng, box: Rect, upper: boolean): Blueprint {
   const D = dims(size, r);
   const c = p.corridor;
   switch (model) {
     case 'casebre': return casebre(k, D, r);
+    case 'taverna': return taverna(shape, c, size, D, r, upper);
     case 'casarao': return casarao(k, shape, c, D, r);
     case 'estalagem': return estalagem(k, shape, c, size, D, r);
     case 'hotel': return hotel(k, k >= HOTEL_MIN[shape] ? shape : 'long', c, size, D, r, box);
@@ -682,7 +744,7 @@ function finish(
   const { w, h } = p;
   const place = (rc: Rect) => mapRect(f, { x: rc.x - bb.x, y: rc.y - bb.y, w: rc.w, h: rc.h });
   const src = built.rooms;
-  const rooms: GenRoom[] = src.map((rm) => ({ ...place(rm), kind: rm.kind }));
+  const rooms: GenRoom[] = src.map((rm) => ({ ...place(rm), kind: rm.kind, ...(rm.dir ? { dir: mapDir(f, rm.dir) } : {}) }));
   const id = new Map(src.map((rm, i) => [rm, i + 1]));
   const owner = src.map((rm) => (rm.owner ? id.get(rm.owner) ?? 0 : 0));
   // Regiões: cômodo k → k + 1; cada grupo de corredores ligados → uma região depois dos cômodos.
@@ -813,7 +875,7 @@ export function generateHouse(p: MapGenParams, seed: number, level = 0): GenBase
       for (let t = 0; t < 3; t++) {
         const r = mulberry32((seed ^ Math.imul(k + 1, 0x9e3779b1) ^ Math.imul(si * 3 + t + 1, 0x85ebca6b)) >>> 0);
         const shape: Shape = p.shape === 'random' || !info.shapes.includes(p.shape) ? pick(r, info.shapes) : p.shape;
-        const bp = blueprint(model, k, shape, p, sizes[si], r, box);
+        const bp = blueprint(model, k, shape, p, sizes[si], r, box, level > 0);
         const bb = bbox(bp);
         const f = fitFrame(bb, box, r);
         if (!f) continue;

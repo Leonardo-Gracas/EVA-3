@@ -1,7 +1,7 @@
 // Vilarejo: povoado pequeno e irregular. Uma estrada de terra atravessa o mapa passando por uma
 // praça com poço; às vezes um ou dois ramais saem da praça e um riacho corta o mapa (a estrada
-// passa por cima, como ponte). Os ofícios (ferreiro, padeiro, mercador, curandeiro) ficam perto
-// da praça, de frente para a rua; as casas de morar se espalham, umas na beira da estrada e
+// passa por cima, como ponte). Os ofícios (ferreiro, padeiro, mercador, curandeiro) e a taverna
+// ficam perto da praça, de frente para a rua; as casas de morar se espalham, umas na beira da estrada e
 // outras mais afastadas, ligadas por trilhas. Algumas casas têm horta.
 // Cada construção é montada à parte (as casas pelo gerador de casas) e carimbada no mapa,
 // girada para a porta da frente dar para a rua.
@@ -9,7 +9,7 @@ import type { EdgeRef, HouseModel, HouseSize, MapGenParams } from '../../model/t
 import { TERRAIN_CHAR } from '../../model/types';
 import { blankLayout, setWalls } from '../../model/map';
 import { mulberry32, randInt, type SeededRng } from '../random';
-import { putStairs, stairSpot } from './floors';
+import { entryOverlap, putStairs, stairSpot } from './floors';
 import { generateHouse } from './house';
 import {
   BUILDING_KINDS, type BuildingKind, type Dir, type GenBase, type GenBuilding, type GenRoof, type GenRoom, longest, passage, pick, pickSpan,
@@ -177,7 +177,8 @@ function outCell(e: EdgeRef, d: Dir): [number, number] {
 
 // ── Ofícios: cômodo de trabalho na frente, os de trás encostados ────────────
 
-type Trade = Exclude<BuildingKind, 'moradia'>;
+/** Ofícios de planta própria (a taverna vem do gerador de casas). */
+type Trade = Exclude<BuildingKind, 'moradia' | 'taverna'>;
 
 interface TradeSpec {
   main: RoomKind;
@@ -246,22 +247,19 @@ function tradePiece(kind: Trade, p: MapGenParams, r: SeededRng): Piece {
 
 /** Chance de uma casa (não casebre) ser sobrado, quando o vilarejo aceita andar de cima. */
 const UPPER_CHANCE = 0.2;
+/** Chance da taverna ter os quartos de aluguel em cima, quando o vilarejo aceita andar de cima. */
+const TAVERN_UPPER_CHANCE = 0.5;
 
 /**
- * Casa de morar: casebre ou casa pequena, do gerador de casas. Com `upper`, de vez em quando a
- * casa é um sobrado: o térreo e o andar de cima, recortados juntos, com a escada nos mesmos quadrados.
+ * Construção do gerador de casas, recortada. Com `two`, um sobrado: o térreo e o andar de cima,
+ * recortados juntos, com a escada nos mesmos quadrados (sem lugar para a escada, fica só o térreo).
  */
-function housePiece(p: MapGenParams, seed: number, r: SeededRng, upper: boolean): { ground: Piece; upper?: Piece } | null {
-  const model: HouseModel = r() < 0.55 ? 'casebre' : 'casa';
-  const size: HouseSize = model === 'casa' && r() < 0.3 ? 'normal' : 'compacto';
-  const rooms = model === 'casebre' ? randInt(r, 0, 2) : randInt(r, 1, 3);
-  const [w, h] = model === 'casebre' ? [16, 14] : [30, 24];
-  const hp: MapGenParams = { ...p, preset: 'house', model, size, shape: 'random', rooms, w, h, corridor: 1, floors: 1, exterior: 'quintal' };
-  if (upper && model === 'casa' && r() < UPPER_CHANCE) {
-    const two = { ...hp, rooms: Math.max(2, rooms), floors: 2 };
-    const g = generateHouse(two, seed, 0);
-    const u = generateHouse(two, seed, 1);
-    const spot = stairSpot([g, u], r, g.rooms[g.entry]);
+function builtPiece(hp: MapGenParams, seed: number, r: SeededRng, two: boolean): { ground: Piece; upper?: Piece } | null {
+  if (two) {
+    const p2 = { ...hp, floors: 2 };
+    const g = generateHouse(p2, seed, 0);
+    const u = generateHouse(p2, seed, 1);
+    const spot = stairSpot([g, u], r, entryOverlap([g.rooms[g.entry], u.rooms[u.entry]]));
     if (spot) {
       putStairs([g, u], spot);
       const box = builtBox(g);
@@ -272,6 +270,25 @@ function housePiece(p: MapGenParams, seed: number, r: SeededRng, upper: boolean)
   }
   const ground = cropPiece(generateHouse(hp, seed));
   return ground ? { ground } : null;
+}
+
+/** Casa de morar: casebre ou casa pequena. Com `upper`, de vez em quando a casa é um sobrado. */
+function housePiece(p: MapGenParams, seed: number, r: SeededRng, upper: boolean): { ground: Piece; upper?: Piece } | null {
+  const model: HouseModel = r() < 0.55 ? 'casebre' : 'casa';
+  const size: HouseSize = model === 'casa' && r() < 0.3 ? 'normal' : 'compacto';
+  const rooms = model === 'casebre' ? randInt(r, 0, 2) : randInt(r, 1, 3);
+  const [w, h] = model === 'casebre' ? [16, 14] : [30, 24];
+  const hp: MapGenParams = { ...p, preset: 'house', model, size, shape: 'random', rooms, w, h, corridor: 1, floors: 1, exterior: 'quintal' };
+  const two = upper && model === 'casa' && r() < UPPER_CHANCE;
+  return builtPiece(two ? { ...hp, rooms: Math.max(2, rooms) } : hp, seed, r, two);
+}
+
+/** Taverna pequena (cômodos compactos). Com `upper`, às vezes tem os quartos de aluguel em cima. */
+function tavernPiece(p: MapGenParams, seed: number, r: SeededRng, upper: boolean): { ground: Piece; upper?: Piece } | null {
+  const hp: MapGenParams = {
+    ...p, preset: 'house', model: 'taverna', size: 'compacto', shape: 'square', rooms: 0, w: 20, h: 20, corridor: 1, floors: 1, exterior: 'quintal',
+  };
+  return builtPiece(hp, seed, r, upper && r() < TAVERN_UPPER_CHANCE);
 }
 
 // ── Caminho mais barato (trilhas) ───────────────────────────────────────────
@@ -336,8 +353,8 @@ function cheapest(w: number, h: number, start: number, goal: Uint8Array, cost: (
 
 // ── Vilarejo ────────────────────────────────────────────────────────────────
 
-/** Ordem dos ofícios: com poucas construções, ficam só os primeiros (sorteados). */
-const TRADE_LIST: Trade[] = ['ferreiro', 'padeiro', 'mercador', 'curandeiro'];
+/** Ofícios e a taverna: com poucas construções, ficam só alguns (sorteados). */
+const TRADE_LIST: BuildingKind[] = ['ferreiro', 'padeiro', 'mercador', 'curandeiro', 'taverna'];
 
 /** O vilarejo e, se algum sobrado coube, o andar de cima (só os sobrados), com as escadas nos mesmos quadrados. */
 export interface VillageBase extends GenBase {
@@ -486,7 +503,7 @@ export function generateVillage(p: MapGenParams, seed: number): VillageBase {
 
   // ── Construções ──
   const n = p.rooms;
-  const trades = shuffle(r, TRADE_LIST).slice(0, clamp(n - 2, 0, 4));
+  const trades = shuffle(r, TRADE_LIST).slice(0, clamp(n - 2, 0, TRADE_LIST.length));
   const kinds: BuildingKind[] = [...trades, ...Array<BuildingKind>(Math.max(0, n - trades.length)).fill('moradia')];
 
   const fits = (pc: Piece, ox: number, oy: number): boolean => {
@@ -648,8 +665,9 @@ export function generateVillage(p: MapGenParams, seed: number): VillageBase {
     const trade = kind !== 'moradia';
     let placed = false;
     for (let tries = 0; tries < 3 && !placed; tries++) {
-      const house = trade ? null : housePiece(p, (sub + tries * 0x632be5ab) >>> 0, br, allowUpper);
-      const pc = trade ? tradePiece(kind, p, br) : house?.ground;
+      const sk = (sub + tries * 0x632be5ab) >>> 0;
+      const house = kind === 'moradia' ? housePiece(p, sk, br, allowUpper) : kind === 'taverna' ? tavernPiece(p, sk, br, allowUpper) : null;
+      const pc = house ? house.ground : kind !== 'moradia' && kind !== 'taverna' ? tradePiece(kind, p, br) : null;
       if (!pc) continue;
       const top = (t: Turn) => (house?.upper ? turnPiece(house.upper, t) : undefined);
       const spacing = trade ? 1 : r() < 0.5 ? 1 : 2;

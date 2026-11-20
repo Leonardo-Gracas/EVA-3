@@ -579,12 +579,12 @@ export type MapPreset = 'dungeon' | 'house' | 'temple' | 'outdoor' | 'village';
 
 export const MAP_PRESETS: Record<MapPreset, { label: string; hint: string }> = {
   dungeon: { label: 'Masmorra', hint: 'Salas soltas na rocha, ligadas por corredores.' },
-  house: { label: 'Casa ou hotel', hint: 'Planta de casa (casebre, casa, casarão) ou de hospedagem (estalagem, hotel), com quintal em volta.' },
+  house: { label: 'Casa ou hotel', hint: 'Planta de casa (casebre, casa, casarão), de hospedagem (estalagem, hotel) ou de estabelecimento (taverna), com quintal em volta.' },
   temple: { label: 'Templo', hint: 'Nave simétrica, santuário com degraus, capelas e sacristias.' },
   outdoor: { label: 'Cenário aberto', hint: 'Campo com mato, rochas, rio, trilha e construções.' },
   village: {
     label: 'Vilarejo',
-    hint: 'Povoado pequeno e irregular: casas, ferreiro, padeiro, mercador e curandeiro em volta de uma praça com poço, com trilhas e às vezes um riacho.',
+    hint: 'Povoado pequeno e irregular: casas, ferreiro, padeiro, mercador, curandeiro e taverna em volta de uma praça com poço, com trilhas e às vezes um riacho.',
   },
 };
 
@@ -596,11 +596,11 @@ export const HOUSE_SHAPES: Record<HouseShape, string> = {
 };
 
 /** Modelo de planta do tipo "casa ou hotel". */
-export type HouseModel = 'casebre' | 'casa' | 'casarao' | 'estalagem' | 'hotel';
+export type HouseModel = 'casebre' | 'casa' | 'casarao' | 'estalagem' | 'hotel' | 'taverna';
 
 export interface HouseModelInfo {
   label: string;
-  group: 'Casas' | 'Hospedagem';
+  group: 'Casas' | 'Hospedagem' | 'Estabelecimentos';
   hint: string;
   /** Formatos que o modelo aceita (além de aleatório). */
   shapes: Array<Exclude<HouseShape, 'random'>>;
@@ -630,6 +630,12 @@ export const HOUSE_MODELS: Record<HouseModel, HouseModelInfo> = {
   hotel: {
     label: 'Hotel', group: 'Hospedagem', hint: 'Recepção e restaurante na frente; corredores longos com quartos dos dois lados.',
     shapes: ['long', 'L', 'T', 'U'], rooms: [4, 40, 12], corridor: 2, doors: 1,
+  },
+  taverna: {
+    label: 'Taverna', group: 'Estabelecimentos',
+    hint: 'Salão com balcão, banquetas e mesas; cozinha, despensa, depósito e banheiros no fundo. Com dois andares, quartos de aluguel em cima.',
+    // Sem quartos no térreo: os de cima enchem o andar.
+    shapes: ['square', 'long'], rooms: [0, 0, 0], corridor: 1, doors: 0.9,
   },
 };
 

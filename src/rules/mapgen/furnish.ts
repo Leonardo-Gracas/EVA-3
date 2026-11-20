@@ -50,6 +50,8 @@ class Furnisher {
   private readonly blocked: Uint8Array;
   readonly keep: Uint8Array;
   readonly zone: Uint8Array;
+  private readonly roomOf: Int16Array;
+  private readonly rooms: GenRoom[];
   private comps = -1;
 
   constructor(base: GenBase, readonly r: SeededRng, private budget: number) {
@@ -69,6 +71,8 @@ class Furnisher {
     base.rooms.forEach((rm, k) => {
       for (let y = rm.y; y < rm.y + rm.h; y++) for (let x = rm.x; x < rm.x + rm.w; x++) roomOf[y * this.w + x] = k;
     });
+    this.roomOf = roomOf;
+    this.rooms = base.rooms;
     // Livre: dos dois lados de toda porta e de toda passagem entre áreas diferentes; e a trilha.
     const mark = (a: number, b: number, o: 'h' | 'v', x: number, y: number) => {
       if (!this.open(a) || !this.open(b)) return;
@@ -86,6 +90,13 @@ class Furnisher {
   }
 
   open(i: number) { return this.cells[i] !== TERRAIN_CHAR.void; }
+
+  /** Tipo do cômodo do quadrado (null fora de cômodo). */
+  kindAt(x: number, y: number): RoomKind | null {
+    if (x < 0 || y < 0 || x >= this.w || y >= this.h) return null;
+    const k = this.roomOf[y * this.w + x];
+    return k >= 0 ? this.rooms[k].kind : null;
+  }
 
   passEdge(o: 'h' | 'v', x: number, y: number) {
     const wall = o === 'h' ? this.wallsH[y * this.w + x] : this.wallsV[y * (this.w + 1) + x];
@@ -320,6 +331,68 @@ const tables = (f: Furnisher, R: Rect) => {
   }
 };
 
+/**
+ * Salão de taverna com o fundo conhecido (`dir`): balcão de través perto da cozinha, com espaço
+ * atrás para quem serve e uma ponta livre para entrar; prateleira de bebidas e barris na parede
+ * do fundo; banquetas na frente do balcão; mesas com cadeiras no resto.
+ */
+const tavernHall = (f: Furnisher, R: GenRoom, dir: Dir) => {
+  const L = local(R, dir);
+  const { U, V } = L;
+  const behind = (u: number) => {
+    const c = L.rect(u, -1, 1, 1);
+    return f.kindAt(c.x, c.y);
+  };
+  const deep = V >= 7;
+  const bv = deep ? 2 : 1;
+  const len = Math.max(1, Math.min(6, U - 3));
+  const spots: Array<{ u: number; score: number }> = [];
+  for (let u = 0; u + len <= U; u++) {
+    let score = f.r() * 0.5;
+    for (let k = u; k < u + len; k++) {
+      const b = behind(k);
+      if (b === 'cozinha') score += 2;
+      else if (b === 'banheiro') score -= 3;
+    }
+    spots.push({ u, score });
+  }
+  spots.sort((a, b) => b.score - a.score);
+  const bar = spots.find((s) => f.place('mesa', L.rect(s.u, bv, len, 1), 'Balcão'))?.u;
+  if (bar === undefined) {
+    f.alongWall(R, 'mesa', Math.min(4, Math.max(R.w, R.h) - 2), 1, 'Balcão') || f.alongWall(R, 'mesa', 2, 1, 'Balcão');
+  } else if (deep) {
+    // Atrás do balcão: a passagem de quem serve e, encostados no fundo, a prateleira e os barris.
+    let shelf = false;
+    for (let u = bar; u < bar + len; u++) {
+      if (!shelf && u + 1 < bar + len && f.place('estante', L.rect(u, 0, 2, 1), 'Prateleira de bebidas')) { shelf = true; u++; continue; }
+      if (f.r() < 0.6) f.place('barril', L.rect(u, 0, 1, 1), 'Barril de cerveja');
+    }
+  }
+  const stools = bar !== undefined && V >= bv + 5;
+  if (stools) for (let u = bar; u < bar + len; u += 2) f.place('cadeira', L.rect(u, bv + 1, 1, 1), 'Banqueta');
+  if (U * V >= 30) f.alongWall(R, 'fogao', 1, 1, 'Lareira');
+  // Mesas em grade, centradas no que sobra do salão (no salão raso, encostadas na parede da frente).
+  const v0 = bv + (stools ? 3 : 2);
+  const vmax = V - 2 >= v0 ? V - 2 : V - 1;
+  if (vmax >= v0 && U >= 3) {
+    const rows = Math.floor((vmax - v0) / 3) + 1;
+    const cols = Math.floor((U - 3) / 4) + 1;
+    const vs = v0 + Math.floor((vmax - v0 - 3 * (rows - 1)) / 2);
+    const us = 1 + Math.floor((U - 3 - 4 * (cols - 1)) / 2);
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const u = us + 4 * j;
+        const v = vs + 3 * i;
+        if (!f.place('mesa', L.rect(u, v, 1, 1))) continue;
+        f.place('cadeira', L.rect(u - 1, v, 1, 1));
+        f.place('cadeira', L.rect(u + 1, v, 1, 1));
+        if (v + 1 < V && f.r() < 0.5) f.place('cadeira', L.rect(u, v + 1, 1, 1));
+      }
+    }
+  }
+  f.some(2, () => f.corner(R, 'barril'));
+};
+
 /** Pilares em grade, a cada três quadrados, longe das paredes. */
 const pillarGrid = (f: Furnisher, R: Rect) => {
   for (let y = R.y + 2; y <= R.y + R.h - 3; y += 3) {
@@ -387,6 +460,7 @@ const RECIPES: Record<RoomKind, Recipe> = {
     f.corner(R, 'estatua', 'Vaso');
   },
   taverna: (f, R) => {
+    if (R.dir) { tavernHall(f, R, R.dir); return; }
     const len = Math.min(4, Math.max(R.w, R.h) - 2);
     f.alongWall(R, 'mesa', len, 1, 'Balcão') || f.alongWall(R, 'mesa', 2, 1, 'Balcão');
     f.some(2, () => f.corner(R, 'barril'));
@@ -633,6 +707,7 @@ function village(f: Furnisher, base: GenBase) {
     padeiro: [['caixa', 'Lenha'], ['caixa', 'Sacos de farinha']],
     mercador: [['barril', 'Mercadorias'], ['caixa', 'Mercadorias'], ['caixa', 'Caixotes']],
     curandeiro: [['arbusto', 'Canteiro de ervas'], ['arbusto', 'Canteiro de ervas']],
+    taverna: [['barril', 'Barris vazios'], ['banco', 'Banco']],
   };
   for (const b of v.buildings) {
     const list = OUTSIDE[b.kind];

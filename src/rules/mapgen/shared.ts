@@ -52,14 +52,15 @@ export const ROOM_KINDS: Record<RoomKind, { one: string; many: string }> = {
   enfermaria: { one: 'enfermaria', many: 'enfermarias' },
 };
 
-/** Construções do vilarejo: os ofícios e as casas de morar. */
-export type BuildingKind = 'ferreiro' | 'padeiro' | 'mercador' | 'curandeiro' | 'moradia';
+/** Construções do vilarejo: os ofícios, a taverna e as casas de morar. */
+export type BuildingKind = 'ferreiro' | 'padeiro' | 'mercador' | 'curandeiro' | 'taverna' | 'moradia';
 
 export const BUILDING_KINDS: Record<BuildingKind, { one: string; many: string }> = {
   ferreiro: { one: 'ferreiro', many: 'ferreiros' },
   padeiro: { one: 'padeiro', many: 'padeiros' },
   mercador: { one: 'mercador', many: 'mercadores' },
   curandeiro: { one: 'curandeiro', many: 'curandeiros' },
+  taverna: { one: 'taverna', many: 'tavernas' },
   moradia: { one: 'casa', many: 'casas' },
 };
 

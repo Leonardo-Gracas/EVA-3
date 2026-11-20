@@ -251,6 +251,60 @@ describe('gerador de mapas', () => {
     }
   });
 
+  it('taverna: salão com balcão, banquetas e mesas; cozinha, estoque e banheiro no fundo', () => {
+    const sizes = Object.keys(HOUSE_SIZES) as HouseSize[];
+    for (let seed = 0; seed < 60; seed++) {
+      const shape = HOUSE_MODELS.taverna.shapes[seed % 2];
+      const g = generateMap(params('house', { model: 'taverna', shape, size: sizes[seed % 3], lights: true, ...newMapSize('house', 'taverna') }), seed);
+      checkCommon(g);
+      expect(components(g)).toBe(1);
+      const kinds = g.rooms.map((rm) => rm.kind);
+      expect(kinds.filter((k) => k === 'taverna')).toHaveLength(1);
+      for (const k of ['cozinha', 'despensa', 'banheiro'] as const) expect(kinds).toContain(k);
+      expect(kinds).not.toContain('quarto');
+      const salao = g.rooms.find((rm) => rm.kind === 'taverna')!;
+      const inSalao = (pr: GeneratedMap['props'][number]) => pr.x >= salao.x && pr.y >= salao.y && pr.x + pr.w <= salao.x + salao.w && pr.y + pr.h <= salao.y + salao.h;
+      const bar = g.props.find((pr) => pr.label === 'Balcão');
+      expect(bar && inSalao(bar)).toBe(true);
+      expect(g.props.filter((pr) => pr.prop === 'cadeira' && inSalao(pr)).length).toBeGreaterThanOrEqual(2);
+      expect(g.props.filter((pr) => pr.prop === 'mesa' && pr.label === '' && inSalao(pr)).length).toBeGreaterThanOrEqual(1);
+      // A cozinha abre para o salão; despensa e depósito, para a cozinha.
+      expect(passagesOf(g, g.rooms.find((rm) => rm.kind === 'cozinha')!)).toContain('taverna');
+      for (const rm of g.rooms.filter((x) => x.kind === 'despensa' || x.kind === 'deposito')) expect(passagesOf(g, rm)).toContain('cozinha');
+    }
+  });
+
+  it('taverna de dois andares: quartos de aluguel em cima, escada saindo do salão', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const shape = HOUSE_MODELS.taverna.shapes[seed % 2];
+      const fl = generateFloors({ preset: 'house', model: 'taverna', shape, floors: 2, furnish: true, lights: true, ...newMapSize('house', 'taverna') }, seed * 43);
+      expect(fl.map((f) => f.label)).toEqual(['Térreo', '1º andar']);
+      const [g, u] = fl;
+      const st = [...g.layout.cells].flatMap((c, i) => (c === TERRAIN_CHAR.stairs ? [i] : []));
+      expect(st.length).toBeGreaterThan(0);
+      expect(u.stairs).toEqual(g.stairs);
+      // Sai do salão e chega na sala de cima (não num quarto).
+      const salao = g.rooms.find((rm) => rm.kind === 'taverna')!;
+      const sala = u.rooms.find((rm) => rm.kind === 'sala')!;
+      for (const i of st) {
+        expect(u.layout.cells[i]).toBe(TERRAIN_CHAR.stairs);
+        const x = i % g.layout.w;
+        const y = Math.floor(i / g.layout.w);
+        expect(x >= salao.x && y >= salao.y && x < salao.x + salao.w && y < salao.y + salao.h).toBe(true);
+        expect(x >= sala.x && y >= sala.y && x < sala.x + sala.w && y < sala.y + sala.h).toBe(true);
+      }
+      // Mesma caixa nos dois andares; em cima, quartos num corredor, sem salão nem cozinha.
+      const built = (f: GeneratedMap) => [...f.zone].map((z) => (z === ZONE.room || z === ZONE.corridor ? 1 : 0)).join('');
+      expect(built(u)).toBe(built(g));
+      const quartos = u.rooms.filter((rm) => rm.kind === 'quarto');
+      expect(quartos.length).toBeGreaterThanOrEqual(1);
+      for (const rm of quartos) expect(passagesOf(u, rm)).toContain('corredor');
+      expect(u.rooms.some((rm) => rm.kind === 'taverna' || rm.kind === 'cozinha')).toBe(false);
+      for (const f of fl) expect(components(f)).toBe(1);
+    }
+    expect(cleanMapParams({ preset: 'house', model: 'taverna', floors: 4 }).floors).toBe(2);
+  });
+
   it('casa: mapa pequeno demais cabe com menos quartos, sem sair do mapa', () => {
     for (const model of Object.keys(HOUSE_MODELS) as HouseModel[]) {
       const g = generateMap(params('house', { model, rooms: HOUSE_MODELS[model].rooms[1], w: 12, h: 12 }), 3);
@@ -312,7 +366,7 @@ describe('gerador de mapas', () => {
   });
 
   it('vilarejo: tudo ligado, construções sem se encostar, ofícios com o cômodo de trabalho', () => {
-    const MAIN = { ferreiro: 'forja', padeiro: 'padaria', mercador: 'loja', curandeiro: 'enfermaria' } as const;
+    const MAIN = { ferreiro: 'forja', padeiro: 'padaria', mercador: 'loja', curandeiro: 'enfermaria', taverna: 'taverna' } as const;
     let full = 0;
     for (let seed = 0; seed < 40; seed++) {
       const big = seed % 2 === 0;
@@ -360,7 +414,7 @@ describe('gerador de mapas', () => {
       if (big) {
         expect(g.props.some((pr) => pr.label === 'Poço')).toBe(true);
         expect(g.lights.length).toBeGreaterThan(0);
-        if (bs.length === p.rooms && ['ferreiro', 'padeiro', 'mercador', 'curandeiro'].every((k) => bs.some((b) => b.kind === k))) full++;
+        if (bs.length === p.rooms && ['ferreiro', 'padeiro', 'mercador', 'curandeiro', 'taverna'].every((k) => bs.some((b) => b.kind === k))) full++;
       }
     }
     // No tamanho sugerido, quase sempre cabem todas as construções pedidas.
@@ -378,7 +432,7 @@ describe('gerador de mapas', () => {
       const covered = new Uint8Array(w * h);
       roofs.forEach((rf, k) => {
         expect(rf.label).toBe(bs[k].label);
-        expect(rf.label).toMatch(bs[k].kind === 'moradia' ? /^Casa \d+$/ : /^(Ferreiro|Padeiro|Mercador|Curandeiro)$/);
+        expect(rf.label).toMatch(bs[k].kind === 'moradia' ? /^Casa \d+$/ : /^(Ferreiro|Padeiro|Mercador|Curandeiro|Taverna)$/);
         for (const i of rf.cells) {
           const x = i % w;
           const y = Math.floor(i / w);
@@ -396,12 +450,17 @@ describe('gerador de mapas', () => {
     let withUpper = 0;
     let houses = 0;
     let sobrados = 0;
+    let tavernUp = 0;
     for (let seed = 0; seed < 60; seed++) {
       const fl = generateFloors(params('village', { ...newMapSize('village', 'casa'), floors: 2, lights: true }), seed);
       const ground = fl[0];
       houses += (ground.buildings ?? []).filter((b) => b.kind === 'moradia').length;
       const ups = (ground.buildings ?? []).filter((b) => b.upper);
-      sobrados += ups.length;
+      sobrados += ups.filter((b) => b.kind === 'moradia').length;
+      if (ups.some((b) => b.kind === 'taverna')) {
+        tavernUp++;
+        expect(fl[1].rooms.some((rm) => rm.kind === 'quarto')).toBe(true);
+      }
       if (fl.length === 1) {
         expect(ups.length).toBe(0);
         continue;
@@ -434,6 +493,26 @@ describe('gerador de mapas', () => {
     // Pouca frequência: aparece em alguns vilarejos, mas é uma minoria das casas.
     expect(withUpper).toBeGreaterThan(5);
     expect(sobrados / houses).toBeLessThan(0.2);
+    // A taverna às vezes tem os quartos de aluguel em cima.
+    expect(tavernUp).toBeGreaterThan(5);
+  });
+
+  it('vilarejo: às vezes tem uma taverna pequena, com salão, balcão e cozinha', () => {
+    let tavernas = 0;
+    for (let seed = 0; seed < 30; seed++) {
+      const g = generateMap(params('village', { ...newMapSize('village', 'casa'), rooms: 6 + (seed % 6) }), seed);
+      const bs = (g.buildings ?? []).filter((b) => b.kind === 'taverna');
+      expect(bs.length).toBeLessThanOrEqual(1);
+      for (const b of bs) {
+        tavernas++;
+        // Pequena: cabe num quadrado de 12 de lado.
+        expect(Math.max(b.w, b.h)).toBeLessThanOrEqual(12);
+        const inside = g.rooms.filter((rm) => rm.x >= b.x && rm.y >= b.y && rm.x + rm.w <= b.x + b.w && rm.y + rm.h <= b.y + b.h);
+        for (const k of ['taverna', 'cozinha', 'banheiro'] as const) expect(inside.some((rm) => rm.kind === k)).toBe(true);
+        expect(g.props.some((pr) => pr.label === 'Balcão' && pr.x >= b.x && pr.y >= b.y && pr.x < b.x + b.w && pr.y < b.y + b.h)).toBe(true);
+      }
+    }
+    expect(tavernas).toBeGreaterThan(15);
   });
 
   it('vilarejo: poucas construções e mapa mínimo não quebram', () => {
