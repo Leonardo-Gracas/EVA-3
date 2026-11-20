@@ -6,7 +6,12 @@ export interface Track {
   /** Vazio enquanto o título não é conhecido. */
   title: string;
   channel?: string;
+  /** Apelido dado pelo mestre numa playlist do sistema; aparece no lugar do título. */
+  alias?: string;
 }
+
+/** Nome que aparece para a faixa: o apelido, se houver, ou o título do YouTube. */
+export const trackName = (t: Track) => t.alias || t.title;
 
 export interface YouTubeLink {
   videoId?: string;

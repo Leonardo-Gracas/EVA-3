@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
   ArrowDown, ArrowUp, Blend, ChevronLeft, Info, ListMusic, ListPlus, ListVideo, Loader2, Music,
-  Pause, Play, Plus, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
+  Pause, Pencil, Play, Plus, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume1, Volume2, VolumeX, X, Youtube,
 } from 'lucide-react';
 import { SubTabs } from '../room/TopBar';
 import ConfirmButton from '../common/ConfirmButton';
 import { toast } from '../common/toast';
 import {
-  attachPlayer, cycleCrossfade, next, originalQueue, playAt, playerStore, playLink, playTracks, prev, reloadPlayer, seek, setVolume,
+  applyAlias, attachPlayer, cycleCrossfade, next, originalQueue, playAt, playerStore, playLink, playTracks, prev, reloadPlayer, seek, setVolume,
   toggleLoop, toggleMute, togglePlay, toggleRepeatList, toggleShuffle,
 } from '../../music/player';
 import {
-  addTracks, createPlaylist, deletePlaylist, libraryStore, moveTrack, prefsStore, removeTrack, renamePlaylist,
+  addTracks, createPlaylist, deletePlaylist, libraryStore, moveTrack, prefsStore, removeTrack, renamePlaylist, setTrackAlias,
   type LocalPlaylist, type MusicTab,
 } from '../../music/library';
-import { artUrl, fetchVideoInfo, formatTime, parseVideoIds, parseYouTube, thumbUrl, type Track } from '../../music/youtube';
+import { artUrl, fetchVideoInfo, formatTime, parseVideoIds, parseYouTube, thumbUrl, trackName, type Track } from '../../music/youtube';
 
 const usePlayer = () => useSyncExternalStore(playerStore.subscribe, playerStore.get);
 const usePrefs = () => useSyncExternalStore(prefsStore.subscribe, prefsStore.get);
@@ -100,9 +100,9 @@ function MiniBar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const s = usePlayer();
   const prefs = usePrefs();
   const has = Boolean(s.current || s.queue.length);
-  const title = s.current?.title || (has ? 'Carregando…' : 'Trilha sonora');
-  // Recolhida, cabe só o canal (ou a playlist); expandida, os dois.
-  const channel = s.current?.channel ?? '';
+  const title = (s.current && trackName(s.current)) || (has ? 'Carregando…' : 'Trilha sonora');
+  // Recolhida, cabe só o canal (ou a playlist); expandida, os dois. Com apelido, o título do YouTube faz o papel do canal.
+  const channel = (s.current?.alias ? s.current.title : s.current?.channel) ?? '';
   const from = s.source?.name ?? '';
   const sub = !has ? 'Nada tocando' : open ? [channel, from].filter(Boolean).join(' · ') : channel || from;
   const loading = s.buffering && !s.playing;
@@ -236,6 +236,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
         <li><strong>Só você ouve.</strong> A música toca só neste navegador; os jogadores não ouvem nada.</li>
         <li><strong>Tocar um link:</strong> cole o endereço de um vídeo ou de uma playlist do YouTube. A playlist colada pode virar playlist do sistema pelo botão <em>Salvar</em>, na aba Tocando.</li>
         <li><strong>Playlists do sistema</strong> ficam salvas neste navegador e vão junto no backup (.json) da mesa. Crie uma e cole links de vídeos.</li>
+        <li><strong>Apelidos:</strong> dentro de uma playlist do sistema, o lápis (<Pencil size={12} />) de cada faixa dá a ela um nome seu, que aparece no lugar do título do YouTube. Apague o apelido para voltar ao título.</li>
         <li><strong>Recomeçar faixa</strong> (<Repeat1 size={12} /> na barra) repete a música atual. <strong>Repetir playlist</strong> volta ao começo depois da última faixa.</li>
         <li><strong>Transição:</strong> perto do fim, a próxima música entra enquanto a atual some. Clique no botão para trocar a duração. No iPhone e no iPad a troca é seca.</li>
         <li>Vídeos que o dono não deixa tocar fora do YouTube são pulados.</li>
@@ -306,6 +307,8 @@ function Library() {
 function TrackRow({ t, active, failed, onPlay, actions }: {
   t: Track; active: boolean; failed?: boolean; onPlay: () => void; actions?: ReactNode;
 }) {
+  // Com apelido, embaixo vai o título original do YouTube (e o canal, se couber).
+  const sub = t.alias ? [t.title, t.channel].filter(Boolean).join(' · ') : t.channel;
   return (
     <div className={`music-row${active ? ' on' : ''}${failed ? ' failed' : ''}`}>
       <button className="music-row-main" onClick={onPlay} title={failed ? 'O YouTube recusou este vídeo' : 'Tocar a partir daqui'}>
@@ -314,8 +317,8 @@ function TrackRow({ t, active, failed, onPlay, actions }: {
           {active && <span className="music-thumb-now"><span className="music-eq" aria-hidden><i /><i /><i /></span></span>}
         </span>
         <span className="music-text">
-          <span className="music-title">{t.title || (failed ? 'Vídeo indisponível' : 'Vídeo do YouTube')}</span>
-          {(failed || t.channel) && <span className="music-sub">{failed ? 'Não toca fora do YouTube' : t.channel}</span>}
+          <span className="music-title">{trackName(t) || (failed ? 'Vídeo indisponível' : 'Vídeo do YouTube')}</span>
+          {(failed || sub) && <span className="music-sub">{failed ? 'Não toca fora do YouTube' : sub}</span>}
         </span>
       </button>
       {actions}
@@ -405,6 +408,17 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
   const s = usePlayer();
   const [name, setName] = useState(list.name);
   useEffect(() => setName(list.name), [list.id, list.name]);
+  /** Faixa com o campo de apelido aberto. */
+  const [editing, setEditing] = useState<string | null>(null);
+  useEffect(() => setEditing(null), [list.id]);
+  const saveAlias = (i: number, alias: string) => {
+    const t = list.tracks[i];
+    setEditing(null);
+    if (!t || alias.trim() === (t.alias ?? '')) return;
+    setTrackAlias(list.id, i, alias);
+    const fresh = libraryStore.get().find((p) => p.id === list.id)?.tracks[i];
+    applyAlias(list.id, t.id, fresh?.alias);
+  };
   const mine = s.source?.kind === 'local' && s.source.id === list.id;
   const commitName = () => {
     const n = name.trim();
@@ -433,10 +447,13 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
         <div className="music-empty">Playlist vazia.</div>
       ) : (
         <div className="music-rows">
-          {list.tracks.map((t, i) => (
+          {list.tracks.map((t, i) => editing === t.id ? (
+            <AliasEditor key={t.id} t={t} onDone={(alias) => saveAlias(i, alias)} onCancel={() => setEditing(null)} />
+          ) : (
             <TrackRow key={t.id} t={t} active={mine && s.current?.id === t.id} failed={mine && s.failed.includes(t.id)} onPlay={() => playLocal(list, i)}
               actions={(
                 <span className="music-row-actions">
+                  <button className="music-btn music-btn-sm" onClick={() => setEditing(t.id)} aria-label="Dar apelido" title={t.alias ? 'Trocar o apelido' : 'Dar apelido'}><Pencil size={14} /></button>
                   <button className="music-btn music-btn-sm" disabled={i === 0} onClick={() => moveTrack(list.id, i, i - 1)} aria-label="Subir" title="Subir"><ArrowUp size={14} /></button>
                   <button className="music-btn music-btn-sm" disabled={i === list.tracks.length - 1} onClick={() => moveTrack(list.id, i, i + 1)} aria-label="Descer" title="Descer"><ArrowDown size={14} /></button>
                   <button className="music-btn music-btn-sm" onClick={() => removeTrack(list.id, i)} aria-label="Tirar da playlist" title="Tirar da playlist"><X size={14} /></button>
@@ -446,6 +463,30 @@ function LocalPlaylistView({ list, onBack }: { list: LocalPlaylist; onBack: () =
         </div>
       )}
     </>
+  );
+}
+
+/** Campo de apelido no lugar da linha: Enter ou sair do campo salva, Esc desiste. Vazio volta ao título do YouTube. */
+function AliasEditor({ t, onDone, onCancel }: { t: Track; onDone: (alias: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(t.alias ?? '');
+  const cancelled = useRef(false);
+  return (
+    <div className="music-row on">
+      <span className="music-row-main">
+        <span className="music-thumb"><img src={thumbUrl(t.id)} alt="" loading="lazy" /></span>
+        <span className="music-text">
+          <input className="music-name music-alias" value={text} maxLength={60} autoFocus aria-label="Apelido da faixa"
+            placeholder={t.title || 'Apelido da faixa'} onChange={(e) => setText(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={() => { if (!cancelled.current) onDone(text); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              else if (e.key === 'Escape') { e.stopPropagation(); cancelled.current = true; onCancel(); }
+            }} />
+          <span className="music-sub">{t.title || 'Vídeo do YouTube'}</span>
+        </span>
+      </span>
+    </div>
   );
 }
 

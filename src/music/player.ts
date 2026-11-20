@@ -5,7 +5,7 @@
 import { Store } from '../net/emitter';
 import { toast } from '../components/common/toast';
 import { CROSSFADE_STEPS, fillTrackInfo, prefsStore } from './library';
-import { fetchPlaylistTitle, fetchVideoInfo, loadYouTubeApi, playerErrorText, YTState, type Track, type YTPlayer } from './youtube';
+import { fetchPlaylistTitle, fetchVideoInfo, loadYouTubeApi, playerErrorText, trackName, YTState, type Track, type YTPlayer } from './youtube';
 
 export type QueueSource =
   | { kind: 'local'; id: string; name: string }
@@ -132,6 +132,19 @@ function applyInfo(id: string, title: string, channel: string) {
   if (s.queue.some((t) => t.id === id && !t.title) || (s.current?.id === id && !s.current.title)) {
     playerStore.patch({ queue: s.queue.map(fix), current: s.current && fix(s.current) });
   }
+}
+
+/** Leva o apelido novo de uma faixa para a fila, se ela estiver tocando a playlist dele. */
+export function applyAlias(playlistId: string, videoId: string, alias: string | undefined) {
+  const s = p();
+  if (s.source?.kind !== 'local' || s.source.id !== playlistId) return;
+  const fix = (t: Track): Track => {
+    if (t.id !== videoId) return t;
+    const { alias: _old, ...rest } = t;
+    return alias ? { ...rest, alias } : rest;
+  };
+  baseQueue = baseQueue.map(fix);
+  playerStore.patch({ queue: s.queue.map(fix), current: s.current && fix(s.current) });
 }
 
 /** Busca no YouTube o título das faixas da fila que ainda não têm nome. */
@@ -373,7 +386,8 @@ function markFailed(id: string, code: number) {
   const s = p();
   if (s.failed.includes(id)) return;
   playerStore.patch({ failed: [...s.failed, id] });
-  const name = s.queue.find((t) => t.id === id)?.title;
+  const t = s.queue.find((q) => q.id === id);
+  const name = t && trackName(t);
   toast(`${name ? `“${name}”: ` : ''}${playerErrorText(code)}`, 'error');
 }
 

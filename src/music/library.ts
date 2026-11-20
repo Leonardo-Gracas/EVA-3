@@ -47,7 +47,12 @@ function write(key: string, value: unknown) {
 export function validPlaylists(v: unknown): LocalPlaylist[] {
   if (!Array.isArray(v)) return [];
   return v.filter((p): p is LocalPlaylist => !!p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.tracks))
-    .map((p) => ({ ...p, tracks: p.tracks.filter((t) => t && typeof t.id === 'string').map((t) => ({ ...t, title: t.title ?? '' })) }));
+    .map((p) => ({
+      ...p,
+      tracks: p.tracks.filter((t) => t && typeof t.id === 'string').map(({ alias, ...t }) => ({
+        ...t, title: t.title ?? '', ...(typeof alias === 'string' && alias.trim() ? { alias: alias.trim() } : {}),
+      })),
+    }));
 }
 
 export const libraryStore = new Store<LocalPlaylist[]>(validPlaylists(read(LIB_KEY)));
@@ -113,6 +118,19 @@ export function moveTrack(id: string, from: number, to: number) {
     tracks.splice(to, 0, t);
     return { ...p, tracks };
   });
+}
+
+/** Dá (ou tira, com texto vazio) o apelido de uma faixa da playlist. */
+export function setTrackAlias(id: string, index: number, alias: string) {
+  const name = alias.trim();
+  update(id, (p) => ({
+    ...p,
+    tracks: p.tracks.map((t, i) => {
+      if (i !== index) return t;
+      const { alias: _old, ...rest } = t;
+      return name && name !== t.title ? { ...rest, alias: name } : rest;
+    }),
+  }));
 }
 
 /** Completa título e canal de um vídeo em todas as playlists que ainda não os têm. */

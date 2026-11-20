@@ -2084,6 +2084,7 @@ button.camp-pill { min-height: 36px; }
 }
 .music-name:hover { border-bottom-color: var(--border); }
 .music-name:focus { border-bottom-color: var(--gold); }
+.music-alias { flex: none; padding: 0 2px; font-size: 13px; border-bottom-color: var(--gold); }
 
 .music-rows { display: flex; flex-direction: column; gap: 2px; }
 .music-row { display: flex; align-items: center; gap: 4px; border-radius: var(--radius); transition: background var(--transition); }
