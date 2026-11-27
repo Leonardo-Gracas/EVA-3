@@ -2724,6 +2724,6 @@ button.camp-pill { min-height: 36px; }
   -webkit-text-fill-color: transparent;
   animation: spec-flow 5s linear infinite;
 }
-.spec-name.spec-still { font-weight: inherit; animation: none; background-position: 25% 0; opacity: 0.85; }
+.spec-name.spec-still { font-weight: inherit; animation: none; background-position: 25% 0; }
 @keyframes spec-flow { from { background-position: 0% 0; } to { background-position: 100% 0; } }
 @media (prefers-reduced-motion: reduce) { .spec-name { animation: none; } }

@@ -490,7 +490,7 @@ function EspecialistasSec() {
     const s = specialistFor(x, y);
     return s
       ? <ClassName id={s} />
-      : <><SpecName a={x} b={y} still>{titleFor(x, y)}</SpecName> <span className="tiny muted">(em breve)</span></>;
+      : <SpecName a={x} b={y} still>{titleFor(x, y)} <span className="tiny">(em breve)</span></SpecName>;
   };
   return (
     <Section id="especialistas" title="Classes especialistas"
