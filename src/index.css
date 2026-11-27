@@ -2727,3 +2727,17 @@ button.camp-pill { min-height: 36px; }
 .spec-name.spec-still { font-weight: inherit; animation: none; background-position: 25% 0; }
 @keyframes spec-flow { from { background-position: 0% 0; } to { background-position: 100% 0; } }
 @media (prefers-reduced-motion: reduce) { .spec-name { animation: none; } }
+
+/* ── Versão e notas de atualização ───────────────────────── */
+.version-badge {
+  position: fixed; left: 10px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 40;
+  padding: 2px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent;
+  font-size: 10px; letter-spacing: 0.04em; color: var(--text-disabled); cursor: pointer; opacity: 0.8;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.version-badge:hover, .version-badge:focus-visible { color: var(--gold-soft); border-color: var(--border-gold); background: var(--bg-surface); opacity: 1; }
+/* No celular dentro da sala, o rodapé é da barra de abas: a versão fica na aba Novidades ("Mais"). */
+@media (max-width: 640px) { body:has(.tabs-mobile-bar) .version-badge { display: none; } }
+.release-notes { max-width: 760px; }
+.release-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.release-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }

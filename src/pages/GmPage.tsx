@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Map as MapIcon, Moon, Package, ScrollText, Search, Settings, Shield, Skull, Swords, Upload, UserPlus, UserX, Users,
+  ArrowLeft, BookOpen, Dices, Download, Inbox, LogOut, Map as MapIcon, Moon, Package, ScrollText, Search, Settings, Shield, Skull, Sparkles, Swords, Upload, UserPlus, UserX, Users,
   VenetianMask,
 } from 'lucide-react';
 import CampaignPanel from '../components/campaign/CampaignPanel';
@@ -26,11 +26,12 @@ import ItemLibrary from '../components/gm/ItemLibrary';
 import PermissionsPanel from '../components/gm/PermissionsPanel';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
+import ReleaseNotes from '../release/ReleaseNotes';
 import { GmInbox, GmNotifications, useRollToasts } from '../components/Notifications';
 import MusicDock from '../components/music/MusicDock';
 
 /** Abas na ordem do preparo à mesa: o caderno da campanha, quem joga, o que se usa, a trama, a luta; os bastidores no fim. */
-type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'mapas' | 'npcs' | 'admin' | 'regras';
+type Tab = 'campanha' | 'jogadores' | 'itens' | 'investigacao' | 'mapas' | 'npcs' | 'admin' | 'regras' | 'novidades';
 type CastView = 'npcs' | 'ameacas';
 type AdminView = 'pedidos' | 'registro' | 'permissoes';
 
@@ -118,6 +119,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             { id: 'npcs', label: 'NPCs e Ameaças', short: 'NPCs', icon: <VenetianMask size={14} /> },
             { id: 'admin', label: 'Admin', icon: <Settings size={14} />, count: pending },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
+            { id: 'novidades', label: 'Novidades', icon: <Sparkles size={14} />, mobileMore: true },
           ]}
           more={(close) => (
             <div className="col">
@@ -179,6 +181,7 @@ export default function GmPage({ onLeave }: { onLeave: () => void }) {
             </div>
           )}
           {tab === 'regras' && <Reference />}
+          {tab === 'novidades' && <ReleaseNotes />}
         </main>
         <Modal open={invite} onClose={() => setInvite(false)} title="Convidar jogadores" width={600}>
           <RoomInvite code={table.roomCode} />

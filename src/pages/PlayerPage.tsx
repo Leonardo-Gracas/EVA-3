@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ClipboardList, Dices, HeartHandshake, Inbox, LogOut, Map as MapIcon, Plus, Search, Swords, Upload, UserX, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Dices, HeartHandshake, Inbox, LogOut, Map as MapIcon, Plus, Search, Sparkles, Swords, Upload, UserX, Users } from 'lucide-react';
 import { guestStore, sendAction } from '../net/guest';
 import { setRoom } from '../net/identity';
 import { ActProvider, type ActApi, useAct } from '../components/act';
@@ -12,6 +12,7 @@ import Avatar from '../components/common/Avatar';
 import { useImportCharacters } from '../components/common/CharacterFile';
 import LogPanel from '../components/LogPanel';
 import Reference from '../components/Reference';
+import ReleaseNotes from '../release/ReleaseNotes';
 import { RequestStatus } from '../components/gm/RequestsPanel';
 import { deriveStats } from '../rules/derive';
 import { PlayerNotifications, useRollToasts } from '../components/Notifications';
@@ -20,7 +21,7 @@ import CasesView from '../components/investigation/CasesView';
 import PlayerMapView from '../components/map/PlayerMapView';
 import PlayerRelations from '../components/relations/PlayerRelations';
 
-type Tab = 'ficha' | 'mapa' | 'relacoes' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras';
+type Tab = 'ficha' | 'mapa' | 'relacoes' | 'mesa' | 'investigacao' | 'pedidos' | 'registro' | 'regras' | 'novidades';
 
 export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
   const snap = useSyncExternalStore(guestStore.subscribe, guestStore.get);
@@ -92,6 +93,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
             { id: 'investigacao', label: 'Investigação', short: 'Casos', icon: <Search size={14} /> },
             { id: 'mesa', label: 'Mesa', icon: <Users size={14} /> },
             { id: 'regras', label: 'Regras', icon: <BookOpen size={14} /> },
+            { id: 'novidades', label: 'Novidades', icon: <Sparkles size={14} />, mobileMore: true },
           ]}
           more={() => (
             <div className="col">
@@ -129,6 +131,7 @@ export default function PlayerPage({ onLeave }: { onLeave: () => void }) {
           {tab === 'pedidos' && <MyRequests view={view} />}
           {tab === 'registro' && <LogPanel log={view.log} characters={view.myCharacters} />}
           {tab === 'regras' && <Reference />}
+          {tab === 'novidades' && <ReleaseNotes />}
         </main>
       </div>
     </ActProvider>

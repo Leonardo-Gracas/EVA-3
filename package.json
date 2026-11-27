@@ -1,6 +1,6 @@
 {
   "name": "eva3",
-  "version": "0.1.0",
+  "version": "3.1.1",
   "private": true,
   "description": "EVA 3 — gerenciador de campanhas online (mestre como host, servidor de salas na Cloudflare)",
   "type": "module",

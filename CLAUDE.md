@@ -15,16 +15,39 @@ Se o projeto não estiver indexado (ou o índice estiver desatualizado após mud
 rode `index_repository` antes. Grep/Glob/Read ficam para textos, configs e arquivos não-código,
 e sempre leia o arquivo antes de editá-lo.
 
-## Publicar: sempre subir ao terminar
+## Versão e notas de atualização: em todo commit
 
-Ao terminar qualquer alteração (com `npx tsc --noEmit -p .` e `npm test` passando), suba sem perguntar:
+O app mostra a versão no canto inferior esquerdo e as notas na aba **Novidades**. A fonte é
+`src/release/releases.ts` (lista `RELEASES`, da mais nova para a mais antiga; a primeira é a versão atual).
+Formato `MAIOR.MENOR.AJUSTE`:
 
-1. Commit no `main` só com os arquivos da tarefa, mensagem em português.
-2. `git push origin main`. O Netlify publica o site sozinho a cada push no `main`.
-3. Se a pasta `server/` mudou, publique também o servidor de salas: `npx wrangler deploy` dentro de `server/`
-   (o `publicar.ps1` faz o mesmo, mas espera Enter no fim).
+- **último número** (3.1.1 → 3.1.2): ajustes pequenos (correções, retoques de texto ou visual);
+- **número do meio** (3.1.x → 3.2.0): mudanças significativas (recurso novo, mudança de regra ou de fluxo); zera o último.
 
-Se a verificação falhar, não suba: corrija ou avise.
+Em **todo commit**, antes de commitar:
+
+1. Suba a versão conforme o tamanho da mudança e adicione uma entrada nova no topo de `RELEASES`
+   (versão, data de hoje, título de uma linha e as notas).
+2. As notas são para quem joga: só o que é importante para o usuário, em linguagem simples. Nada de detalhes
+   técnicos, nomes de arquivo, refatorações ou mudanças invisíveis (se não há nada visível, uma nota curta como
+   "Correções e melhorias de desempenho" basta).
+3. Atualize o `version` do `package.json` (e as duas ocorrências no topo do `package-lock.json`) para a mesma versão;
+   há teste conferindo.
+
+## Publicar: só quando o usuário pedir
+
+Ao terminar uma alteração (com `npx tsc --noEmit -p .` e `npm test` passando), **faça o commit no `main`, mas não dê push**:
+
+1. Atualize a versão e as notas (seção acima).
+2. Commit no `main` só com os arquivos da tarefa, mensagem em português começando pela versão (ex.: `3.1.2: ...`).
+
+Só suba quando o usuário pedir. Aí:
+
+1. `git push origin main`. O Netlify publica o site sozinho a cada push no `main`.
+2. Se a pasta `server/` mudou desde o último push, publique também o servidor de salas: `npx wrangler deploy`
+   dentro de `server/` (o `publicar.ps1` faz o mesmo, mas espera Enter no fim).
+
+Se a verificação falhar, não commite: corrija ou avise.
 
 O Git em `C:\Program Files\Git` está sem o suporte a HTTPS (o push falha com `git: 'remote-https' is not a git command`).
 Use o Git do GitHub Desktop, no PowerShell:
