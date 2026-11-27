@@ -18,6 +18,7 @@ import { abilitiesOf } from '../rules/abilities';
 import { CLAREZA_BASE, deathThreshold } from '../rules/derive';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, type ItemType } from '../model/types';
 import AbilityCard from './sheet/AbilityCard';
+import ClassName, { SpecName } from './common/ClassName';
 
 const SECTIONS = [
   { id: 'comecando', label: 'Começando', icon: <ListChecks size={14} /> },
@@ -479,12 +480,6 @@ function ClassesSec({ go }: { go: (id: SectionId) => void }) {
   );
 }
 
-/** Média de duas cores #rrggbb: a cor de uma combinação que ainda não tem especialista. */
-function mixColor(c1: string, c2: string): string {
-  const ch = (c: string, i: number) => parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
-  return `#${[0, 1, 2].map((i) => Math.round((ch(c1, i) + ch(c2, i)) / 2).toString(16).padStart(2, '0')).join('')}`;
-}
-
 function EspecialistasSec() {
   const [spec, setSpec] = useState<SpecialistId>(SPECIALIST_IDS[0]);
   const info = CLASSES[spec];
@@ -494,8 +489,8 @@ function EspecialistasSec() {
   const cell = (x: BaseClassId, y: BaseClassId) => {
     const s = specialistFor(x, y);
     return s
-      ? <strong style={{ color: CLASSES[s].color }}>{CLASSES[s].name}</strong>
-      : <span style={{ color: mixColor(CLASSES[x].color, CLASSES[y].color) }}>{titleFor(x, y)} <span className="tiny muted">(em breve)</span></span>;
+      ? <ClassName id={s} />
+      : <><SpecName a={x} b={y} still>{titleFor(x, y)}</SpecName> <span className="tiny muted">(em breve)</span></>;
   };
   return (
     <Section id="especialistas" title="Classes especialistas"
@@ -533,15 +528,14 @@ function EspecialistasSec() {
       {SPECIALIST_IDS.length > 1 && (
         <div className="seg ref-class-seg" role="tablist" aria-label="Classe especialista">
           {SPECIALIST_IDS.map((c) => (
-            <button key={c} role="tab" aria-selected={c === spec} className={c === spec ? 'on-inherit' : ''} onClick={() => setSpec(c)}
-              style={c === spec ? { color: CLASSES[c].color } : undefined}>
-              {CLASSES[c].name}
+            <button key={c} role="tab" aria-selected={c === spec} className={c === spec ? 'on-inherit' : ''} onClick={() => setSpec(c)}>
+              {c === spec ? <ClassName id={c} /> : <ClassName id={c} className="spec-still" />}
             </button>
           ))}
         </div>
       )}
       <div className="ref-class-head">
-        <h3 style={{ color: info.color }}>{info.name}</h3>
+        <h3><ClassName id={spec} /></h3>
         <p className="small secondary">{a === b ? `${CLASSES[a].name} puro` : `${CLASSES[a].name} + ${CLASSES[b].name}`}</p>
         <p className="small gold" style={{ fontStyle: 'italic' }}>{info.tagline}</p>
         <p className="small secondary">{info.description}</p>

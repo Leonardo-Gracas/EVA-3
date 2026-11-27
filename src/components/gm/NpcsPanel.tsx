@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Plus, Upload } from 'lucide-react';
 import type { Character, TableState } from '../../model/types';
 import { ALL_CLASS_IDS, CLASSES, type ClassId } from '../../rules/classes';
+import { classSwatch } from '../common/ClassName';
 import { deriveStats, type Derived } from '../../rules/derive';
 import { useAct } from '../act';
 import { ExportCharactersButton, useImportCharacters } from '../common/CharacterFile';
@@ -116,7 +117,7 @@ export default function NpcsPanel({ table, detailOpen, setDetailOpen }: {
               <FilterGroup label="Classe">
                 {classCounts.map(({ id, count }) => (
                   <Chip key={id} on={classes.includes(id)} count={count} onClick={() => setClasses((l) => toggleIn(l, id))}>
-                    <span className="chip-dot" style={{ background: CLASSES[id].color }} />{CLASSES[id].name}
+                    <span className="chip-dot" style={{ background: classSwatch(id) }} />{CLASSES[id].name}
                   </Chip>
                 ))}
               </FilterGroup>

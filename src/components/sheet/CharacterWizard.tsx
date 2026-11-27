@@ -12,6 +12,7 @@ import { getAbility } from '../../rules/abilities';
 import { baseClassOrder, deriveStats, specialistOf } from '../../rules/derive';
 import { checkOptions, firstInvalidLevel, LIMITS, levelsFromChecks, validateDraft } from '../../rules/validate';
 import AbilityCard from './AbilityCard';
+import ClassName, { TitleText } from '../common/ClassName';
 import Avatar from '../common/Avatar';
 import { EditableAvatar } from '../common/AvatarEditor';
 
@@ -282,7 +283,7 @@ export default function CharacterWizard({
           <div className="av-inline">
             <Avatar config={draft.avatar} size={56} />
             <div>
-              <div className="sheet-title">{preview.title} · Nível {total}</div>
+              <div className="sheet-title"><TitleText d={preview} /> · Nível {total}</div>
               <h2 className="sheet-name">{draft.name}</h2>
               {draft.concept && <div className="secondary">{draft.concept}</div>}
             </div>
@@ -302,7 +303,7 @@ export default function CharacterWizard({
           {total > 1 && (
             <div className="row-wrap">
               {preview.classes.map((c) => (
-                <span key={c} className="class-chip" style={{ color: CLASSES[c].color, borderColor: CLASSES[c].color }}>{CLASSES[c].name} {preview.classLevels[c]}</span>
+                <span key={c} className="class-chip" style={{ color: CLASSES[c].color, borderColor: CLASSES[c].color }}><ClassName id={c} /> {preview.classLevels[c]}</span>
               ))}
             </div>
           )}
@@ -347,7 +348,7 @@ function ClassChecklist({ classId, attributes, checked, multi = false, full = fa
   return (
     <div className="col">
       <div className="row">
-        <h3 style={{ color: CLASSES[classId].color }}>{CLASSES[classId].name}</h3>
+        <h3><ClassName id={classId} /></h3>
         {subtitle && <span className="tiny muted">{subtitle}</span>}
         <span className="spacer" />
         {multi && <span className="tiny muted">{count} marcada{count === 1 ? '' : 's'}</span>}

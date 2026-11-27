@@ -4,12 +4,13 @@ import type { Character } from '../../model/types';
 import type { Derived } from '../../rules/derive';
 import { deriveStats } from '../../rules/derive';
 import { BENCAO, bencaoCost, bencaoExtrasFor, type Ability } from '../../rules/abilities';
-import { CLASSES, MAX_LEVEL, SPECIALIST_LEVEL, isSpecialist, type ClassId } from '../../rules/classes';
+import { MAX_LEVEL, SPECIALIST_LEVEL, isSpecialist, type ClassId } from '../../rules/classes';
 import { abilityOptions, classesAvailable } from '../../rules/validate';
 import { useAct } from '../act';
 import ActButton from '../common/ActButton';
 import Modal from '../common/Modal';
 import AbilityCard from './AbilityCard';
+import ClassName from '../common/ClassName';
 
 export default function AbilitiesPanel({ ch, d, readOnly }: { ch: Character; d: Derived; readOnly?: boolean }) {
   const [using, setUsing] = useState<Ability | null>(null);
@@ -143,7 +144,7 @@ export function LevelUpModal({ ch, onClose }: { ch: Character; onClose: () => vo
             {available.map((c) => (
               <button key={c} className={`card card-hover${c === classId ? ' card-selected' : ''}`} style={{ textAlign: 'left', padding: 12 }}
                 onClick={() => { setClassId(c); setAbilityId(null); }}>
-                <div className="row"><strong style={{ color: CLASSES[c].color }}>{CLASSES[c].name}</strong>
+                <div className="row"><strong><ClassName id={c} /></strong>
                   <span className="spacer" /><span className="tiny muted">nível {now.classLevels[c]} → {now.classLevels[c] + 1}</span></div>
               </button>
             ))}

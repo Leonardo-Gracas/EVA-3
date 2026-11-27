@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Ability } from '../../rules/abilities';
-import { CLASSES } from '../../rules/classes';
+import ClassName from '../common/ClassName';
 
 export function costText(a: Ability): string | null {
   if (a.passive) return null;
@@ -29,7 +29,6 @@ export default function AbilityCard({
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => setOpen(defaultOpen), [defaultOpen]);
   const cost = costText(ability);
-  const cls = CLASSES[ability.classId];
   return (
     <div className={`ability${disabledReason ? ' ability-disabled' : ''}${selected ? ' card-selected' : ''}`}>
       <div className="row" style={{ paddingRight: 10 }}>
@@ -38,7 +37,7 @@ export default function AbilityCard({
             <input type={multi ? 'checkbox' : 'radio'} readOnly checked={!!selected} disabled={!!disabledReason} style={{ accentColor: 'var(--gold)' }} />
           ) : open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span className="ability-name">{ability.name}</span>
-          {showClass && <span className="tiny" style={{ color: cls.color }}>{cls.name}</span>}
+          {showClass && <ClassName id={ability.classId} className="tiny" />}
           {ability.minClassLevel > 1 && <span className="badge">{ability.minClassLevel}º nível</span>}
           <span className={ability.passive ? 'badge' : 'badge badge-gold'}>{ability.passive ? 'Passiva' : cost ?? 'Ativa'}</span>
           {disabledReason && <span className="tiny muted">{disabledReason}</span>}

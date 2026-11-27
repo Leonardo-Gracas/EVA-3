@@ -2712,3 +2712,18 @@ button.camp-pill { min-height: 36px; }
   .affinity-picker { gap: 6px; }
 }
 @media (prefers-reduced-motion: reduce) { .affinity-opt:hover:not(:disabled) { transform: none; } }
+
+/* Nome de classe especialista: gradiente com as cores das duas classes, correndo pelo texto. */
+.spec-name {
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--spec-a), var(--spec-b), var(--spec-a), var(--spec-b), var(--spec-a));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: spec-flow 5s linear infinite;
+}
+.spec-name.spec-still { font-weight: inherit; animation: none; background-position: 25% 0; opacity: 0.85; }
+@keyframes spec-flow { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+@media (prefers-reduced-motion: reduce) { .spec-name { animation: none; } }

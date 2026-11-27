@@ -8,6 +8,7 @@ import { LIMITS } from '../../rules/validate';
 import { useAct } from '../act';
 import { cancelRollFx, startRollFx } from '../RollFx';
 import ActButton from '../common/ActButton';
+import ClassName, { TitleText } from '../common/ClassName';
 import ConfirmModal from '../common/ConfirmModal';
 import { EditableAvatar } from '../common/AvatarEditor';
 import { ExportCharactersButton } from '../common/CharacterFile';
@@ -28,7 +29,7 @@ export function ClassChips({ ch }: { ch: Character }) {
     <div className="row-wrap">
       {d.classes.map((c) => (
         <span key={c} className="class-chip" style={{ color: CLASSES[c].color, borderColor: CLASSES[c].color }}>
-          {CLASSES[c].name} {d.classLevels[c]}
+          <ClassName id={c} /> {d.classLevels[c]}
         </span>
       ))}
     </div>
@@ -68,7 +69,7 @@ export default function CharacterSheet({ ch, ownerName, table }: { ch: Character
           <EditableAvatar config={ch.avatar} name={ch.name}
             onSave={async (avatar) => (await act({ type: 'character/avatar', characterId: ch.id, avatar }, 'Aparência atualizada.')).ok} />
           <div className="grow">
-            <div className="sheet-title">{d.title} · Nível {d.level}</div>
+            <div className="sheet-title"><TitleText d={d} /> · Nível {d.level}</div>
             <h2 className="sheet-name">{ch.name}</h2>
             {ch.concept && <div className="secondary">{ch.concept}</div>}
             <div className="row-wrap mt">
