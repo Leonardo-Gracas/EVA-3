@@ -122,7 +122,7 @@ export default function Reference() {
         <PontosSec />
         <TestesSec />
         <ClassesSec go={go} />
-        <EspecialistasSec go={go} />
+        <EspecialistasSec />
         <VidaSec />
         <DanoSec />
         <ManobrasSec go={go} />
@@ -474,29 +474,18 @@ function ClassesSec({ go }: { go: (id: SectionId) => void }) {
         No nível 2, se continuar {cb.name}, ganha {cb.pvPerLevel} + {exCon} = <strong>+{cb.pvPerLevel + exCon} PV</strong> e <strong>+{cb.pePerLevel} PE</strong>.
       </Callout>
 
-      <Sub>Títulos</Sub>
-      <p className="small secondary">Ao pegar uma segunda classe, o personagem ganha um título pela combinação das suas classes. Quem fica em uma classe só ganha o título dela (Veterano, Exorcista, Feiticeiro, Oráculo) apenas ao chegar ao nível {PURE_TITLE_LEVEL} na classe; antes disso, é chamado só pelo nome da classe.</p>
-      <div className="ref-table-wrap">
-        <table className="ref-table ref-matrix">
-          <thead>
-            <tr><th />{CLASS_IDS.map((c) => <th key={c} style={{ color: CLASSES[c].color }}>{CLASSES[c].name}</th>)}</tr>
-          </thead>
-          <tbody>
-            {CLASS_IDS.map((a) => (
-              <tr key={a}>
-                <th style={{ color: CLASSES[a].color }}>{CLASSES[a].name}</th>
-                {CLASS_IDS.map((b) => <td key={b}>{titleFor(a, b)}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
       <p className="small secondary mt">Para ver as habilidades de cada classe, vá até <Link to="habilidades" go={go}>Habilidades</Link>.</p>
     </Section>
   );
 }
 
-function EspecialistasSec({ go }: { go: (id: SectionId) => void }) {
+/** Média de duas cores #rrggbb: a cor de uma combinação que ainda não tem especialista. */
+function mixColor(c1: string, c2: string): string {
+  const ch = (c: string, i: number) => parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
+  return `#${[0, 1, 2].map((i) => Math.round((ch(c1, i) + ch(c2, i)) / 2).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function EspecialistasSec() {
   const [spec, setSpec] = useState<SpecialistId>(SPECIALIST_IDS[0]);
   const info = CLASSES[spec];
   const [a, b] = info.from!;
@@ -506,7 +495,7 @@ function EspecialistasSec({ go }: { go: (id: SectionId) => void }) {
     const s = specialistFor(x, y);
     return s
       ? <strong style={{ color: CLASSES[s].color }}>{CLASSES[s].name}</strong>
-      : <span className="muted">{titleFor(x, y)} <span className="tiny">(em breve)</span></span>;
+      : <span style={{ color: mixColor(CLASSES[x].color, CLASSES[y].color) }}>{titleFor(x, y)} <span className="tiny muted">(em breve)</span></span>;
   };
   return (
     <Section id="especialistas" title="Classes especialistas"
@@ -535,7 +524,10 @@ function EspecialistasSec({ go }: { go: (id: SectionId) => void }) {
           </tbody>
         </table>
       </div>
-      <p className="small secondary mt">A linha e a coluna iguais são para quem ficou em uma classe só. Veja também os <Link to="classes" go={go}>títulos</Link>.</p>
+      <p className="small secondary mt">
+        A linha e a coluna iguais são para quem ficou em uma classe só. O nome da combinação também é o título do personagem:
+        com duas classes, vale assim que pega a segunda; com uma só, a partir do nível {PURE_TITLE_LEVEL}.
+      </p>
 
       <Sub>Especialistas</Sub>
       {SPECIALIST_IDS.length > 1 && (
