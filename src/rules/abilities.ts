@@ -237,6 +237,26 @@ const A: Ability[] = [
     id: 'maestria-de-combate', classId: 'combatente', name: 'Maestria de Combate', minClassLevel: 9, passive: false, peCost: 2,
     text: 'Gaste 2 PE para realizar mais um ataque após uma ação de ataque. Limite de 1 por turno.',
   },
+
+  // ── CLASSES ESPECIALISTAS (níveis 10 a 12) ─────────────────────────────────
+  // O nível exigido é o nível NA especialista: todas ficam disponíveis já no nível 10.
+
+  // ── NECROMAGO (Ocultista + Vidente) ────────────────────────────────────────
+  {
+    id: 'projecao-possessiva', classId: 'necromago', name: 'Projeção Possessiva', minClassLevel: 1, passive: false, peCost: 15,
+    costNote: '+5 PE para manter',
+    text: 'CORPO MORTO: gaste 15 PE para projetar sua alma para dentro de um corpo que morreu há até 7 dias e controlar as ações dele por 1 hora. Para continuar no mesmo corpo por mais 1 hora, gaste 5 PE, quantas vezes quiser.\n\nCORPO VIVO: gaste 15 PE e faça um teste de PRE contra a Vontade (VON) do alvo. Se o alvo estiver inconsciente, a VON dele cai pela metade. Se passar, controla o corpo por 1 turno (alvo consciente) ou por 5 minutos (alvo inconsciente). Para continuar em um alvo consciente por mais 1 turno, faça um novo teste de PRE contra a VON e gaste 5 PE.\n\nFALHA: se falhar em um teste de PRE, o PE daquela tentativa é perdido mesmo assim e você perde 2 PV.\n\nEnquanto estiver em uma possessão, você não pode descansar.',
+  },
+  {
+    id: 'convergencia-pavorosa', classId: 'necromago', name: 'Convergência Pavorosa', minClassLevel: 1, passive: false, peCost: 3,
+    costNote: '3 PE por tormenta',
+    text: 'CONVOCAR (ação principal): role um teste de INT para chamar tormentas abandonadas no mundo dos mortos. A cada 5 pontos no resultado, pode convocar 1 tormenta, pagando 3 PE por tormenta convocada. Ex.: um resultado 17 permite até 3 tormentas (9 PE). Elas ficam sob seu comando até o fim do combate.\n\nCONVERGIR (ação de movimento): ordene que as tormentas ataquem um único alvo. Todas atacam juntas: não dá para comandar só uma parte (com 7 tormentas, as 7 atacam). Custa 1 PV ou 1 PE por tormenta, divididos como preferir.\n\nO ataque é um teste de PRE contra a Vontade (VON) do alvo. Cada tormenta causa 1d4 + o número de tormentas no conjunto. Ex.: com 4 tormentas, cada uma causa 1d4 + 4, num total de 4d4 + 16. Se o ataque falhar, conta só o valor dos dados (4d4).',
+  },
+  {
+    id: 'refatorar', classId: 'necromago', name: 'Refatorar', minClassLevel: 1, passive: false, peCost: 5,
+    costNote: '5 a 30 PE',
+    text: 'Ajuste o Vinculum de um espírito para manipular as vontades, ideias ou memórias dele. O custo depende do tamanho do ajuste: uma memória simples custa 5 PE; um trauma de uma vida inteira, 30 PE. O mestre define o custo dos casos entre os dois.\n\nAlterar o Vinculum de uma entidade é um dos pecados mais graves. Dependendo do contexto, isso pode atrair tormentas ou entidades malignas para atormentar o conjurador, que resiste com a Vontade (VON) para não ter o PE drenado.',
+  },
 ];
 
 export const ABILITIES: Record<string, Ability> = Object.fromEntries(A.map((a) => [a.id, a]));

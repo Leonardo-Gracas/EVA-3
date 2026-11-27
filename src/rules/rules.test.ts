@@ -193,6 +193,45 @@ describe('progressão', () => {
   });
 });
 
+describe('classes especialistas', () => {
+  const attrs = { ...emptyAttributes(), FE: 3, PRE: 2, INT: 2, DES: 1, CON: 1 };
+  const base = { name: 'Corvo', concept: '', notes: '', attributes: attrs };
+  const ocultista = ['combusto', 'figre', 'cliostra', 'estudo', 'sobriedade', 'aplicacao'];
+  const vidente = ['lampejos', 'sexto-sentido', 'personalidade'];
+  const necromago = abilitiesOf('necromago').map((a) => a.id);
+
+  it('a combinação define a especialista no nível 9, não a proporção', () => {
+    for (const [o, v] of [[6, 3], [8, 1], [5, 4]]) {
+      const levels: LevelPick[] = [
+        ...Array.from({ length: o }, () => ({ classId: 'ocultista' as const, abilityId: null })),
+        ...Array.from({ length: v }, () => ({ classId: 'vidente' as const, abilityId: null })),
+      ];
+      expect(classesAvailable(levels)).toEqual(['necromago']);
+      expect(classesAvailable(levels.slice(0, 8))).not.toContain('necromago');
+    }
+    // Combinação sem especialista nas regras ainda: segue nas classes base.
+    const acolito: LevelPick[] = Array.from({ length: 9 }, () => ({ classId: 'acolito', abilityId: null }));
+    expect(classesAvailable(acolito)).toEqual(['acolito', 'ocultista', 'vidente', 'combatente']);
+  });
+
+  it('níveis 10 a 12 montados das marcadas, com PV e PE fixos', () => {
+    const levels = levelsFromChecks(attrs, 'ocultista', [...ocultista, ...vidente, ...necromago], 12);
+    expect(levels.slice(9).map((l) => l.classId)).toEqual(['necromago', 'necromago', 'necromago']);
+    expect(validateDraft({ ...base, levels })).toBeNull();
+    const d9 = deriveStats({ attributes: attrs, levels: levels.slice(0, 9), permanentLoss: noLoss });
+    const d12 = deriveStats({ attributes: attrs, levels, permanentLoss: noLoss });
+    expect(d12.pvMax - d9.pvMax).toBe(18);
+    expect(d12.peMax - d9.peMax).toBe(18);
+    expect(d12.title).toBe('Necromago');
+    expect(d12.classLevels.necromago).toBe(3);
+    // Nível 10 em classe base não vale mais; habilidade da especialista também não antes do 10.
+    expect(validateLevelPick(attrs, levels.slice(0, 9), { classId: 'ocultista', abilityId: null })).toMatch(/especialista \(Necromago\)/);
+    expect(validateLevelPick(attrs, levels.slice(0, 8), { classId: 'necromago', abilityId: 'refatorar' })).toMatch(/não é a classe especialista/);
+    // Ajuste de níveis leva o nível 10 para a especialista.
+    expect(sanitizeLevels(attrs, [...levels.slice(0, 9), { classId: 'vidente', abilityId: null }])[9].classId).toBe('necromago');
+  });
+});
+
 describe('dados', () => {
   it('interpreta expressões', () => {
     expect(parseExpr('2d6+3')).toEqual({ terms: [{ sign: 1, count: 2, sides: 6 }], modifier: 3 });

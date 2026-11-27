@@ -1,6 +1,8 @@
 // Valores derivados da ficha: tudo que é calculado e nunca digitado.
 import { ATTRIBUTES, type Attributes, type AttrKey } from './attributes';
-import { CLASSES, CLASS_IDS, PURE_TITLE_LEVEL, titleFor, type ClassId } from './classes';
+import {
+  ALL_CLASS_IDS, CLASSES, PURE_TITLE_LEVEL, isSpecialist, specialistFor, titleFor, type BaseClassId, type ClassId, type SpecialistId,
+} from './classes';
 import { getAbility, type Ability, type Scaled } from './abilities';
 import type { Character, LevelPick } from '../model/types';
 
@@ -51,7 +53,7 @@ function scaledLabel(s: Scaled): string {
 }
 
 export function classLevelsOf(levels: LevelPick[]): Record<ClassId, number> {
-  const out = Object.fromEntries(CLASS_IDS.map((c) => [c, 0])) as Record<ClassId, number>;
+  const out = Object.fromEntries(ALL_CLASS_IDS.map((c) => [c, 0])) as Record<ClassId, number>;
   for (const l of levels) out[l.classId] += 1;
   return out;
 }
@@ -62,8 +64,19 @@ export function classOrder(levels: LevelPick[]): ClassId[] {
   return seen;
 }
 
+/** Classes base (sem a especialista), na ordem em que foram adquiridas. */
+export function baseClassOrder(levels: LevelPick[]): BaseClassId[] {
+  return classOrder(levels).filter((c): c is BaseClassId => !isSpecialist(c));
+}
+
+/** Classe especialista da combinação de classes base dos níveis (null se ainda não existe). */
+export function specialistOf(levels: LevelPick[]): SpecialistId | null {
+  const [a, b] = baseClassOrder(levels);
+  return a ? specialistFor(a, b) : null;
+}
+
 export function titleOf(levels: LevelPick[]): string {
-  const order = classOrder(levels);
+  const order = baseClassOrder(levels);
   if (order.length === 0) return '—';
   if (order.length === 1) {
     const c = order[0];
@@ -103,9 +116,9 @@ export function deriveStats(
       pe += c.peInitial;
       bdPe.push(`Nível 1 (${c.name}): ${c.peInitial}`);
     } else {
-      const g = Math.max(1, c.pvPerLevel + attrs.CON);
+      const g = Math.max(1, c.pvPerLevel + (c.pvAttr ? attrs[c.pvAttr] : 0));
       pv += g;
-      bdPv.push(`Nível ${i + 1} (${c.name}): ${c.pvPerLevel} + CON = ${g}`);
+      bdPv.push(`Nível ${i + 1} (${c.name}): ${c.pvPerLevel}${c.pvAttr ? ` + ${ATTRIBUTES[c.pvAttr].short}` : ''} = ${g}`);
       const ge = Math.max(0, c.pePerLevel + (c.peAttr ? attrs[c.peAttr] : 0));
       pe += ge;
       bdPe.push(`Nível ${i + 1} (${c.name}): ${c.pePerLevel}${c.peAttr ? ` + ${ATTRIBUTES[c.peAttr].short}` : ''} = ${ge}`);

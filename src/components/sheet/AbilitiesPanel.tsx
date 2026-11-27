@@ -4,7 +4,7 @@ import type { Character } from '../../model/types';
 import type { Derived } from '../../rules/derive';
 import { deriveStats } from '../../rules/derive';
 import { BENCAO, bencaoCost, bencaoExtrasFor, type Ability } from '../../rules/abilities';
-import { CLASSES, MAX_LEVEL, type ClassId } from '../../rules/classes';
+import { CLASSES, MAX_LEVEL, SPECIALIST_LEVEL, isSpecialist, type ClassId } from '../../rules/classes';
 import { abilityOptions, classesAvailable } from '../../rules/validate';
 import { useAct } from '../act';
 import ActButton from '../common/ActButton';
@@ -134,7 +134,11 @@ export function LevelUpModal({ ch, onClose }: { ch: Character; onClose: () => vo
       footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn btn-primary" disabled={!valid} onClick={go}>Confirmar</button></>}>
       <div className="col gap-lg">
         <div>
-          <label className="label">Classe que recebe o nível {available.length < 4 && <span className="muted">(máximo de 2 classes)</span>}</label>
+          {available.length === 1 && isSpecialist(available[0]) ? (
+            <label className="label">Classe especialista <span className="muted">(do nível {SPECIALIST_LEVEL + 1} em diante, todo nível vai para ela)</span></label>
+          ) : (
+            <label className="label">Classe que recebe o nível {available.length < 4 && <span className="muted">(máximo de 2 classes)</span>}</label>
+          )}
           <div className="grid-2">
             {available.map((c) => (
               <button key={c} className={`card card-hover${c === classId ? ' card-selected' : ''}`} style={{ textAlign: 'left', padding: 12 }}

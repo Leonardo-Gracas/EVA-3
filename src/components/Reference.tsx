@@ -3,14 +3,17 @@
 // acompanha a seção visível; cada seção abre com um resumo de uma linha.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AlertTriangle, BookOpen, Calculator, Dices, Hand, Heart, Lightbulb, ListChecks, Minus, Package, Plus, RotateCcw,
+  AlertTriangle, BookOpen, Calculator, Crown, Dices, Hand, Heart, Lightbulb, ListChecks, Minus, Package, Plus, RotateCcw,
   Search, Shield, Sparkles, Swords, Tag, Users,
 } from 'lucide-react';
 import {
   ATTR_COST, ATTR_KEYS, ATTR_MAX, ATTR_MIN, ATTRIBUTES, POINT_BUDGET, emptyAttributes, fmtMod, pointsLeft,
   pointsSpent, type AttrKey, type Attributes,
 } from '../rules/attributes';
-import { CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, PURE_TITLE_LEVEL, titleFor, type ClassId } from '../rules/classes';
+import {
+  CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, PURE_TITLE_LEVEL, SPECIALIST_IDS, SPECIALIST_LEVEL, specialistFor, titleFor,
+  type BaseClassId, type SpecialistId,
+} from '../rules/classes';
 import { abilitiesOf } from '../rules/abilities';
 import { CLAREZA_BASE, deathThreshold } from '../rules/derive';
 import { DEFAULT_DURABILITY, DEFAULT_MOVEMENT, ITEM_TYPES, type ItemType } from '../model/types';
@@ -22,6 +25,7 @@ const SECTIONS = [
   { id: 'pontos', label: 'Compra de pontos', icon: <Calculator size={14} /> },
   { id: 'testes', label: 'Testes e dados', icon: <Dices size={14} /> },
   { id: 'classes', label: 'Classes e níveis', icon: <Users size={14} /> },
+  { id: 'especialistas', label: 'Classes especialistas', icon: <Crown size={14} /> },
   { id: 'vida', label: 'PV, PE e morte', icon: <Heart size={14} /> },
   { id: 'dano', label: 'Dano e RD', icon: <Shield size={14} /> },
   { id: 'manobras', label: 'Manobras de combate', icon: <Hand size={14} /> },
@@ -118,6 +122,7 @@ export default function Reference() {
         <PontosSec />
         <TestesSec />
         <ClassesSec go={go} />
+        <EspecialistasSec go={go} />
         <VidaSec />
         <DanoSec />
         <ManobrasSec go={go} />
@@ -173,7 +178,7 @@ function Comecando({ go }: { go: (id: SectionId) => void }) {
       <div className="ref-quick">
         <div><strong>Testes:</strong> role 1d20 + atributo. Precisa <em>superar</em> o alvo; empate é falha. <Link to="testes" go={go}>Ver testes</Link></div>
         <div><strong>Atributos:</strong> seis, de −1 a +4, comprados com {POINT_BUDGET} pontos. <Link to="pontos" go={go}>Ver compra</Link></div>
-        <div><strong>Níveis:</strong> 1 a {MAX_LEVEL}. Cada nível dá +1 em uma classe e uma habilidade. Até {MAX_CLASSES} classes. <Link to="classes" go={go}>Ver classes</Link></div>
+        <div><strong>Níveis:</strong> 1 a {MAX_LEVEL}. Cada nível dá +1 em uma classe e uma habilidade. Até {MAX_CLASSES} classes; do nível {SPECIALIST_LEVEL + 1} em diante, a classe especialista. <Link to="classes" go={go}>Ver classes</Link></div>
         <div><strong>Defesas:</strong> DEF = 10 + DES contra ataques; VON = 10 + FÉ contra efeitos sobrenaturais. <Link to="testes" go={go}>Ver defesas</Link></div>
         <div><strong>PV em 0:</strong> inconsciente. Morre em −10 ou menos (ou −metade do PV máximo). <Link to="vida" go={go}>Ver PV e PE</Link></div>
         <div><strong>PE em 0:</strong> sem conjurar e sem habilidades ativas. <Link to="vida" go={go}>Ver PV e PE</Link></div>
@@ -435,6 +440,7 @@ function ClassesSec({ go }: { go: (id: SectionId) => void }) {
         <li>Ao subir de nível, escolha a classe que recebe o nível e uma habilidade dessa classe.</li>
         <li>Algumas habilidades exigem um nível mínimo <em>na classe</em> (não no personagem) ou um atributo mínimo.</li>
         <li>Depois de ter {MAX_CLASSES} classes, os próximos níveis só podem ir para elas.</li>
+        <li>Do nível {SPECIALIST_LEVEL + 1} ao {MAX_LEVEL}, os níveis vão para a classe especialista da sua combinação. <Link to="especialistas" go={go}>Ver especialistas</Link></li>
       </ul>
 
       <Sub>Comparando as classes</Sub>
@@ -486,6 +492,75 @@ function ClassesSec({ go }: { go: (id: SectionId) => void }) {
         </table>
       </div>
       <p className="small secondary mt">Para ver as habilidades de cada classe, vá até <Link to="habilidades" go={go}>Habilidades</Link>.</p>
+    </Section>
+  );
+}
+
+function EspecialistasSec({ go }: { go: (id: SectionId) => void }) {
+  const [spec, setSpec] = useState<SpecialistId>(SPECIALIST_IDS[0]);
+  const info = CLASSES[spec];
+  const [a, b] = info.from!;
+  const peLabel = `${info.pePerLevel}${info.peAttr ? ` + ${ATTRIBUTES[info.peAttr].short}` : ''}`;
+  const pvLabel = `${info.pvPerLevel}${info.pvAttr ? ` + ${ATTRIBUTES[info.pvAttr].short}` : ''}`;
+  const cell = (x: BaseClassId, y: BaseClassId) => {
+    const s = specialistFor(x, y);
+    return s
+      ? <strong style={{ color: CLASSES[s].color }}>{CLASSES[s].name}</strong>
+      : <span className="muted">{titleFor(x, y)} <span className="tiny">(em breve)</span></span>;
+  };
+  return (
+    <Section id="especialistas" title="Classes especialistas"
+      lead={`Ao chegar ao nível ${SPECIALIST_LEVEL}, a combinação das suas classes define uma classe especialista. Os níveis ${SPECIALIST_LEVEL + 1} a ${MAX_LEVEL} vão todos para ela.`}>
+      <ul className="ref-list">
+        <li>Vale a combinação, não quantos níveis você tem em cada classe: Ocultista 6 / Vidente 3, 8 / 1 ou 5 / 4 viram o mesmo Necromago.</li>
+        <li>Quem ficou em uma classe só segue para a especialista daquela classe.</li>
+        <li>Cada nível de especialista dá os PV e PE dela (valores fixos, sem somar atributo) e uma habilidade dela, à sua escolha: todas já podem ser escolhidas no nível {SPECIALIST_LEVEL + 1}.</li>
+        <li>O bônus de nível continua normal: +1 nos testes a cada nível par.</li>
+        <li>Combinação marcada como “em breve” ainda não tem especialista nas regras: até lá, os níveis {SPECIALIST_LEVEL + 1} a {MAX_LEVEL} continuam nas classes base, como antes.</li>
+      </ul>
+
+      <Sub>Combinações</Sub>
+      <div className="ref-table-wrap">
+        <table className="ref-table ref-matrix">
+          <thead>
+            <tr><th />{CLASS_IDS.map((c) => <th key={c} style={{ color: CLASSES[c].color }}>{CLASSES[c].name}</th>)}</tr>
+          </thead>
+          <tbody>
+            {CLASS_IDS.map((x) => (
+              <tr key={x}>
+                <th style={{ color: CLASSES[x].color }}>{CLASSES[x].name}</th>
+                {CLASS_IDS.map((y) => <td key={y}>{cell(x, y)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="small secondary mt">A linha e a coluna iguais são para quem ficou em uma classe só. Veja também os <Link to="classes" go={go}>títulos</Link>.</p>
+
+      <Sub>Especialistas</Sub>
+      {SPECIALIST_IDS.length > 1 && (
+        <div className="seg ref-class-seg" role="tablist" aria-label="Classe especialista">
+          {SPECIALIST_IDS.map((c) => (
+            <button key={c} role="tab" aria-selected={c === spec} className={c === spec ? 'on-inherit' : ''} onClick={() => setSpec(c)}
+              style={c === spec ? { color: CLASSES[c].color } : undefined}>
+              {CLASSES[c].name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="ref-class-head">
+        <h3 style={{ color: info.color }}>{info.name}</h3>
+        <p className="small secondary">{a === b ? `${CLASSES[a].name} puro` : `${CLASSES[a].name} + ${CLASSES[b].name}`}</p>
+        <p className="small gold" style={{ fontStyle: 'italic' }}>{info.tagline}</p>
+        <p className="small secondary">{info.description}</p>
+        <div className="row-wrap small">
+          <span className="badge">+{pvLabel} PV por nível</span>
+          <span className="badge">+{peLabel} PE por nível</span>
+        </div>
+      </div>
+      <div className="col">
+        {abilitiesOf(spec).map((ab) => <AbilityCard key={ab.id} ability={ab} />)}
+      </div>
     </Section>
   );
 }
@@ -701,7 +776,7 @@ function ItensSec() {
 }
 
 function HabilidadesSec() {
-  const [cls, setCls] = useState<ClassId>(CLASS_IDS[0]);
+  const [cls, setCls] = useState<BaseClassId>(CLASS_IDS[0]);
   const info = CLASSES[cls];
   return (
     <Section id="habilidades" title="Habilidades" lead="Escolha uma classe para ver todas as habilidades dela. Toque em uma habilidade para ler o texto completo.">
@@ -748,6 +823,9 @@ const GLOSSARY: Array<[string, ReactNode]> = [
   ['Crítico', '20 natural no d20 (ou a margem indicada pela habilidade).'],
   ['Nível de classe', 'Quantos níveis você tem naquela classe. Diferente do nível do personagem.'],
   ['Título', 'Nome dado pela combinação das suas classes (ex.: Paladino).'],
+  ['Classe especialista', `Classe dos níveis ${SPECIALIST_LEVEL + 1} a ${MAX_LEVEL}, definida pela combinação das suas classes (ex.: Necromago).`],
+  ['Tormenta', 'Espírito abandonado no mundo dos mortos. O Necromago as convoca e comanda.'],
+  ['Vinculum', 'O vínculo que prende um espírito às suas vontades, ideias e memórias.'],
   ['Passiva / Ativa', 'Passiva vale sempre; ativa precisa ser usada e costuma custar PE.'],
   ['Catalisador', 'Objeto sagrado, profano ou etéreo exigido por certas habilidades.'],
   ['Durabilidade', 'PV, RD e DEF de um objeto. Com 0 PV, ele quebra.'],

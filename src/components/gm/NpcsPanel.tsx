@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Plus, Upload } from 'lucide-react';
 import type { Character, TableState } from '../../model/types';
-import { CLASS_IDS, CLASSES, type ClassId } from '../../rules/classes';
+import { ALL_CLASS_IDS, CLASSES, type ClassId } from '../../rules/classes';
 import { deriveStats, type Derived } from '../../rules/derive';
 import { useAct } from '../act';
 import { ExportCharactersButton, useImportCharacters } from '../common/CharacterFile';
@@ -54,7 +54,7 @@ export default function NpcsPanel({ table, detailOpen, setDetailOpen }: {
     .filter((c) => c.kind === 'npc')
     .map((c) => ({ c, d: deriveStats(c) })), [table.characters]);
 
-  const classCounts = useMemo(() => CLASS_IDS
+  const classCounts = useMemo(() => ALL_CLASS_IDS
     .map((id) => ({ id, count: all.filter((e) => e.d.classes.includes(id)).length }))
     .filter((x) => x.count > 0), [all]);
 

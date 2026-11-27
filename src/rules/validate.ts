@@ -1,9 +1,11 @@
 // Validação de criação de ficha e subida de nível. Roda no mestre (autoridade)
 // e também na tela, para mostrar o que é permitido antes de enviar.
 import { isValidAttributeSet, type Attributes } from './attributes';
-import { CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, type ClassId } from './classes';
+import {
+  ALL_CLASS_IDS, CLASS_IDS, CLASSES, MAX_CLASSES, MAX_LEVEL, SPECIALIST_LEVEL, isSpecialist, type BaseClassId, type ClassId,
+} from './classes';
 import { abilitiesOf, getAbility, type Ability } from './abilities';
-import { classLevelsOf, classOrder } from './derive';
+import { baseClassOrder, classLevelsOf, specialistOf } from './derive';
 import type { CharacterDraft, LevelPick } from '../model/types';
 
 export const LIMITS = {
@@ -26,13 +28,18 @@ export const LIMITS = {
 };
 
 export function isClassId(v: unknown): v is ClassId {
-  return typeof v === 'string' && (CLASS_IDS as string[]).includes(v);
+  return typeof v === 'string' && (ALL_CLASS_IDS as string[]).includes(v);
 }
 
-/** Classes que podem receber o próximo nível. */
+/**
+ * Classes que podem receber o próximo nível. Do nível 10 em diante, só a classe
+ * especialista da combinação (quando ela já existe nas regras).
+ */
 export function classesAvailable(levels: LevelPick[]): ClassId[] {
   if (levels.length >= MAX_LEVEL) return [];
-  const owned = classOrder(levels);
+  const spec = levels.length >= SPECIALIST_LEVEL ? specialistOf(levels) : null;
+  if (spec) return [spec];
+  const owned = baseClassOrder(levels);
   if (owned.length >= MAX_CLASSES) return owned;
   return CLASS_IDS;
 }
@@ -69,7 +76,14 @@ export function abilityOptions(attrs: Attributes, levels: LevelPick[], classId: 
 export function validateLevelPick(attrs: Attributes, levels: LevelPick[], pick: LevelPick): string | null {
   if (levels.length >= MAX_LEVEL) return `Nível máximo é ${MAX_LEVEL}.`;
   if (!isClassId(pick.classId)) return 'Classe inválida.';
-  if (!classesAvailable(levels).includes(pick.classId)) return `Máximo de ${MAX_CLASSES} classes por personagem.`;
+  const available = classesAvailable(levels);
+  if (!available.includes(pick.classId)) {
+    if (available.length === 1 && isSpecialist(available[0])) {
+      return `Do nível ${SPECIALIST_LEVEL + 1} em diante, os níveis vão para a classe especialista (${CLASSES[available[0]].name}).`;
+    }
+    if (isSpecialist(pick.classId)) return `${CLASSES[pick.classId].name} não é a classe especialista deste personagem.`;
+    return `Máximo de ${MAX_CLASSES} classes por personagem.`;
+  }
   const options = abilityOptions(attrs, levels, pick.classId);
   const eligible = options.filter((o) => o.eligible);
   if (pick.abilityId === null) {
@@ -90,7 +104,11 @@ export function sanitizeLevels(attrs: Attributes, levels: LevelPick[]): LevelPic
   const out: LevelPick[] = [];
   for (const l of levels) {
     let pick = l;
-    if (!classesAvailable(out).includes(pick.classId)) pick = { classId: out[out.length - 1].classId, abilityId: null };
+    const available = classesAvailable(out);
+    if (!available.includes(pick.classId)) {
+      const prev = out[out.length - 1]?.classId;
+      pick = { classId: prev && available.includes(prev) ? prev : available[0], abilityId: null };
+    }
     if (pick.abilityId && !abilityOptions(attrs, out, pick.classId).find((o) => o.ability.id === pick.abilityId)?.eligible) {
       pick = { ...pick, abilityId: null };
     }
@@ -149,16 +167,23 @@ export function checkOptions(attrs: Attributes, classId: ClassId, ids: string[])
  * Monta os níveis a partir das habilidades marcadas: primeiro os da classe inicial,
  * depois os da segunda, cada classe em ordem de nível exigido. Os níveis que faltam
  * entram na classe inicial sem habilidade (só valem quando não sobra nada para marcar).
+ * Acima do nível 9, se a combinação tem classe especialista, as classes base ficam com
+ * os 9 primeiros níveis e o resto vai para a especialista.
  */
-export function levelsFromChecks(attrs: Attributes, primary: ClassId, ids: string[], total: number): LevelPick[] {
+export function levelsFromChecks(attrs: Attributes, primary: BaseClassId, ids: string[], total: number): LevelPick[] {
   const checked = pruneChecks(attrs, ids).map((id) => getAbility(id)!);
-  const second = checked.find((a) => a.classId !== primary)?.classId;
+  const second = checked.find((a) => a.classId !== primary && !isSpecialist(a.classId))?.classId;
   const of = (c: ClassId): LevelPick[] => checked.filter((a) => a.classId === c).sort(byTier).map((a) => ({ classId: c, abilityId: a.id }));
+  const empty = (c: ClassId, k: number): LevelPick[] => Array.from({ length: Math.max(0, k) }, () => ({ classId: c, abilityId: null }));
   const first = of(primary);
   const rest = second ? of(second) : [];
+  const base = (k: number) => [...first, ...empty(primary, k - first.length - rest.length), ...rest].slice(0, k);
   const n = Math.max(1, Math.min(MAX_LEVEL, total));
-  const fill = Array.from({ length: Math.max(0, n - first.length - rest.length) }, () => ({ classId: primary, abilityId: null }));
-  return [...first, ...fill, ...rest].slice(0, n);
+  const head = base(SPECIALIST_LEVEL);
+  const spec = n > SPECIALIST_LEVEL ? specialistOf(head) : null;
+  if (!spec) return base(n);
+  const picks = of(spec).slice(0, n - SPECIALIST_LEVEL);
+  return [...head, ...picks, ...empty(spec, n - SPECIALIST_LEVEL - picks.length)];
 }
 
 /** Primeiro nível (índice) inválido do rascunho e o motivo, ou null se todos valem. */

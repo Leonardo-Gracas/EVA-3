@@ -5,9 +5,11 @@ import {
   ATTR_COST, ATTR_KEYS, ATTR_MAX, ATTR_MIN, ATTRIBUTES, POINT_BUDGET, emptyAttributes, fmtMod, pointsLeft,
   type Attributes,
 } from '../../rules/attributes';
-import { CLASS_IDS, CLASSES, MAX_LEVEL, type ClassId } from '../../rules/classes';
+import {
+  CLASS_IDS, CLASSES, MAX_LEVEL, SPECIALIST_LEVEL, isSpecialist, specialistFor, type BaseClassId, type ClassId,
+} from '../../rules/classes';
 import { getAbility } from '../../rules/abilities';
-import { classOrder, deriveStats } from '../../rules/derive';
+import { baseClassOrder, deriveStats, specialistOf } from '../../rules/derive';
 import { checkOptions, firstInvalidLevel, LIMITS, levelsFromChecks, validateDraft } from '../../rules/validate';
 import AbilityCard from './AbilityCard';
 import Avatar from '../common/Avatar';
@@ -20,6 +22,8 @@ const REVIEW_PAGE = 4;
 
 const checksOf = (levels: LevelPick[]) => levels.map((l) => l.abilityId).filter((id): id is string => !!id);
 const classOfAbility = (id: string) => getAbility(id)?.classId;
+const isSpecialistAbility = (id: string) => { const c = classOfAbility(id); return !!c && isSpecialist(c); };
+const primaryOf = (levels: LevelPick[]) => levels[0].classId as BaseClassId;
 
 /**
  * `level`: nível fixo (o nível inicial da mesa, para jogadores).
@@ -38,39 +42,46 @@ export default function CharacterWizard({
   const [page, setPage] = useState(0);
   const [draft, setDraft] = useState<CharacterDraft>(() => {
     const d = initial ?? { name: '', concept: '', notes: '', attributes: emptyAttributes(), levels: [{ classId: CLASS_IDS[0], abilityId: null }] };
-    return { ...d, levels: levelsFromChecks(d.attributes, d.levels[0].classId, checksOf(d.levels), level ?? d.levels.length) };
+    return { ...d, levels: levelsFromChecks(d.attributes, primaryOf(d.levels), checksOf(d.levels), level ?? d.levels.length) };
   });
   // Segunda classe escolhida, mesmo antes de marcar alguma habilidade dela.
-  const [second, setSecond] = useState<ClassId | null>(() => classOrder(draft.levels)[1] ?? null);
+  const [second, setSecond] = useState<BaseClassId | null>(() => baseClassOrder(draft.levels)[1] ?? null);
   const [busy, setBusy] = useState(false);
   const up = (p: Partial<CharacterDraft>) => setDraft((d) => ({ ...d, ...p }));
   const left = pointsLeft(draft.attributes);
   const total = draft.levels.length;
-  const primary = draft.levels[0].classId;
+  const primary = primaryOf(draft.levels);
   const checked = checksOf(draft.levels);
+  // Acima do nível 9, a classe especialista da combinação fica com os níveis 10 em diante.
+  const spec = total > SPECIALIST_LEVEL ? specialistFor(primary, second ?? primary) : null;
+  const specSlots = spec ? total - SPECIALIST_LEVEL : 0;
+  const baseSlots = total - specSlots;
+  const specChecked = checked.filter(isSpecialistAbility);
+  const baseChecked = checked.filter((id) => !isSpecialistAbility(id));
   const missing = total - checked.length;
   const levelsError = firstInvalidLevel(draft.attributes, draft.levels);
 
   const preview = deriveStats({ attributes: draft.attributes, levels: draft.levels, permanentLoss: { pv: 0, pe: 0 } });
 
   /** Remonta os níveis pelas habilidades marcadas (o que deixou de valer é desmarcado em cascata). */
-  const setChecks = (ids: string[], p: ClassId = primary, attributes: Attributes = draft.attributes, n = total) =>
+  const setChecks = (ids: string[], p: BaseClassId = primary, attributes: Attributes = draft.attributes, n = total) =>
     up({ attributes, levels: levelsFromChecks(attributes, p, ids, n) });
 
   const toggle = (id: string) => {
     if (total === 1) setChecks([id]);
     else if (checked.includes(id)) setChecks(checked.filter((x) => x !== id));
-    else if (checked.length < total) setChecks([...checked, id]);
+    else if (isSpecialistAbility(id) ? specChecked.length < specSlots : baseChecked.length < baseSlots) setChecks([...checked, id]);
   };
 
-  const choosePrimary = (c: ClassId) => {
+  const choosePrimary = (c: BaseClassId) => {
     if (c === primary) return;
-    // Trocar pela segunda classe só inverte as duas; outra classe descarta as habilidades da anterior.
+    // Trocar pela segunda classe só inverte as duas; outra classe descarta as habilidades da anterior
+    // (e as da especialista, que muda com a combinação).
     if (c === second) { setSecond(primary); setChecks(checked, c); return; }
-    setChecks(checked.filter((id) => classOfAbility(id) !== primary), c);
+    setChecks(checked.filter((id) => classOfAbility(id) !== primary && !isSpecialistAbility(id)), c);
   };
 
-  const chooseSecond = (c: ClassId | null) => {
+  const chooseSecond = (c: BaseClassId | null) => {
     if (c === second) return;
     setSecond(c);
     setChecks(checked.filter((id) => classOfAbility(id) === primary));
@@ -99,7 +110,7 @@ export default function CharacterWizard({
   useEffect(() => {
     if (level === undefined) return;
     setDraft((d) => (d.levels.length === level ? d : {
-      ...d, levels: levelsFromChecks(d.attributes, d.levels[0].classId, checksOf(d.levels), level),
+      ...d, levels: levelsFromChecks(d.attributes, primaryOf(d.levels), checksOf(d.levels), level),
     }));
   }, [level]);
 
@@ -226,9 +237,10 @@ export default function CharacterWizard({
             <p className="small secondary">
               Marque {total} habilidades, uma por nível: <strong className="gold">{checked.length} de {total}</strong>.
               {' '}As de 3º nível pedem 2 habilidades de nível menor marcadas na mesma classe; as de 6º, 5; as de 9º, 8.
+              {spec && <> Os níveis {SPECIALIST_LEVEL + 1} a {total} vão para a classe especialista: {baseSlots} habilidades das classes base e {specSlots} de {CLASSES[spec].name}.</>}
             </p>
           )}
-          <ClassChecklist classId={primary} attributes={draft.attributes} checked={checked} limit={total} onToggle={toggle} />
+          <ClassChecklist classId={primary} attributes={draft.attributes} checked={checked} multi={total > 1} full={baseChecked.length >= baseSlots} onToggle={toggle} />
           {total > 1 && (
             <div>
               <label className="label">Segunda classe <span className="muted">(opcional, máximo de 2 classes)</span></label>
@@ -243,8 +255,18 @@ export default function CharacterWizard({
             </div>
           )}
           {total > 1 && second && (
-            <ClassChecklist classId={second} attributes={draft.attributes} checked={checked} limit={total} onToggle={toggle}
+            <ClassChecklist classId={second} attributes={draft.attributes} checked={checked} multi full={baseChecked.length >= baseSlots} onToggle={toggle}
               lockReason={primaryCount ? undefined : `Marque antes uma de ${CLASSES[primary].name}`} />
+          )}
+          {spec && (
+            <ClassChecklist classId={spec} attributes={draft.attributes} checked={checked} multi full={specChecked.length >= specSlots} onToggle={toggle}
+              subtitle={`Classe especialista · níveis ${SPECIALIST_LEVEL + 1} a ${total}`}
+              lockReason={specialistOf(draft.levels.slice(0, SPECIALIST_LEVEL)) === spec ? undefined : `Marque antes uma de ${CLASSES[second ?? primary].name}`} />
+          )}
+          {total > SPECIALIST_LEVEL && !spec && (
+            <p className="small secondary">
+              A classe especialista de {second ? `${CLASSES[primary].name} com ${CLASSES[second].name}` : CLASSES[primary].name} ainda não existe nas regras: os níveis {SPECIALIST_LEVEL + 1} a {total} continuam nas classes base.
+            </p>
           )}
           {missing > 0 && !levelsError && (
             <p className="small secondary">
@@ -305,34 +327,36 @@ export default function CharacterWizard({
   );
 }
 
-/**
- * Habilidades de uma classe para marcar. As que podem ser marcadas (e as marcadas)
- * ficam abertas. `limit` 1 vira escolha única: marcar outra troca a escolhida.
- */
-function ClassChecklist({ classId, attributes, checked, limit, lockReason, onToggle }: {
+/** Habilidades de uma classe para marcar. As que podem ser marcadas (e as marcadas) ficam abertas. */
+function ClassChecklist({ classId, attributes, checked, multi = false, full = false, subtitle, lockReason, onToggle }: {
   classId: ClassId;
   attributes: Attributes;
   checked: string[];
-  limit: number;
+  /** Caixas de marcar; sem isso é escolha única (marcar outra troca a escolhida). */
+  multi?: boolean;
+  /** Não cabe mais nenhuma habilidade deste grupo (só vale com `multi`). */
+  full?: boolean;
+  subtitle?: string;
   /** Bloqueia tudo que não está marcado (ex.: segunda classe antes da inicial). */
   lockReason?: string;
   onToggle: (id: string) => void;
 }) {
   const options = checkOptions(attributes, classId, checked);
   const count = options.filter((o) => checked.includes(o.ability.id)).length;
-  const full = limit > 1 && checked.length >= limit;
+  const isFull = multi && full;
   return (
     <div className="col">
       <div className="row">
         <h3 style={{ color: CLASSES[classId].color }}>{CLASSES[classId].name}</h3>
+        {subtitle && <span className="tiny muted">{subtitle}</span>}
         <span className="spacer" />
-        {limit > 1 && <span className="tiny muted">{count} marcada{count === 1 ? '' : 's'}</span>}
+        {multi && <span className="tiny muted">{count} marcada{count === 1 ? '' : 's'}</span>}
       </div>
       {options.map((o) => {
         const on = checked.includes(o.ability.id);
-        const reason = on ? undefined : !o.eligible ? o.reason : lockReason ?? (full ? 'Limite de habilidades atingido' : undefined);
+        const reason = on ? undefined : !o.eligible ? o.reason : lockReason ?? (isFull ? 'Limite de habilidades atingido' : undefined);
         return (
-          <AbilityCard key={o.ability.id} ability={o.ability} multi={limit > 1} disabledReason={reason} defaultOpen={!reason}
+          <AbilityCard key={o.ability.id} ability={o.ability} multi={multi} disabledReason={reason} defaultOpen={!reason}
             selected={on} onSelect={() => onToggle(o.ability.id)} />
         );
       })}
