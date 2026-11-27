@@ -34,20 +34,19 @@ Em **todo commit**, antes de commitar:
 3. Atualize o `version` do `package.json` (e as duas ocorrências no topo do `package-lock.json`) para a mesma versão;
    há teste conferindo.
 
-## Publicar: só quando o usuário pedir
+Mudanças só nas instruções do Claude (este `CLAUDE.md`) não sobem a versão nem entram nas notas.
 
-Ao terminar uma alteração (com `npx tsc --noEmit -p .` e `npm test` passando), **faça o commit no `main`, mas não dê push**:
+## Publicar: sempre subir ao terminar
+
+Ao terminar qualquer alteração (com `npx tsc --noEmit -p .` e `npm test` passando), suba sem perguntar:
 
 1. Atualize a versão e as notas (seção acima).
 2. Commit no `main` só com os arquivos da tarefa, mensagem em português começando pela versão (ex.: `3.1.2: ...`).
+3. `git push origin main`. O Netlify publica o site sozinho a cada push no `main`.
+4. Se a pasta `server/` mudou, publique também o servidor de salas: `npx wrangler deploy` dentro de `server/`
+   (o `publicar.ps1` faz o mesmo, mas espera Enter no fim).
 
-Só suba quando o usuário pedir. Aí:
-
-1. `git push origin main`. O Netlify publica o site sozinho a cada push no `main`.
-2. Se a pasta `server/` mudou desde o último push, publique também o servidor de salas: `npx wrangler deploy`
-   dentro de `server/` (o `publicar.ps1` faz o mesmo, mas espera Enter no fim).
-
-Se a verificação falhar, não commite: corrija ou avise.
+Se a verificação falhar, não suba: corrija ou avise.
 
 O Git em `C:\Program Files\Git` está sem o suporte a HTTPS (o push falha com `git: 'remote-https' is not a git command`).
 Use o Git do GitHub Desktop, no PowerShell:
