@@ -490,7 +490,7 @@ function EspecialistasSec() {
     const s = specialistFor(x, y);
     return s
       ? <ClassName id={s} />
-      : <SpecName a={x} b={y} still>{titleFor(x, y)} <span className="tiny">(em breve)</span></SpecName>;
+      : <SpecName a={x} b={y} still>{titleFor(x, y)}</SpecName>;
   };
   return (
     <Section id="especialistas" title="Classes especialistas"
@@ -500,7 +500,7 @@ function EspecialistasSec() {
         <li>Quem ficou em uma classe só segue para a especialista daquela classe.</li>
         <li>Cada nível de especialista dá os PV e PE dela (valores fixos, sem somar atributo) e uma habilidade dela, à sua escolha: todas já podem ser escolhidas no nível {SPECIALIST_LEVEL + 1}.</li>
         <li>O bônus de nível continua normal: +1 nos testes a cada nível par.</li>
-        <li>Combinação marcada como “em breve” ainda não tem especialista nas regras: até lá, os níveis {SPECIALIST_LEVEL + 1} a {MAX_LEVEL} continuam nas classes base, como antes.</li>
+        <li>Na tabela abaixo, só as especialistas que já existem têm o nome animado. As outras combinações ainda não têm especialista nas regras: até lá, os níveis {SPECIALIST_LEVEL + 1} a {MAX_LEVEL} continuam nas classes base, como antes.</li>
       </ul>
 
       <Sub>Combinações</Sub>
