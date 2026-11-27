@@ -23,17 +23,16 @@ export function classSwatch(id: ClassId): string {
   return `linear-gradient(135deg, ${c1}, ${c2})`;
 }
 
-/** Texto com o gradiente de uma combinação. `still` desliga a animação. */
-export function SpecName({ a, b, still, className, children }: {
+/** Texto com o gradiente animado de uma combinação (a classe `spec-still` deixa parado). */
+export function SpecName({ a, b, className, children }: {
   a: BaseClassId;
   b?: BaseClassId;
-  still?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   const [c1, c2] = comboColors(a, b);
   const style = { '--spec-a': c1, '--spec-b': c2 } as CSSProperties;
-  return <span className={`spec-name${still ? ' spec-still' : ''}${className ? ` ${className}` : ''}`} style={style}>{children}</span>;
+  return <span className={`spec-name${className ? ` ${className}` : ''}`} style={style}>{children}</span>;
 }
 
 export default function ClassName({ id, className, children }: { id: ClassId; className?: string; children?: ReactNode }) {
