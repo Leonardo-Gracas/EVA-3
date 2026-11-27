@@ -2716,7 +2716,9 @@ button.camp-pill { min-height: 36px; }
 /* Nome de classe especialista: gradiente com as cores das duas classes, correndo pelo texto. */
 .spec-name {
   font-weight: 700;
-  background: linear-gradient(90deg, var(--spec-a), var(--spec-b), var(--spec-a), var(--spec-b), var(--spec-a));
+  background: linear-gradient(90deg,
+    var(--spec-a), var(--spec-m), var(--spec-b), var(--spec-m),
+    var(--spec-a), var(--spec-m), var(--spec-b), var(--spec-m), var(--spec-a));
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
