@@ -1028,6 +1028,8 @@ export type GameAction =
   | { type: 'notes/update'; characterId: string; notes: string }
   /** Livre para o dono, mesmo com a ficha pendente. */
   | { type: 'character/avatar'; characterId: string; avatar: AvatarConfig }
+  /** Livre para o dono (mesmo com a ficha pendente) e para o mestre. */
+  | { type: 'character/rename'; characterId: string; name: string }
   | { type: 'library/upsert'; item: ItemData; itemId?: string }
   | { type: 'library/delete'; itemId: string }
   | { type: 'library/give'; itemId: string; characterId: string; qty: number }

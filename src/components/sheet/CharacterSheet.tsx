@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Check, Dices, Eye, EyeOff, Footprints, NotebookPen, Skull, Undo2, X } from 'lucide-react';
+import { Check, Dices, Eye, EyeOff, Footprints, NotebookPen, Pencil, Skull, Undo2, X } from 'lucide-react';
 import { DEFAULT_MOVEMENT, type Character, type TableState } from '../../model/types';
 import { ATTR_KEYS, ATTRIBUTES, fmtMod } from '../../rules/attributes';
 import { CLASSES } from '../../rules/classes';
@@ -70,7 +70,7 @@ export default function CharacterSheet({ ch, ownerName, table }: { ch: Character
             onSave={async (avatar) => (await act({ type: 'character/avatar', characterId: ch.id, avatar }, 'Aparência atualizada.')).ok} />
           <div className="grow">
             <div className="sheet-title"><TitleText d={d} /> · Nível {d.level}</div>
-            <h2 className="sheet-name">{ch.name}</h2>
+            <SheetName ch={ch} />
             {ch.concept && <div className="secondary">{ch.concept}</div>}
             <div className="row-wrap mt">
               <ClassChips ch={ch} />
@@ -104,6 +104,46 @@ export default function CharacterSheet({ ch, ownerName, table }: { ch: Character
       <Inventory ch={ch} readOnly={readOnly} />
       {isGm && table && <RelationsCard table={table} ch={ch} />}
       <Notes ch={ch} readOnly={readOnly && !isGm} />
+    </div>
+  );
+}
+
+/** Nome da ficha com o lápis para renomear: a ficha completa só chega ao dono e ao mestre, os dois podem. */
+function SheetName({ ch }: { ch: Character }) {
+  const { act } = useAct();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(ch.name);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setEditing(false); setName(ch.name); }, [ch.id, ch.name]);
+
+  const trimmed = name.trim();
+  const cancel = () => { setEditing(false); setName(ch.name); };
+  const save = async () => {
+    if (!trimmed || busy) return;
+    if (trimmed === ch.name) return cancel();
+    setBusy(true);
+    const r = await act({ type: 'character/rename', characterId: ch.id, name: trimmed }, 'Nome atualizado.');
+    setBusy(false);
+    if (r.ok) setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <div className="row" style={{ gap: 6 }}>
+        <h2 className="sheet-name">{ch.name}</h2>
+        <button className="btn btn-sm btn-ghost btn-icon" title="Mudar o nome" aria-label="Mudar o nome" onClick={() => setEditing(true)}>
+          <Pencil size={14} />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="row" style={{ gap: 6 }}>
+      <input className="input grow" value={name} maxLength={LIMITS.name} autoFocus aria-label="Nome do personagem"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') void save(); else if (e.key === 'Escape') cancel(); }} />
+      <button className="btn btn-sm btn-primary btn-icon" title="Salvar" aria-label="Salvar" disabled={!trimmed || busy} onClick={() => void save()}><Check size={14} /></button>
+      <button className="btn btn-sm btn-ghost btn-icon" title="Cancelar" aria-label="Cancelar" onClick={cancel}><X size={14} /></button>
     </div>
   );
 }

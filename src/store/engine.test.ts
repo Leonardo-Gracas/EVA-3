@@ -9,6 +9,7 @@ import type { Actor, CharacterDraft, ItemSlot, ItemType, TableState } from '../m
 import { GM_OWNER } from '../model/types';
 import { emptyAttributes } from '../rules/attributes';
 import { DEFAULT_AVATAR } from '../model/avatar';
+import { LIMITS } from '../rules/validate';
 
 let n = 0;
 const ctx: EngineCtx = { now: () => 1000, newId: () => `id${++n}`, rng: () => 3 };
@@ -87,6 +88,20 @@ describe('motor', () => {
     expect(r.state.characters[cid].avatar).toEqual({ ...DEFAULT_AVATAR, skin: 's5' });
     const s = dispatch(r.state, gm, { type: 'character/approve', characterId: cid }, ctx).state;
     expect(buildPlayerView(s, 'p2', new Set()).others[0].avatar).toEqual({ ...DEFAULT_AVATAR, skin: 's5' });
+  });
+
+  it('nome: o dono (mesmo pendente) e o mestre renomeiam; outro jogador não', () => {
+    const { s: s0, cid } = setup();
+    let r = dispatch(s0, p1, { type: 'character/rename', characterId: cid, name: '  Lia  ' }, ctx);
+    expect(r.ok && r.requested).toBeFalsy();
+    expect(r.state.characters[cid].name).toBe('Lia');
+    expect(dispatch(r.state, p2, { type: 'character/rename', characterId: cid, name: 'X' }, ctx)).toMatchObject({ ok: false, error: /não é sua/ });
+    expect(dispatch(r.state, p1, { type: 'character/rename', characterId: cid, name: '   ' }, ctx).ok).toBe(false);
+    expect(dispatch(r.state, p1, { type: 'character/rename', characterId: cid, name: 'x'.repeat(LIMITS.name + 1) }, ctx).ok).toBe(false);
+    r = dispatch(r.state, gm, { type: 'character/rename', characterId: cid, name: 'Lia, a Errante' }, ctx);
+    expect(r.ok).toBe(true);
+    expect(r.state.characters[cid].name).toBe('Lia, a Errante');
+    expect(r.state.log[r.state.log.length - 1].text).toMatch(/Lia agora se chama Lia, a Errante/);
   });
 
   it('criar e reenviar ficha levam o avatar sanitizado', () => {

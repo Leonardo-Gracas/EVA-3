@@ -650,7 +650,7 @@ function authorize(s: TableState, actor: Actor, a: GameAction) {
   if ('characterId' in a && a.characterId != null) {
     const c = getChar(s, a.characterId);
     if (c.ownerId !== actor.playerId) fail('Essa ficha não é sua.');
-    const needsApproved = !['character/resubmit', 'character/delete', 'character/avatar'].includes(a.type);
+    const needsApproved = !['character/resubmit', 'character/delete', 'character/avatar', 'character/rename'].includes(a.type);
     if (needsApproved && c.status !== 'approved') fail('A ficha ainda não foi aprovada pelo mestre.');
   }
 }
@@ -1059,6 +1059,18 @@ function apply(s: TableState, actor: Actor, a: GameAction, ctx: EngineCtx): stri
       const c = getChar(s, a.characterId);
       c.avatar = sanitizeAvatar(a.avatar);
       c.updatedAt = now;
+      return;
+    }
+
+    case 'character/rename': {
+      const c = getChar(s, a.characterId);
+      const name = str(a.name, LIMITS.name, 'Nome', true);
+      if (name === c.name) return;
+      const before = c.name;
+      c.name = name;
+      c.updatedAt = now;
+      // NPCs são do mestre: não aparecem no registro.
+      if (c.kind === 'pc') log(s, ctx, { kind: 'system', actorName: who, characterName: name, text: `${before} agora se chama ${name}.` });
       return;
     }
 
@@ -1749,6 +1761,7 @@ export function describeAction(s: TableState, a: GameAction): string {
     }
     case 'notes/update': return `${n}: editar anotações`;
     case 'character/avatar': return `${n}: mudar aparência`;
+    case 'character/rename': return `${n}: mudar o nome para ${a.name}`;
     case 'map/move': return describeMapMove(s, a);
     case 'map/stairs': return describeStairs(s, a);
     default: return a.type;

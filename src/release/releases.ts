@@ -15,6 +15,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '3.2.0',
+    date: '2026-11-27',
+    title: 'Mudar o nome do personagem',
+    notes: [
+      'O jogador pode mudar o nome do próprio personagem pelo lápis ao lado do nome, na ficha.',
+      'O mestre também pode mudar o nome dos personagens dos jogadores e dos NPCs.',
+      'A troca de nome de um personagem aparece no registro da mesa.',
+    ],
+  },
+  {
     version: '3.1.1',
     date: '2026-11-27',
     title: 'Versão de lançamento',
